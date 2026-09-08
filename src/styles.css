@@ -74,7 +74,8 @@ button {
   top: calc(12px + var(--safe-top));
   left: calc(16px + var(--safe-left));
   right: calc(16px + var(--safe-right));
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
@@ -88,6 +89,7 @@ button {
   color: var(--muted);
   text-transform: uppercase;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  justify-self: start;
 }
 
 .hud-timer-wrap { text-align: center; }
@@ -108,6 +110,16 @@ button {
   letter-spacing: 0.08em;
 }
 
+.hud-cp-wrap {
+  justify-self: end;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-right: 0;
+}
+
+.touch-active .hud-cp-wrap { padding-right: 52px; }
+
 .hud-cp {
   font-family: var(--font-display);
   font-weight: 700;
@@ -126,6 +138,40 @@ button {
   justify-content: space-between;
   align-items: flex-end;
 }
+
+.touch-active .hud-speed-wrap {
+  position: absolute;
+  right: calc(20px + var(--safe-right));
+  bottom: calc(214px + var(--safe-bottom));
+}
+
+.touch-active .hud-drift {
+  position: absolute;
+  left: calc(20px + var(--safe-left));
+  bottom: calc(214px + var(--safe-bottom));
+}
+
+.hud-respawn-hint {
+  position: absolute;
+  bottom: calc(140px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  color: var(--accent-2);
+  background: rgba(10, 14, 26, 0.72);
+  border: 1px solid rgba(255, 181, 46, 0.4);
+  padding: 8px 18px;
+  border-radius: 10px;
+  text-shadow: none;
+  opacity: 0;
+  transition: opacity 200ms;
+  pointer-events: none;
+}
+
+.hud-respawn-hint.show { opacity: 1; }
 
 .hud-drift {
   font-family: var(--font-display);
@@ -250,12 +296,18 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: 20px;
   padding: calc(24px + var(--safe-top)) 24px calc(24px + var(--safe-bottom));
   background: radial-gradient(ellipse at 50% 30%, rgba(10, 14, 28, 0.55), rgba(8, 10, 20, 0.88));
   overflow-y: auto;
 }
+
+.screen > .panel,
+.screen > .track-grid,
+.screen > .screen-header,
+.screen > .settings-list,
+.screen > .controls-help { margin: auto 0; }
 
 .title-screen { background: radial-gradient(ellipse at 50% 20%, rgba(10, 14, 28, 0.35), rgba(8, 10, 20, 0.8)); }
 

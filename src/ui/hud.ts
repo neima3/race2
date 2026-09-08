@@ -12,6 +12,7 @@ export class HUD {
   private splitToast: HTMLElement;
   private bestEl: HTMLElement;
   private driftEl: HTMLElement;
+  private respawnHint: HTMLElement;
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
 
@@ -40,8 +41,9 @@ export class HUD {
 
     this.centerEl = el('div', 'hud-center');
     this.splitToast = el('div', 'hud-split-toast');
+    this.respawnHint = el('div', 'hud-respawn-hint', 'OFF TRACK &mdash; RESPAWN &#8634; / X');
 
-    this.root.append(topBar, bottomBar, this.centerEl, this.splitToast);
+    this.root.append(topBar, bottomBar, this.centerEl, this.splitToast, this.respawnHint);
   }
 
   show(trackName: string, bestMs: number | null, cpTotal: number): void {
@@ -84,6 +86,10 @@ export class HUD {
     this.splitToast.classList.add('show');
     if (this.toastTimer !== null) clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.splitToast.classList.remove('show'), 1600);
+  }
+
+  showRespawnHint(show: boolean): void {
+    this.respawnHint.classList.toggle('show', show);
   }
 
   showFinish(result: FinishResult): void {

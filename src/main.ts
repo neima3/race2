@@ -55,6 +55,7 @@ class Game {
   private autoTicks = 0;
   private autoDbg: Record<string, number> = {};
   private runtimeMuted: boolean;
+  private offroadTime = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.runtimeMuted =
@@ -215,6 +216,9 @@ class Game {
   private startTrack(def: TrackDef): void {
     if (def.id !== this.track.id) {
       this.loadTrackIntoScene(def);
+    } else {
+      this.car!.placeAtFrame(0, 8);
+      this.rig.snapBehind(this.car!.state);
     }
     this.state = 'countdown';
     this.menu.hideAll();
@@ -226,12 +230,16 @@ class Game {
       matchMedia('(pointer: coarse)').matches ||
       navigator.maxTouchPoints > 0 ||
       'ontouchstart' in window;
-    if (isTouch) this.touch.show();
+    if (isTouch) {
+      this.touch.show();
+      this.hud.root.classList.add('touch-active');
+    }
     this.audio.ensureContext();
     this.audio.startEngine();
     this.audio.startMusic();
     this.race!.start();
     this.ghostVisual!.group.visible = this.save.settings.showGhost && this.race!.ghostActive;
+    this.hud.clearCenter();
   }
 
   private pause(): void {
@@ -254,6 +262,7 @@ class Game {
     this.menu.hidePause();
     this.menu.show('tracks');
     this.hud.hide();
+    this.hud.showRespawnHint(false);
     this.touch.hide();
     this.audio.stopEngine();
     if (this.car) this.car.placeAtFrame(0, 8);
@@ -308,6 +317,7 @@ class Game {
       window.setTimeout(() => {
         this.state = 'finished';
         this.hud.clearCenter();
+        this.hud.showRespawnHint(false);
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
         this.menu.showFinish(this.track, r, idx < TRACKS.length - 1);
         this.touch.hide();
@@ -413,6 +423,14 @@ class Game {
         const side = Math.sign(s.lateral) || 1;
         this.particles.wallSparks(s.pos.clone().addScaledVector(f.binormal, side * f.halfWidth), f.binormal.clone().multiplyScalar(-side));
       }
+
+      const stuckOffroad = s.offroad && s.grounded && s.speed < 6;
+      if (stuckOffroad) {
+        this.offroadTime += dt;
+      } else {
+        this.offroadTime = 0;
+      }
+      this.hud.showRespawnHint(this.offroadTime > 1.5 && (this.state === 'racing' || this.state === 'countdown'));
 
       this.hud.update(
         this.race!.elapsedMs,
