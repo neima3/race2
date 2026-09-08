@@ -1,7 +1,7 @@
 FROM node:22-bookworm AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN rm -f package-lock.json && npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npm run build
 
