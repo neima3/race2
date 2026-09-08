@@ -1,0 +1,14 @@
+{
+  "name": "RACE2 — Arcade Racer",
+  "short_name": "RACE2",
+  "description": "Trackmania-style arcade time-trial racer. Keyboard, touch, or gamepad.",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0b0e1a",
+  "theme_color": "#0b0e1a",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
