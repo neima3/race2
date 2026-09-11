@@ -4,6 +4,7 @@ import type { TrackCurve } from '../track/curve';
 import type { TrackDef } from '../track/defs';
 import type { InputFrame } from '../core/input';
 import type { SaveManager } from '../core/save';
+import { DEV_GHOSTS } from '../track/devghosts.gen';
 
 export type RacePhase = 'countdown' | 'racing' | 'finished';
 
@@ -122,7 +123,9 @@ export class RaceController {
     this.controlsEnabled = false;
     this.prevDist = this.car.state.trackDist;
     this.maxProgress = this.car.state.trackDist;
-    const ghostData = this.save.trackSave(this.def.id).ghost;
+    const playerGhost = this.save.trackSave(this.def.id).ghost;
+    const devGhost = DEV_GHOSTS[this.def.id];
+    const ghostData = playerGhost ?? devGhost ?? null;
     this.ghost = ghostData ? deserializeGhost(ghostData) : [];
     this.ghostActive = this.ghost.length > 1;
     this.ghostDists = [];
