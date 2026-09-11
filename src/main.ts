@@ -545,12 +545,11 @@ class Game {
     if (input.pause) {
       if (this.state === 'racing' || this.state === 'countdown') this.pause();
       else if (this.state === 'finished') this.quitToMenu();
+      else if (this.state === 'replay') this.stopReplay();
     }
 
     if (this.state === 'replay') {
       this.updateReplay(dt);
-      const input2 = this.input.sample(this.save.settings.steeringSensitivity);
-      if (input2.pause) this.stopReplay();
       this.environment?.update(this.rig.camera.position);
       this.particles.update(dt);
       this.renderFrame();

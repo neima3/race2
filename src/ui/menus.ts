@@ -23,6 +23,15 @@ function medalForTime(bestMs: number | null, medals: TrackDef['medals']): MedalS
   };
 }
 
+function starsForTime(bestMs: number | null, medals: TrackDef['medals']): number {
+  if (bestMs == null) return 0;
+  if (bestMs <= medals.author) return 4;
+  if (bestMs <= medals.gold) return 3;
+  if (bestMs <= medals.silver) return 2;
+  if (bestMs <= medals.bronze) return 1;
+  return 0;
+}
+
 export class MenuManager {
   readonly root: HTMLElement;
   onPlayTrack: (track: TrackDef) => void = () => {};
@@ -87,34 +96,44 @@ export class MenuManager {
 
   private buildTracksScreen(): void {
     this.tracksScreen.replaceChildren();
+    const totalStars = this.tracks.reduce((sum, t) => sum + starsForTime(this.save.trackSave(t.id).bestTimeMs, t.medals), 0);
     const header = el('div', 'screen-header');
     header.append(el('h2', 'screen-title', 'SELECT TRACK'));
+    const right = el('div', 'tracks-header-right');
+    right.append(el('div', 'star-total', `&#11088; ${totalStars}/40`));
     const back = el('button', 'menu-btn small', '&#8592; BACK');
     back.addEventListener('click', () => this.show('title'));
-    header.append(back);
+    right.append(back);
+    header.append(right);
+    const forceAll = new URLSearchParams(window.location.search).has('alltracks');
     const grid = el('div', 'track-grid');
     this.tracks.forEach((track, i) => {
       const ts = this.save.trackSave(track.id);
+      const stars = starsForTime(ts.bestTimeMs, track.medals);
+      const unlocked = forceAll || i === 0 || starsForTime(this.save.trackSave(this.tracks[i - 1].id).bestTimeMs, this.tracks[i - 1].medals) >= 1;
       const ms = medalForTime(ts.bestTimeMs, track.medals);
-      const card = el('button', 'track-card');
+      const card = el('button', 'track-card' + (unlocked ? '' : ' locked'));
       const medalOrder: (keyof MedalState)[] = ['author', 'gold', 'silver', 'bronze'];
       const medalsRow = medalOrder
         .map((k) => `<span class="mini-medal ${ms && ms[k] ? `earned mm-${k}` : ''}" title="${k}"></span>`)
         .join('');
+      const starRow = Array.from({ length: 4 }, (_, si) => `<span class="pstar ${si < stars ? 'on' : ''}">&#11088;</span>`).join('');
       card.innerHTML = `
         <div class="track-card-top" style="--accent:${track.accentName}">
-          <span class="track-num">${String(i + 1).padStart(2, '0')}</span>
+          <span class="track-num">${unlocked ? String(i + 1).padStart(2, '0') : '&#128274;'}</span>
           <div>
             <div class="track-name">${track.name}</div>
-            <div class="track-sub">${track.subtitle}</div>
+            <div class="track-sub">${unlocked ? track.subtitle : `Earn a medal on ${this.tracks[i - 1].name}`}</div>
           </div>
         </div>
         <div class="track-card-bottom">
-          <div class="track-best">${ts.bestTimeMs != null ? formatTimePrecise(ts.bestTimeMs) : '&mdash;:--.---'}</div>
+          <div class="track-best">${unlocked ? (ts.bestTimeMs != null ? formatTimePrecise(ts.bestTimeMs) : '&mdash;:--.---') : 'LOCKED'}</div>
           <div class="track-medals">${medalsRow}</div>
         </div>
+        <div class="track-stars">${starRow}</div>
       `;
       card.addEventListener('click', () => {
+        if (!unlocked) return;
         this.onPlayTrack(track);
       });
       grid.append(card);

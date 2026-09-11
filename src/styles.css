@@ -793,3 +793,20 @@ button {
 }
 
 .title-credits { font-size: 11px; letter-spacing: 0.14em; color: rgba(242, 245, 255, 0.4); text-transform: uppercase; }
+
+.tracks-header-right { display: flex; align-items: center; gap: 14px; }
+
+.star-total {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+}
+
+.track-card.locked { opacity: 0.55; filter: saturate(0.4); cursor: not-allowed; }
+.track-card.locked:hover { transform: none; border-color: var(--panel-border); box-shadow: none; }
+
+.track-stars { display: flex; gap: 2px; justify-content: flex-end; font-size: 11px; }
+.pstar { opacity: 0.22; filter: grayscale(1); }
+.pstar.on { opacity: 1; filter: none; }
