@@ -83,6 +83,7 @@ export interface Environment {
   sunLight: THREE.DirectionalLight;
   hemiLight: THREE.HemisphereLight;
   update(cameraPos: THREE.Vector3): void;
+  animate(t: number, dt: number): void;
 }
 
 export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: 'low' | 'medium' | 'high'): Environment {
@@ -162,6 +163,7 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
 
   const cloudMat = new THREE.MeshBasicMaterial({ color: theme.cloudColor, transparent: true, opacity: theme.cloudOpacity, fog: false });
   const clouds = new THREE.Group();
+  const cloudDirs: number[] = [];
   for (let i = 0; i < 14; i++) {
     const cloud = new THREE.Group();
     const puffs = 3 + Math.floor(rng() * 4);
@@ -174,9 +176,79 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     const a = rng() * Math.PI * 2;
     const dist = 900 + rng() * 1900;
     cloud.position.set(Math.cos(a) * dist, 240 + rng() * 320, Math.sin(a) * dist);
+    cloudDirs.push(0.6 + rng() * 0.8);
     clouds.add(cloud);
   }
   group.add(clouds);
+
+  let fireflies: THREE.Points | null = null;
+  if (theme.ambientSound === 'synth') {
+    const N = 90;
+    const pos = new Float32Array(N * 3);
+    const seed = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      pos[i * 3] = (rng() - 0.5) * 700;
+      pos[i * 3 + 1] = 1.5 + rng() * 7;
+      pos[i * 3 + 2] = (rng() - 0.5) * 700;
+      seed[i] = rng() * 100;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `
+        attribute float seed;
+        uniform float uTime;
+        varying float vTw;
+        void main() {
+          vec3 p = position;
+          p.x += sin(uTime * 0.4 + seed) * 3.0;
+          p.y += sin(uTime * 0.7 + seed * 2.0) * 1.2;
+          vTw = 0.35 + 0.65 * (0.5 + 0.5 * sin(uTime * 2.2 + seed * 3.0));
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = 7.0 * (120.0 / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        varying float vTw;
+        void main() {
+          vec2 uv = gl_PointCoord - 0.5;
+          float d = length(uv);
+          float a = smoothstep(0.5, 0.05, d);
+          gl_FragColor = vec4(0.55, 1.0, 0.75, a * vTw);
+        }
+      `,
+    });
+    fireflies = new THREE.Points(geo, mat);
+    fireflies.frustumCulled = false;
+    group.add(fireflies);
+  }
+
+  const birds = new THREE.Group();
+  if (theme.ambientSound === 'birds') {
+    const birdMat = new THREE.MeshBasicMaterial({ color: 0x2c3242, side: THREE.DoubleSide });
+    for (let i = 0; i < 6; i++) {
+      const b = new THREE.Group();
+      const wingGeo = new THREE.BufferGeometry();
+      wingGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1.6, 0.25, -0.5, 1.6, 0.25, 0.5], 3));
+      wingGeo.computeVertexNormals();
+      const wl = new THREE.Mesh(wingGeo, birdMat);
+      const wr = wl.clone();
+      wr.scale.x = -1;
+      b.add(wl, wr);
+      const a = (i / 6) * Math.PI * 2;
+      b.position.set(Math.cos(a) * 220, 90 + Math.sin(i * 2.1) * 22, Math.sin(a) * 220);
+      b.userData = { angle: a, flap: rng() * Math.PI * 2, wl, wr, r: 220, h: 90 + Math.sin(i * 2.1) * 22 };
+      birds.add(b);
+    }
+    group.add(birds);
+  }
+
+  let clock = 0;
 
   const update = (cameraPos: THREE.Vector3): void => {
     sky.position.copy(cameraPos);
@@ -186,5 +258,26 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     sunLight.position.copy(cameraPos).add(sunOffset);
   };
 
-  return { group, sunLight, hemiLight, update };
+  const animate = (t: number, dt: number): void => {
+    clock += dt;
+    clouds.children.forEach((c, i) => {
+      c.position.x += cloudDirs[i] * dt * 2.4;
+      if (c.position.x > 2600) c.position.x = -2600;
+    });
+    if (fireflies) {
+      (fireflies.material as THREE.ShaderMaterial).uniforms.uTime.value = clock;
+      fireflies.position.x = t;
+    }
+    birds.children.forEach((b) => {
+      const u = b.userData as { angle: number; flap: number; wl: THREE.Mesh; wr: THREE.Mesh; r: number; h: number };
+      u.angle += dt * 0.05;
+      u.flap += dt * 9;
+      b.position.set(Math.cos(u.angle) * u.r, u.h + Math.sin(clock * 0.7 + u.r) * 4, Math.sin(u.angle) * u.r);
+      b.rotation.y = -u.angle;
+      u.wl.rotation.z = Math.sin(u.flap) * 0.55;
+      u.wr.rotation.z = -Math.sin(u.flap) * 0.55;
+    });
+  };
+
+  return { group, sunLight, hemiLight, update, animate };
 }

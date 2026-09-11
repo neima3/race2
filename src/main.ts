@@ -551,6 +551,7 @@ class Game {
     if (this.state === 'replay') {
       this.updateReplay(dt);
       this.environment?.update(this.rig.camera.position);
+      this.environment?.animate(now / 1000, dt);
       this.particles.update(dt);
       this.renderFrame();
       return;
@@ -572,6 +573,7 @@ class Game {
         }
       }
       this.environment?.update(this.rig.camera.position);
+      this.environment?.animate(now / 1000, dt);
       this.renderFrame();
       return;
     }
@@ -726,6 +728,7 @@ class Game {
     this.boostKick = 0;
     this.rig.update(dt, s);
     this.environment?.update(this.rig.camera.position);
+      this.environment?.animate(now / 1000, dt);
     this.particles.update(dt);
     this.renderFrame();
   };
