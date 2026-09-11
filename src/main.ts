@@ -262,6 +262,7 @@ class Game {
     this.audio.ensureContext();
     this.audio.startEngine();
     this.audio.startMusic();
+    this.audio.startAmbience(THEMES[def.theme].ambientSound);
     this.race!.start();
     this.ghostVisual!.group.visible = this.save.settings.showGhost && this.race!.ghostActive;
     this.hud.clearCenter();
@@ -290,6 +291,7 @@ class Game {
     this.hud.showRespawnHint(false);
     this.touch.hide();
     this.audio.stopEngine();
+    this.audio.stopAmbience();
     if (this.car) this.car.placeAtFrame(0, 8);
     if (this.ghostVisual) this.ghostVisual.group.visible = false;
     this.rig.snapBehind(this.car!.state);
@@ -504,6 +506,7 @@ class Game {
       );
       this.hud.updateProgress(s.trackDist / this.curve!.length, this.race!.ghostDistAt(this.race!.elapsedMs) === null ? null : (this.race!.ghostDistAt(this.race!.elapsedMs) as number) / this.curve!.length);
       this.audio.updateEngine(Math.min(1, Math.abs(s.forwardSpeed) / 58), input.throttle, !s.grounded);
+      this.audio.setSpeedIntensity(Math.min(1, Math.abs(s.forwardSpeed) / 58), s.boostTime > 0);
     }
 
     if (this.state === 'finished') {

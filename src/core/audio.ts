@@ -18,6 +18,10 @@ export class AudioEngine {
   private musicNextTime = 0;
   private lastGear = -1;
   private shiftBlipUntil = 0;
+  private musicLayers: { gain: GainNode; intense: boolean }[] = [];
+  private musicIntensity = 0;
+  private ambienceNodes: { src: AudioBufferSourceNode; gain: GainNode; filter?: BiquadFilterNode }[] = [];
+  private ambienceKind: string | null = null;
 
   musicEnabled = true;
   sfxEnabled = true;
@@ -207,6 +211,95 @@ export class AudioEngine {
     notes.forEach((n, i) => this.blip(n, 0.24, 'triangle', 0.3, i * 0.11));
   }
 
+  setSpeedIntensity(speedRatio: number, boosting: boolean): void {
+    if (!this.ctx) return;
+    const target = boosting || speedRatio > 0.82 ? 1 : speedRatio > 0.35 ? 0.55 : 0;
+    this.musicIntensity += (target - this.musicIntensity) * 0.04;
+    const t = this.ctx.currentTime;
+    for (const layer of this.musicLayers) {
+      const wanted = layer.intense ? this.musicIntensity : 1 - this.musicIntensity * 0.7;
+      layer.gain.gain.setTargetAtTime(0.5 * wanted, t, 0.4);
+    }
+  }
+
+  startAmbience(kind: 'birds' | 'wind' | 'synth' | 'waves'): void {
+    if (!this.ctx || !this.master) return;
+    if (this.ambienceKind === kind) return;
+    this.stopAmbience();
+    this.ambienceKind = kind;
+    const ctx = this.ctx;
+    const noise = () => {
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      let last = 0;
+      for (let i = 0; i < data.length; i++) {
+        const w = Math.random() * 2 - 1;
+        last = 0.985 * last + 0.015 * w;
+        data[i] = last * 8;
+      }
+      return buf;
+    };
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    if (kind === 'wind') {
+      src.buffer = noise();
+      filter.type = 'bandpass';
+      filter.frequency.value = 420;
+      filter.Q.value = 0.4;
+      gain.gain.value = 0.05;
+    } else if (kind === 'waves') {
+      src.buffer = noise();
+      filter.type = 'lowpass';
+      filter.frequency.value = 600;
+      gain.gain.value = 0.045;
+    } else if (kind === 'synth') {
+      const o1 = ctx.createOscillator();
+      o1.type = 'sawtooth';
+      o1.frequency.value = 55;
+      const o2 = ctx.createOscillator();
+      o2.type = 'sawtooth';
+      o2.frequency.value = 55.6;
+      const g2 = ctx.createGain();
+      g2.gain.value = 0.035;
+      o1.connect(filter);
+      o2.connect(filter);
+      filter.type = 'lowpass';
+      filter.frequency.value = 220;
+      filter.connect(g2);
+      g2.connect(this.master);
+      o1.start();
+      o2.start();
+      this.ambienceNodes.push({ src: o1 as unknown as AudioBufferSourceNode, gain: g2 });
+      this.ambienceNodes.push({ src: o2 as unknown as AudioBufferSourceNode, gain: g2 });
+      return;
+    } else {
+      src.buffer = noise();
+      filter.type = 'bandpass';
+      filter.frequency.value = 2800;
+      filter.Q.value = 2.5;
+      gain.gain.value = 0.012;
+    }
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    src.loop = true;
+    src.start();
+    this.ambienceNodes.push({ src, gain, filter });
+  }
+
+  stopAmbience(): void {
+    for (const n of this.ambienceNodes) {
+      try {
+        n.src.stop();
+      } catch {
+        /* not started */
+      }
+    }
+    this.ambienceNodes = [];
+    this.ambienceKind = null;
+  }
+
   startMusic(): void {
     if (!this.ctx || !this.musicGain || this.musicTimer !== null) return;
     const ctx = this.ctx;
@@ -218,7 +311,7 @@ export class AudioEngine {
     const bass = [55, 55, 65.4, 55, 55, 55, 49, 49];
     const arp = [440, 523, 659, 523, 392, 523, 659, 784, 587, 698, 880, 698, 523, 659, 784, 659];
 
-    const playNote = (freq: number, when: number, dur: number, type: OscillatorType, vol: number) => {
+    const playNote = (freq: number, when: number, dur: number, type: OscillatorType, vol: number, layer = 0) => {
       const osc = ctx.createOscillator();
       osc.type = type;
       osc.frequency.value = freq;
@@ -226,7 +319,7 @@ export class AudioEngine {
       g.gain.setValueAtTime(vol, when);
       g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
       osc.connect(g);
-      g.connect(this.musicGain!);
+      g.connect(this.musicLayers[layer]?.gain ?? this.musicGain!);
       osc.start(when);
       osc.stop(when + dur + 0.02);
     };
@@ -236,16 +329,24 @@ export class AudioEngine {
       while (this.musicNextTime < ctx.currentTime + 0.2) {
         const s = this.musicStep % 128;
         const bar = Math.floor(s / 16) % 2;
-        if (s % 8 === 0) playNote(bass[(s / 8) % 8 | 0] ?? bass[0], this.musicNextTime, stepDur * 7, 'triangle', 0.5);
-        if (bar === 0 && s % 2 === 0) playNote(arp[s % 16] / 2, this.musicNextTime, stepDur * 1.6, 'square', 0.05);
-        if (bar === 1) playNote(arp[s % 16], this.musicNextTime, stepDur * 1.4, 'sawtooth', 0.035);
-        if (s % 4 === 2) playNote(3200, this.musicNextTime, 0.03, 'square', 0.015);
+        if (s % 8 === 0) playNote(bass[(s / 8) % 8 | 0] ?? bass[0], this.musicNextTime, stepDur * 7, 'triangle', 0.5, 0);
+        if (bar === 0 && s % 2 === 0) playNote(arp[s % 16] / 2, this.musicNextTime, stepDur * 1.6, 'square', 0.05, 0);
+        if (bar === 1) playNote(arp[s % 16], this.musicNextTime, stepDur * 1.4, 'sawtooth', 0.035, 1);
+        if (s % 4 === 2) playNote(3200, this.musicNextTime, 0.03, 'square', 0.015, 1);
         this.musicNextTime += stepDur;
         this.musicStep++;
       }
     };
     tick();
     this.musicTimer = window.setInterval(tick, 120);
+    if (this.musicLayers.length === 0) {
+      for (const intense of [false, true]) {
+        const g = ctx.createGain();
+        g.gain.value = intense ? 0 : 0.5;
+        g.connect(this.musicGain);
+        this.musicLayers.push({ gain: g, intense });
+      }
+    }
   }
 
   stopMusic(): void {
