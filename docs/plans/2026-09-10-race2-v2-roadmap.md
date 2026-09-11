@@ -1,18 +1,18 @@
 # RACE2 — 10x Development Roadmap v2 (2026-09-10)
 
 ## Progress tracker
-- [ ] Phase 1: Architecture refactor — main.ts into systems (no behavior change)
-- [ ] Phase 2: Post-processing — selective bloom on high tier (neon/sun pops)
-- [ ] Phase 3: Car model v2 + animation polish
-- [ ] Phase 4: Air control physics (TM-style air pitch/yaw)
-- [ ] Phase 5: Boost rings (air feature) + drift score UI
-- [ ] Phase 6: Replay system — last-lap replay with cinematic camera
-- [ ] Phase 7: Progression — stars, track unlocking, profile level
-- [ ] Phase 8: World life — animated clouds, night fireflies, dawn birds, banners
-- [ ] Phase 9: Modes & accessibility — practice mode, ghost toggle, reduced motion, lefty touch
-- [ ] Phase 10: 2 ring-tracks + achievements panel + release QA + deploy
+- [x] Phase 1: Architecture refactor — main.ts into systems (no behavior change)
+- [x] Phase 2: Post-processing — selective bloom on high tier (neon/sun pops)
+- [x] Phase 3: Car model v2 + animation polish
+- [x] Phase 4: Air control physics (TM-style air pitch/yaw)
+- [x] Phase 5: Boost rings (air feature) + drift score UI
+- [x] Phase 6: Replay system — last-lap replay with cinematic camera
+- [x] Phase 7: Progression — stars, track unlocking, profile level
+- [x] Phase 8: World life — animated clouds, night fireflies, dawn birds, banners
+- [x] Phase 9: Modes & accessibility — practice mode, ghost toggle, reduced motion, lefty touch
+- [x] Phase 10: 2 ring-tracks + achievements panel + release QA + deploy
 
-**Goal statement (full ambition):** Push RACE2 to true "wow" territory: post-FX glow, a car that looks handcrafted, air control that enables skill play, a replay system, progression that rewards mastery, and a living world — while keeping 60fps and the entire existing QA baseline green. Ship as v1.2 to race2.neima.me.
+**Goal statement (full ambition):** Push RACE2 to true "wow" territory: post-FX glow, a car that looks handcrafted, air control that enables skill play, a replay system, progression that rewards mastery, and a living world — while keeping 60fps and the entire existing QA baseline green. STATUS: SHIPPED v1.2.0 — 2026-09-10. All phases verified in browser, deployed and live-verified.
 
 ## Ground rules for executors (unchanged from v1)
 - Gates per commit: `npm run typecheck && npm run build`.
