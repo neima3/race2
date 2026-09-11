@@ -95,6 +95,9 @@ class Game {
     this.menu.onRestart = () => this.startTrack(this.track);
     this.menu.onQuitToMenu = () => this.quitToMenu();
     this.menu.onTiltRequest = () => void this.input.requestTiltPermission();
+    this.menu.onGarageChange = (paint, body) => {
+      this.applyPlayerStyle(paint, body);
+    };
     this.menu.onSettingsChanged = (s) => {
       this.audio.setMusicEnabled(this.runtimeMuted ? false : s.music);
       this.audio.setSfxEnabled(this.runtimeMuted ? false : s.sfx);
@@ -184,6 +187,57 @@ class Game {
     this.loadTrackIntoScene(this.track);
   }
 
+  private garageRenderer: THREE.WebGLRenderer | null = null;
+  private garageScene: THREE.Scene | null = null;
+  private garageCamera: THREE.PerspectiveCamera | null = null;
+  private garageCar: CarVisual | null = null;
+
+  private applyPlayerStyle(paint: number, body: 'standard' | 'aero' | 'tank'): void {
+    if (this.garageCar) this.garageCar.setPaint(paint);
+    if (this.carVisual) {
+      this.carVisual.setPaint(paint);
+    }
+    if (this.track && this.save.profile.body !== body) {
+      this.save.updateProfile({ body });
+      this.loadTrackIntoScene(this.track);
+      if (this.state === 'menu') this.car!.placeAtFrame(0, 8);
+    }
+    if (this.ghostVisual) this.ghostVisual.setPaint(paint);
+  }
+
+  private renderGaragePreview(): void {
+    const canvas = this.menu.garageCanvas;
+    if (!canvas) return;
+    if (!this.garageRenderer || !this.garageScene || !this.garageCamera) {
+      this.garageRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      this.garageRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      this.garageScene = new THREE.Scene();
+      this.garageCamera = new THREE.PerspectiveCamera(40, canvas.width / canvas.height, 0.1, 50);
+      this.garageCamera.position.set(3.6, 2.2, 4.6);
+      this.garageCamera.lookAt(0, 0.4, 0);
+      const key = new THREE.DirectionalLight(0xfff0dd, 2.2);
+      key.position.set(4, 6, 3);
+      const rim = new THREE.DirectionalLight(0x8fb4ff, 1.4);
+      rim.position.set(-5, 3, -4);
+      this.garageScene.add(key, rim, new THREE.HemisphereLight(0xbdd4f0, 0x222222, 0.9));
+      this.garageCar = buildCarVisual(this.save.profile.paint, false, this.save.profile.body);
+      this.garageScene.add(this.garageCar.group);
+      this.garageStyle = this.save.profile.body;
+    }
+    if (this.garageCar && this.save.profile.body !== this.garageStyle) {
+      this.garageScene.remove(this.garageCar.group);
+      this.garageCar = buildCarVisual(this.save.profile.paint, false, this.save.profile.body);
+      this.garageScene.add(this.garageCar.group);
+      this.garageStyle = this.save.profile.body;
+    }
+    if (this.garageCar) {
+      this.garageCar.group.rotation.y = performance.now() * 0.0006;
+    }
+    this.garageRenderer.render(this.garageScene, this.garageCamera);
+  }
+
+  private garageStyle: 'standard' | 'aero' | 'tank' = 'standard';
+
   private loadTrackIntoScene(def: TrackDef): void {
     this.clearTrackScene();
     this.track = def;
@@ -213,13 +267,13 @@ class Game {
     this.skidMarks = new SkidMarks();
     this.trackGroup.add(this.skidMarks.mesh);
 
-    this.carVisual = buildCarVisual(0x29e6ff);
+    this.carVisual = buildCarVisual(this.save.profile.paint, false, this.save.profile.body);
     this.carVisual.group.traverse((o) => {
       if (o instanceof THREE.Mesh) o.castShadow = this.quality !== 'low';
     });
     this.trackGroup.add(this.carVisual.group);
 
-    this.ghostVisual = buildCarVisual(0xffffff, true);
+    this.ghostVisual = buildCarVisual(this.save.profile.paint, true);
     this.ghostVisual.group.visible = false;
     this.trackGroup.add(this.ghostVisual.group);
 
@@ -391,15 +445,19 @@ class Game {
     }
 
     if (this.state === 'menu') {
-      this.menuOrbitAngle += dt * 0.08;
-      if (this.curve && this.car) {
-        const radius = 60;
-        const cx = Math.cos(this.menuOrbitAngle) * radius;
-        const cz = Math.sin(this.menuOrbitAngle) * radius - 90;
-        this.rig.camera.position.set(cx, 34, cz);
-        this.rig.camera.lookAt(0, 6, -90);
-        this.carVisual!.group.position.copy(this.car.state.pos);
-        this.carVisual!.group.quaternion.copy(this.car.state.quat);
+      if (this.menu.isGarageOpen) {
+        this.renderGaragePreview();
+      } else {
+        this.menuOrbitAngle += dt * 0.08;
+        if (this.curve && this.car) {
+          const radius = 60;
+          const cx = Math.cos(this.menuOrbitAngle) * radius;
+          const cz = Math.sin(this.menuOrbitAngle) * radius - 90;
+          this.rig.camera.position.set(cx, 34, cz);
+          this.rig.camera.lookAt(0, 6, -90);
+          this.carVisual!.group.position.copy(this.car.state.pos);
+          this.carVisual!.group.quaternion.copy(this.car.state.quat);
+        }
       }
       this.environment?.update(this.rig.camera.position);
       this.renderer.render(this.scene, this.rig.camera);

@@ -19,6 +19,14 @@ export interface Settings {
 
 const SAVE_KEY = 'race2.save.v1';
 const SETTINGS_KEY = 'race2.settings.v1';
+const PLAYER_KEY = 'race2.player.v1';
+
+export interface PlayerProfile {
+  paint: number;
+  body: 'standard' | 'aero' | 'tank';
+}
+
+const DEFAULT_PROFILE: PlayerProfile = { paint: 0x29e6ff, body: 'standard' };
 
 const DEFAULT_SETTINGS: Settings = {
   quality: 'auto',
@@ -41,10 +49,35 @@ export interface AllSaves {
 export class SaveManager {
   private saves: AllSaves;
   private _settings: Settings;
+  private _profile: PlayerProfile;
 
   constructor() {
     this.saves = this.loadSaves();
     this._settings = this.loadSettings();
+    this._profile = this.loadProfile();
+  }
+
+  private loadProfile(): PlayerProfile {
+    try {
+      const raw = localStorage.getItem(PLAYER_KEY);
+      if (raw) return { ...DEFAULT_PROFILE, ...(JSON.parse(raw) as Partial<PlayerProfile>) };
+    } catch {
+      /* corrupted — defaults */
+    }
+    return { ...DEFAULT_PROFILE };
+  }
+
+  get profile(): PlayerProfile {
+    return this._profile;
+  }
+
+  updateProfile(patch: Partial<PlayerProfile>): void {
+    this._profile = { ...this._profile, ...patch };
+    try {
+      localStorage.setItem(PLAYER_KEY, JSON.stringify(this._profile));
+    } catch {
+      /* storage blocked */
+    }
   }
 
   private loadSaves(): AllSaves {

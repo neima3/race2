@@ -2,8 +2,9 @@ import { el, formatTimePrecise } from './common';
 import type { SaveManager, Settings, QualityTier } from '../core/save';
 import type { TrackDef } from '../track/defs';
 import type { FinishResult } from '../game/race';
+import { PAINTS, type CarBodyStyle } from '../render/car-model';
 
-export type MenuScreen = 'title' | 'tracks' | 'settings' | 'none';
+export type MenuScreen = 'title' | 'tracks' | 'settings' | 'garage' | 'none';
 
 interface MedalState {
   author: boolean;
@@ -36,6 +37,10 @@ export class MenuManager {
   private settingsScreen: HTMLElement;
   private pauseScreen: HTMLElement;
   private finishScreen: HTMLElement;
+  private garageScreen: HTMLElement;
+  garageCanvas: HTMLCanvasElement | null = null;
+  isGarageOpen = false;
+  onGarageChange: (paint: number, body: CarBodyStyle) => void = () => {};
 
   constructor(private save: SaveManager, private tracks: TrackDef[]) {
     this.root = el('div', 'menu-layer');
@@ -45,8 +50,9 @@ export class MenuManager {
     this.settingsScreen = el('div', 'screen hidden');
     this.pauseScreen = this.buildPause();
     this.finishScreen = el('div', 'screen hidden');
+    this.garageScreen = el('div', 'screen hidden');
 
-    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.pauseScreen, this.finishScreen);
+    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.pauseScreen, this.finishScreen);
     this.buildTracksScreen();
   }
 
@@ -60,12 +66,17 @@ export class MenuManager {
     const buttons = el('div', 'menu-buttons');
     const play = el('button', 'menu-btn primary', 'PLAY');
     play.addEventListener('click', () => this.show('tracks'));
+    const garage = el('button', 'menu-btn', 'GARAGE');
+    garage.addEventListener('click', () => {
+      this.buildGarage();
+      this.show('garage');
+    });
     const settings = el('button', 'menu-btn', 'SETTINGS');
     settings.addEventListener('click', () => {
       this.buildSettingsScreen();
       this.show('settings');
     });
-    buttons.append(play, settings);
+    buttons.append(play, garage, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
     screen.append(logo, buttons, hint);
     return screen;
@@ -235,6 +246,54 @@ export class MenuManager {
     this.settingsScreen.append(header, list, controlsHelp);
   }
 
+  private buildGarage(): void {
+    this.garageScreen.replaceChildren();
+    const header = el('div', 'screen-header');
+    header.append(el('h2', 'screen-title', 'GARAGE'));
+    const back = el('button', 'menu-btn small', '&#8592; BACK');
+    back.addEventListener('click', () => this.show('title'));
+    header.append(back);
+
+    const wrap = el('div', 'garage-wrap');
+    this.garageCanvas = el('canvas', 'garage-canvas') as HTMLCanvasElement;
+    this.garageCanvas.width = 420;
+    this.garageCanvas.height = 280;
+    wrap.append(this.garageCanvas);
+
+    const profile = this.save.profile;
+    const paints = el('div', 'paint-grid');
+    for (const p of PAINTS) {
+      const sw = el('button', 'paint-swatch');
+      sw.style.background = '#' + p.color.toString(16).padStart(6, '0');
+      sw.title = p.name;
+      if (p.color === profile.paint) sw.classList.add('selected');
+      sw.addEventListener('click', () => {
+        this.save.updateProfile({ paint: p.color });
+        for (const s of paints.children) s.classList.remove('selected');
+        sw.classList.add('selected');
+        this.onGarageChange(p.color, this.save.profile.body);
+      });
+      paints.append(sw);
+    }
+    wrap.append(paints);
+
+    const bodies = el('div', 'body-grid');
+    for (const b of ['standard', 'aero', 'tank'] as CarBodyStyle[]) {
+      const btn = el('button', 'menu-btn small body-btn', b.toUpperCase());
+      if (b === profile.body) btn.classList.add('selected');
+      btn.addEventListener('click', () => {
+        this.save.updateProfile({ body: b });
+        for (const s of bodies.children) s.classList.remove('selected');
+        btn.classList.add('selected');
+        this.onGarageChange(this.save.profile.paint, b);
+      });
+      bodies.append(btn);
+    }
+    wrap.append(bodies);
+
+    this.garageScreen.append(header, wrap);
+  }
+
   private buildPause(): HTMLElement {
     const screen = el('div', 'screen overlay-screen hidden');
     const panel = el('div', 'panel');
@@ -323,7 +382,8 @@ export class MenuManager {
   }
 
   hideAll(): void {
-    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.pauseScreen, this.finishScreen]) {
+    this.isGarageOpen = false;
+    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.pauseScreen, this.finishScreen]) {
       s.classList.add('hidden');
     }
   }
@@ -335,6 +395,10 @@ export class MenuManager {
       this.buildTracksScreen();
       this.tracksScreen.classList.remove('hidden');
     } else if (screen === 'settings') this.settingsScreen.classList.remove('hidden');
+    else if (screen === 'garage') {
+      this.isGarageOpen = true;
+      this.garageScreen.classList.remove('hidden');
+    }
   }
 
   private patchSettings(patch: Partial<Settings>): void {

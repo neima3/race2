@@ -10,7 +10,22 @@ export interface CarVisual {
   setBodyPose(roll: number, pitch: number, squash: number): void;
 }
 
-export function buildCarVisual(paintColor = 0x29e6ff, ghost = false): CarVisual {
+export type CarBodyStyle = 'standard' | 'aero' | 'tank';
+
+export const PAINTS: { name: string; color: number }[] = [
+  { name: 'Cyan Flux', color: 0x29e6ff },
+  { name: 'Solar', color: 0xffb52e },
+  { name: 'Rose Rush', color: 0xff4d6d },
+  { name: 'Volt', color: 0x7dff6e },
+  { name: 'Ultra', color: 0xb44dff },
+  { name: 'Magma', color: 0xff5c39 },
+  { name: 'Frost', color: 0xe8f2ff },
+  { name: 'Midnight', color: 0x223055 },
+  { name: 'Lime Pop', color: 0xc8ff2e },
+  { name: 'Copper', color: 0xd78a4a },
+];
+
+export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarBodyStyle = 'standard'): CarVisual {
   const group = new THREE.Group();
   const bodyGroup = new THREE.Group();
   group.add(bodyGroup);
@@ -46,10 +61,19 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false): CarVisual 
     depthWrite: !ghost,
   });
 
-  const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.34, 3.4), bodyMat);
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(style === 'tank' ? 1.95 : style === 'aero' ? 1.55 : 1.7, style === 'tank' ? 0.45 : 0.34, 3.4), bodyMat);
   chassis.position.y = 0.42;
   chassis.castShadow = !ghost;
   bodyGroup.add(chassis);
+
+  if (style === 'tank') {
+    for (const sx of [-0.98, 0.98]) {
+      const pod = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 2.0), darkMat);
+      pod.position.set(sx, 0.42, -0.3);
+      pod.castShadow = !ghost;
+      bodyGroup.add(pod);
+    }
+  }
 
   const noseGeo = new THREE.BufferGeometry();
   noseGeo.setAttribute(
@@ -80,7 +104,7 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false): CarVisual 
   halo.position.set(0, 0.84, -0.1);
   bodyGroup.add(halo);
 
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.5), bodyMat);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(style === 'aero' ? 2.25 : style === 'tank' ? 1.7 : 1.9, style === 'aero' ? 0.06 : 0.09, 0.5), bodyMat);
   wing.position.set(0, 1.02, -1.72);
   wing.castShadow = !ghost;
   bodyGroup.add(wing);

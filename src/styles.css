@@ -722,3 +722,51 @@ button {
   .touch-controls { display: none; }
 }
 
+
+/* ---------- Garage ---------- */
+
+.garage-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: min(560px, 94vw);
+}
+
+.garage-canvas {
+  width: min(440px, 88vw);
+  height: auto;
+  aspect-ratio: 3 / 2;
+  border-radius: 14px;
+  background: radial-gradient(ellipse at 50% 40%, #1c2440, #0b0e1a);
+  border: 1px solid var(--panel-border);
+}
+
+.paint-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+
+.paint-swatch {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  transition: transform 100ms, border-color 150ms, box-shadow 150ms;
+}
+
+.paint-swatch:hover { transform: scale(1.08); }
+.paint-swatch.selected {
+  border-color: #fff;
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.45);
+  transform: scale(1.06);
+}
+
+.body-grid { display: flex; gap: 10px; }
+
+.body-btn.selected {
+  background: linear-gradient(135deg, #0fa8c4, #29e6ff);
+  color: #04121a;
+  border-color: transparent;
+}
