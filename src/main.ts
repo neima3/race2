@@ -484,7 +484,7 @@ class Game {
     }
     this.audio.ensureContext();
     this.audio.startEngine();
-    this.audio.startMusic();
+    this.audio.startMusic(def.theme);
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
     this.race!.start();
     this.ringsHit.clear();

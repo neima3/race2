@@ -1,3 +1,5 @@
+import { getPattern, type MusicTheme } from './music';
+
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -19,6 +21,8 @@ export class AudioEngine {
   private lastGear = -1;
   private shiftBlipUntil = 0;
   private musicLayers: { gain: GainNode; intense: boolean }[] = [];
+  private musicIntensity = 0;
+  private musicTheme: MusicTheme | null = null;
   private musicIntensity = 0;
   private ambienceNodes: { src: AudioBufferSourceNode; gain: GainNode; filter?: BiquadFilterNode }[] = [];
   private ambienceKind: string | null = null;
@@ -300,18 +304,17 @@ export class AudioEngine {
     this.ambienceKind = null;
   }
 
-  startMusic(): void {
+  startMusic(theme: MusicTheme = 'neon'): void {
+    if (this.ctx && this.musicTheme && this.musicTheme !== theme) this.stopMusic();
     if (!this.ctx || !this.musicGain || this.musicTimer !== null) return;
+    this.musicTheme = theme;
     const ctx = this.ctx;
-    const bpm = 128;
-    const stepDur = 60 / bpm / 4;
+    const pattern = getPattern(theme);
+    const stepDur = 60 / pattern.bpm / 4;
     this.musicStep = 0;
     this.musicNextTime = ctx.currentTime + 0.1;
 
-    const bass = [55, 55, 65.4, 55, 55, 55, 49, 49];
-    const arp = [440, 523, 659, 523, 392, 523, 659, 784, 587, 698, 880, 698, 523, 659, 784, 659];
-
-    const playNote = (freq: number, when: number, dur: number, type: OscillatorType, vol: number, layer = 0) => {
+    const playNote = (freq: number, when: number, dur: number, type: OscillatorType, vol: number, layer: 0 | 1 = 0) => {
       const osc = ctx.createOscillator();
       osc.type = type;
       osc.frequency.value = freq;
@@ -323,22 +326,36 @@ export class AudioEngine {
       osc.start(when);
       osc.stop(when + dur + 0.02);
     };
+    const playPerc = (freq: number, when: number, dur: number, vol: number) => {
+      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur) || 1, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      const srcNode = ctx.createBufferSource();
+      srcNode.buffer = buf;
+      const g = ctx.createGain();
+      g.gain.value = vol;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = freq;
+      srcNode.connect(hp);
+      hp.connect(g);
+      g.connect(this.musicLayers[1]?.gain ?? this.musicGain!);
+      srcNode.start(when);
+    };
 
     const tick = () => {
       if (!this.ctx || this.musicTimer === null) return;
       while (this.musicNextTime < ctx.currentTime + 0.2) {
-        const s = this.musicStep % 128;
-        const bar = Math.floor(s / 16) % 2;
-        if (s % 8 === 0) playNote(bass[(s / 8) % 8 | 0] ?? bass[0], this.musicNextTime, stepDur * 7, 'triangle', 0.5, 0);
-        if (bar === 0 && s % 2 === 0) playNote(arp[s % 16] / 2, this.musicNextTime, stepDur * 1.6, 'square', 0.05, 0);
-        if (bar === 1) playNote(arp[s % 16], this.musicNextTime, stepDur * 1.4, 'sawtooth', 0.035, 1);
-        if (s % 4 === 2) playNote(3200, this.musicNextTime, 0.03, 'square', 0.015, 1);
+        const s = this.musicStep % pattern.steps;
+        for (const b of pattern.bass) if (b.step === s) playNote(b.freq, this.musicNextTime, b.len * stepDur, b.type, b.vol, b.layer);
+        for (const l of pattern.lead) if (l.step === s) playNote(l.freq, this.musicNextTime, l.len * stepDur, l.type, l.vol, 1);
+        for (const p of pattern.perc) if (p.step === s) playPerc(p.freq, this.musicNextTime, p.len, p.vol);
         this.musicNextTime += stepDur;
         this.musicStep++;
       }
     };
     tick();
-    this.musicTimer = window.setInterval(tick, 120);
+    this.musicTimer = window.setInterval(tick, 100);
     if (this.musicLayers.length === 0) {
       for (const intense of [false, true]) {
         const g = ctx.createGain();
