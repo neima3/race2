@@ -17,6 +17,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { GarageSystem } from './systems/garage';
+import { buildTrackProps } from './render/props';
 import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem } from './render/particles';
 import { CameraRig } from './render/camera';
@@ -280,6 +281,7 @@ class Game {
 
     this.meshes = buildTrackMeshes(curve, def);
     this.trackGroup.add(this.meshes.group);
+    this.trackGroup.add(buildTrackProps(curve, def.theme, this.quality));
 
     if (this.quality !== 'low') {
       this.meshes.group.traverse((o) => {
