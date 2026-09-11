@@ -550,17 +550,23 @@ class Game {
       if (this.state !== 'menu') this.dynamicRes(fps);
     }
 
-    if (this.state === 'paused') {
-      this.renderFrame();
-      return;
-    }
-
     const input = this.input.sample(this.save.settings.steeringSensitivity);
 
     if (input.pause) {
-      if (this.state === 'racing' || this.state === 'countdown') this.pause();
-      else if (this.state === 'finished') this.quitToMenu();
-      else if (this.state === 'replay') this.stopReplay();
+      if (this.state === 'racing' || this.state === 'countdown') {
+        if (this.race?.phase !== 'finished') this.pause();
+      } else if (this.state === 'paused') {
+        this.resume();
+      } else if (this.state === 'finished') {
+        if (!this.lastFinish) this.quitToMenu();
+      } else if (this.state === 'replay') {
+        this.stopReplay();
+      }
+    }
+
+    if (this.state === 'paused') {
+      this.renderFrame();
+      return;
     }
 
     if (this.state === 'replay') {

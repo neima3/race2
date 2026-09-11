@@ -215,20 +215,20 @@ export class TrackCurve {
     const last = n - 1;
     const consider = (i: number): number => (i === last ? 0 : i);
     let best = -1;
-    let bestDist = Infinity;
+    let bestCost = Infinity;
     for (let k = -windowSize; k <= windowSize; k++) {
       const i = consider(((((hintIndex + k) % n) + n) % n));
-      const d = frames[i].pos.distanceToSquared(pos);
-      if (d < bestDist) {
-        bestDist = d;
+      const d = frames[i].pos.distanceToSquared(pos) + k * k * 0.16;
+      if (d < bestCost) {
+        bestCost = d;
         best = i;
       }
     }
-    if (best < 0 || bestDist > 3600) {
+    if (best < 0 || bestCost > 3600) {
       for (let i = 0; i < last; i++) {
         const d = frames[i].pos.distanceToSquared(pos);
-        if (d < bestDist) {
-          bestDist = d;
+        if (d < bestCost) {
+          bestCost = d;
           best = i;
         }
       }
