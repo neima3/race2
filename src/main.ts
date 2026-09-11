@@ -63,6 +63,8 @@ class Game {
   private offroadTime = 0;
   private boostKick = 0;
   private skidMarks: SkidMarks | null = null;
+  private frameMsAvg = 16;
+  private resScale = 1;
   private prevForwardSpeed = 0;
   private accelSmoothed = 0;
   private skidPrevL: THREE.Vector3 | null = null;
@@ -154,6 +156,20 @@ class Game {
     this.renderer.shadowMap.enabled = this.quality !== 'low';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.onResize();
+  }
+
+  private dynamicRes(fps: number): void {
+    if (this.save.settings.quality !== 'auto') return;
+    const base = this.quality === 'low' ? 1.4 : this.quality === 'medium' ? 1.8 : 2.2;
+    const cap = Math.min(window.devicePixelRatio, base) * this.resScale;
+    if (fps < 48 && this.resScale > 0.6) {
+      this.resScale = Math.max(0.6, this.resScale - 0.15);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, base) * this.resScale);
+    } else if (fps > 58 && this.resScale < 1) {
+      this.resScale = Math.min(1, this.resScale + 0.1);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, base) * this.resScale);
+    }
+    void cap;
   }
 
   private onResize(): void {
@@ -422,6 +438,7 @@ class Game {
       const fps = this.fpsFrames / this.fpsTime;
       this.fpsFrames = 0;
       this.fpsTime = 0;
+      this.frameMsAvg = (this.frameMsAvg * 0.5 + (1000 / Math.max(1, fps)) * 0.5);
       if (fps < 42) this.lowFpsStreak++;
       else this.lowFpsStreak = 0;
       if (this.lowFpsStreak >= 2 && this.quality !== 'low' && this.save.settings.quality === 'auto') {
@@ -430,6 +447,7 @@ class Game {
         this.rebuildScene();
         this.lowFpsStreak = 0;
       }
+      if (this.state !== 'menu') this.dynamicRes(fps);
     }
 
     if (this.state === 'paused') {
