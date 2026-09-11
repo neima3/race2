@@ -4,6 +4,7 @@ import type { CarState } from '../physics/car';
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
   mode: 'chase' | 'hood' = 'chase';
+  boostKick = 0;
   private camPos = new THREE.Vector3();
   private camLook = new THREE.Vector3();
   private shake = 0;
@@ -35,9 +36,11 @@ export class CameraRig {
 
   update(dt: number, state: CarState): void {
     this.shake = Math.max(0, this.shake - dt * 2.2);
+    this.boostKick = Math.max(0, this.boostKick - dt * 1.4);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(state.quat);
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(state.quat);
     const speedRatio = Math.min(1, state.speed / 58);
+    const kick = this.boostKick * 9;
 
     if (this.mode === 'hood') {
       const eye = state.pos.clone().addScaledVector(up, 1.05).addScaledVector(forward, 0.5);
@@ -57,7 +60,7 @@ export class CameraRig {
       const worldUp = up;
       this.camera.up.lerp(worldUp, 1 - Math.exp(-(state.grounded ? 8 : 2.2) * dt));
       this.camera.lookAt(this.camLook);
-      this.camera.fov = 62 + speedRatio * 22;
+      this.camera.fov = 62 + speedRatio * 22 + kick;
     }
 
     if (this.shake > 0) {

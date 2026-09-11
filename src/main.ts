@@ -8,6 +8,7 @@ import { TRACKS, type TrackDef } from './track/defs';
 import { buildTrackMeshes, type TrackMeshes } from './track/builder';
 import { CarPhysics } from './physics/car';
 import { buildCarVisual, type CarVisual } from './render/car-model';
+import { SkidMarks } from './render/skidmarks';
 import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem } from './render/particles';
 import { CameraRig } from './render/camera';
@@ -56,6 +57,14 @@ class Game {
   private autoDbg: Record<string, number> = {};
   private runtimeMuted: boolean;
   private offroadTime = 0;
+  private boostKick = 0;
+  private skidMarks: SkidMarks | null = null;
+  private prevForwardSpeed = 0;
+  private accelSmoothed = 0;
+  private skidPrevL: THREE.Vector3 | null = null;
+  private skidPrevR: THREE.Vector3 | null = null;
+  private skidPrevL2: THREE.Vector3 | null = null;
+  private skidPrevR2: THREE.Vector3 | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.runtimeMuted =
@@ -193,6 +202,12 @@ class Game {
 
     this.car = new CarPhysics(curve);
     this.car.placeAtFrame(0, 8);
+    if (this.skidMarks) {
+      this.scene.remove(this.skidMarks.mesh);
+      this.skidMarks = null;
+    }
+    this.skidMarks = new SkidMarks();
+    this.trackGroup.add(this.skidMarks.mesh);
 
     this.carVisual = buildCarVisual(0x29e6ff);
     this.carVisual.group.traverse((o) => {
@@ -288,6 +303,7 @@ class Game {
       this.audio.boost();
       this.input.rumble(0.7, 0.4, 220);
       this.rig.addShake(0.5);
+      this.boostKick = 1;
     } else if (ev === 'wallHit') {
       this.audio.crash();
       this.input.rumble(0.9, 0.6, 180);
@@ -306,6 +322,7 @@ class Game {
       this.input.rumble(0.8, 0.5, 140);
       this.rig.addShake(Math.min(0.9, l.airTime * 0.8));
       if (this.car) this.particles.landingDust(this.car.state.pos.clone());
+      this.carVisual?.setBodyPose(0, 0, Math.min(0.34, l.airTime * 0.45));
     } else if (ev === 'respawn') {
       this.rig.snapBehind(this.car!.state);
     } else if (ev === 'finish') {
@@ -399,6 +416,40 @@ class Game {
       if (i < 2) w.rotation.y = -input.steer * 0.42;
     }
 
+    const accel = (s.forwardSpeed - this.prevForwardSpeed) / Math.max(dt, 0.001);
+    this.prevForwardSpeed = s.forwardSpeed;
+    this.accelSmoothed += (accel - this.accelSmoothed) * Math.min(1, 6 * dt);
+    const bodyRoll = -this.car!.currentYawRate * 0.055 - s.driftAmount * input.steer * 0.05;
+    const bodyPitch = -this.accelSmoothed * 0.0032;
+    const squash = s.grounded ? 0 : Math.min(0.3, s.airborneTime * 0.25);
+    this.carVisual!.setBodyPose(bodyRoll, bodyPitch, squash);
+
+    if (this.skidMarks) {
+      this.skidMarks.fadeAll(dt);
+      if (s.driftAmount > 0.3 && s.grounded && s.speed > 10) {
+        const rearZ = -1.18;
+        const offsets = [-0.92, 0.92].map((x) => new THREE.Vector3(x, -0.3, rearZ).applyQuaternion(s.quat).add(s.pos));
+        const widthDir = new THREE.Vector3(1, 0, 0).applyQuaternion(s.quat).multiplyScalar(0.14);
+        const l = offsets[0].clone().addScaledVector(widthDir, -1).setY(offsets[0].y - 0.28);
+        const r = offsets[0].clone().addScaledVector(widthDir, 1).setY(offsets[0].y - 0.28);
+        const l2 = offsets[1].clone().addScaledVector(widthDir, -1).setY(offsets[1].y - 0.28);
+        const r2 = offsets[1].clone().addScaledVector(widthDir, 1).setY(offsets[1].y - 0.28);
+        if (this.skidPrevL && this.skidPrevR) {
+          this.skidMarks.addSegment(l, r, this.skidPrevL, this.skidPrevR, s.driftAmount);
+          this.skidMarks.addSegment(l2, r2, this.skidPrevL2 ?? l2, this.skidPrevR2 ?? r2, s.driftAmount);
+        }
+        this.skidPrevL = l;
+        this.skidPrevR = r;
+        this.skidPrevL2 = l2;
+        this.skidPrevR2 = r2;
+      } else {
+        this.skidPrevL = null;
+        this.skidPrevR = null;
+        this.skidPrevL2 = null;
+        this.skidPrevR2 = null;
+      }
+    }
+
     if (this.state === 'racing') {
       const gh = this.race!.ghostSampleAt(this.race!.elapsedMs);
       if (gh && this.save.settings.showGhost) {
@@ -457,6 +508,8 @@ class Game {
     }
 
     this.rig.setLookBack(input.lookBack);
+    this.rig.boostKick = this.boostKick;
+    this.boostKick = 0;
     this.rig.update(dt, s);
     this.environment?.update(this.rig.camera.position);
     this.particles.update(dt);

@@ -77,6 +77,9 @@ export class CarPhysics {
   private targetQuat = new THREE.Quaternion();
   private m = new THREE.Matrix4();
   private yawRate = 0;
+  get currentYawRate(): number {
+    return this.yawRate;
+  }
   private prevSignedDist = 0;
 
   constructor(curve: TrackCurve, tuning: Partial<CarTuning> = {}) {

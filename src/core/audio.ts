@@ -16,6 +16,8 @@ export class AudioEngine {
   private musicTimer: number | null = null;
   private musicStep = 0;
   private musicNextTime = 0;
+  private lastGear = -1;
+  private shiftBlipUntil = 0;
 
   musicEnabled = true;
   sfxEnabled = true;
@@ -94,12 +96,22 @@ export class AudioEngine {
   updateEngine(speedRatio: number, throttle: number, airborne: boolean): void {
     if (!this.ctx || !this.engineOsc1 || !this.engineOsc2 || !this.engineGain || !this.engineFilter || !this.windGain || !this.windFilter) return;
     const t = this.ctx.currentTime;
-    const rpm = 0.16 + speedRatio * 0.9 + throttle * 0.1;
-    const f = 42 + rpm * 118;
-    this.engineOsc1.frequency.setTargetAtTime(f, t, 0.05);
-    this.engineOsc2.frequency.setTargetAtTime(f * 0.5, t, 0.05);
-    this.engineFilter.frequency.setTargetAtTime(420 + rpm * 1900, t, 0.06);
-    this.engineGain.gain.setTargetAtTime(0.05 + throttle * 0.06 + speedRatio * 0.05, t, 0.08);
+    const gears = 6;
+    const clamped = Math.min(0.999, speedRatio);
+    const gear = Math.min(gears - 1, Math.floor(clamped * gears));
+    const inGear = clamped * gears - gear;
+    const rpm = 0.25 + inGear * 0.75;
+    const f = 46 + rpm * 112 + gear * 6;
+    this.engineOsc1.frequency.setTargetAtTime(f, t, 0.035);
+    this.engineOsc2.frequency.setTargetAtTime(f * 0.5, t, 0.035);
+    this.engineFilter.frequency.setTargetAtTime(420 + rpm * 1900 + gear * 180, t, 0.05);
+    const shiftCut = this.lastGear !== gear && this.lastGear >= 0 ? 0.35 : 1;
+    if (this.lastGear !== gear) {
+      this.lastGear = gear;
+      this.shiftBlipUntil = t + 0.09;
+    }
+    if (t < this.shiftBlipUntil) this.engineGain.gain.setTargetAtTime(0.02, t, 0.01);
+    else this.engineGain.gain.setTargetAtTime((0.05 + throttle * 0.06 + speedRatio * 0.05) * shiftCut, t, 0.08);
     this.windGain.gain.setTargetAtTime(airborne ? 0.02 + speedRatio * 0.06 : speedRatio * speedRatio * 0.09, t, 0.1);
     this.windFilter.frequency.setTargetAtTime(300 + speedRatio * 900, t, 0.1);
   }
