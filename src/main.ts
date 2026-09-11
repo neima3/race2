@@ -25,7 +25,7 @@ import { HUD } from './ui/hud';
 import { MenuManager } from './ui/menus';
 import { TouchControls } from './ui/touch';
 
-type AppState = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished';
+type AppState = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished' | 'replay';
 
 const kmh = 3.6;
 
@@ -81,6 +81,9 @@ class Game {
   private slowmoUntil = 0;
   private ringsHit = new Set<string>();
   private driftScore = 0;
+  private replayCar: CarVisual | null = null;
+  private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
+  private lastFinish: { result: RaceEvents['finish']; hasNext: boolean } | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.runtimeMuted =
@@ -110,6 +113,7 @@ class Game {
     this.menu.onGarageChange = (paint, body) => {
       this.applyPlayerStyle(paint, body);
     };
+    this.menu.onWatchReplay = () => this.startReplay();
     this.garage = new GarageSystem(this.save);
     this.menu.onSettingsChanged = (s) => {
       this.audio.setMusicEnabled(this.runtimeMuted ? false : s.music);
@@ -424,11 +428,86 @@ class Game {
         this.hud.clearCenter();
         this.hud.showRespawnHint(false);
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
-        this.menu.showFinish(this.track, r, idx < TRACKS.length - 1);
+        const hasNext = idx < TRACKS.length - 1;
+        this.lastFinish = { result: r, hasNext };
+        this.menu.showFinish(this.track, r, hasNext);
         this.touch.hide();
         this.audio.stopEngine();
       }, 1400);
     }
+  }
+
+  private startReplay(): void {
+    const samples = this.race?.lastLapSamples ?? [];
+    if (samples.length < 10) return;
+    if (!this.replayCar) {
+      this.replayCar = buildCarVisual(this.save.profile.paint, false, this.save.profile.body);
+      this.trackGroup!.add(this.replayCar.group);
+    }
+    this.replayCar.group.visible = true;
+    this.replay = { samples, t: samples[0].t, camPos: new THREE.Vector3(), nextSwap: 0 };
+    this.state = 'replay';
+    this.menu.hideAll();
+    this.hud.hide();
+    this.touch.hide();
+  }
+
+  private stopReplay(): void {
+    if (this.replayCar) this.replayCar.group.visible = false;
+    this.replay = null;
+    this.state = 'finished';
+    if (this.lastFinish) this.menu.showFinish(this.track, this.lastFinish.result as RaceEvents['finish'], this.lastFinish.hasNext);
+  }
+
+  private updateReplay(dt: number): void {
+    if (!this.replay || !this.replayCar) return;
+    const { samples } = this.replay;
+    this.replay.t += dt * 1000;
+    const t = this.replay.t;
+    const last = samples[samples.length - 1];
+    if (t >= last.t + 800) {
+      this.stopReplay();
+      return;
+    }
+    let lo = 0;
+    let hi = samples.length - 1;
+    if (t <= samples[0].t) {
+      lo = 0;
+      hi = 1;
+    } else {
+      while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1;
+        if (samples[mid].t < t) lo = mid;
+        else hi = mid;
+      }
+    }
+    const a = samples[lo];
+    const b = samples[hi];
+    const k = Math.max(0, Math.min(1, (t - a.t) / Math.max(1, b.t - a.t)));
+    this.replayCar.group.position.copy(a.pos).lerp(b.pos, k);
+    this.replayCar.group.quaternion.copy(a.quat).slerp(b.quat, k);
+    const wheels = this.replayCar.wheels;
+    const spd = a.pos.distanceTo(b.pos) / Math.max(0.016, (b.t - a.t) / 1000);
+    this.replayCar.wheelSpin += (spd / 0.34) * dt;
+    for (const w of wheels) w.rotation.x = this.replayCar.wheelSpin;
+
+    if (t >= this.replay.nextSwap) {
+      this.replay.nextSwap = t + 6500;
+      const carPos = this.replayCar.group.position;
+      const idx = this.curve!.closestFrameIndex(carPos, this.car!.state.trackIndex, 40);
+      const f = this.curve!.frames[idx];
+      const side = Math.random() > 0.5 ? 1 : -1;
+      this.replay.camPos
+        .copy(f.pos)
+        .addScaledVector(f.binormal, side * (f.halfWidth + 8 + Math.random() * 6))
+        .addScaledVector(f.normal, 3.5 + Math.random() * 3);
+    }
+    const cam = this.rig.camera;
+    cam.position.lerp(this.replay.camPos, 1 - Math.exp(-2.2 * dt));
+    cam.up.set(0, 1, 0);
+    cam.lookAt(this.replayCar.group.position);
+    cam.fov = 55;
+    cam.updateProjectionMatrix();
   }
 
   private frame = (now: number): void => {
@@ -466,6 +545,16 @@ class Game {
     if (input.pause) {
       if (this.state === 'racing' || this.state === 'countdown') this.pause();
       else if (this.state === 'finished') this.quitToMenu();
+    }
+
+    if (this.state === 'replay') {
+      this.updateReplay(dt);
+      const input2 = this.input.sample(this.save.settings.steeringSensitivity);
+      if (input2.pause) this.stopReplay();
+      this.environment?.update(this.rig.camera.position);
+      this.particles.update(dt);
+      this.renderFrame();
+      return;
     }
 
     if (this.state === 'menu') {

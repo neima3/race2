@@ -158,6 +158,10 @@ export class RaceController {
     return playerSplit - gt;
   }
 
+  get lastLapSamples(): GhostSample[] {
+    return this.recording;
+  }
+
   ghostDistAt(elapsedMs: number): number | null {
     if (!this.ghostActive || this.ghostDists.length < 2) return null;
     const g = this.ghost;

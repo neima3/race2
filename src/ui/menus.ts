@@ -32,6 +32,8 @@ export class MenuManager {
   onSettingsChanged: (s: Settings) => void = () => {};
   onTiltRequest: () => void = () => {};
 
+  onWatchReplay: () => void = () => {};
+
   private titleScreen: HTMLElement;
   private tracksScreen: HTMLElement;
   private settingsScreen: HTMLElement;
@@ -360,6 +362,8 @@ export class MenuManager {
     `;
     const retry = el('button', 'menu-btn primary', 'RETRY');
     retry.addEventListener('click', () => this.onRestart());
+    const replay = el('button', 'menu-btn', '&#9654; WATCH REPLAY');
+    replay.addEventListener('click', () => this.onWatchReplay());
     if (hasNext) {
       const next = el('button', 'menu-btn', 'NEXT TRACK &#8594;');
       next.addEventListener('click', () => {
@@ -373,7 +377,7 @@ export class MenuManager {
       this.hideAll();
       this.show('tracks');
     });
-    panel.append(retry, menu);
+    panel.append(retry, replay, menu);
     this.finishScreen.append(panel);
     this.finishScreen.classList.remove('hidden');
   }
