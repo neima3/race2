@@ -593,9 +593,40 @@ window.__race2 = {
       const angle = Math.atan2(local.x, local.z);
       const steer = Math.max(-1, Math.min(1, -angle * 2.4));
       const absA = Math.abs(angle);
-      const throttle = absA > 1.1 ? 0.2 : absA > 0.45 ? 0.5 : 1;
-      const brake = absA > 0.9 && s.speed > 4 ? 0.8 : 0;
-      game['autoDbg'] = { angle: +angle.toFixed(2), steer: +steer.toFixed(2), throttle, brake, heading: +headingErr.toFixed(2), lat: +s.lateral.toFixed(1), spd: +s.speed.toFixed(1) };
+
+      const probe = {
+        pos: new THREE.Vector3(),
+        tangent: new THREE.Vector3(),
+        normal: new THREE.Vector3(),
+        binormal: new THREE.Vector3(),
+        halfWidth: 0,
+        dist: 0,
+      };
+      let maxCurv = 0;
+      let prevTangent: THREE.Vector3 | null = null;
+      for (const dd of [8, 18, 28, 38, 50]) {
+        curve.frameAtDist(s.trackDist + dd, probe);
+        if (prevTangent) {
+          const ang = prevTangent.angleTo(probe.tangent);
+          const seg = 10;
+          maxCurv = Math.max(maxCurv, ang / seg);
+        }
+        prevTangent = probe.tangent.clone();
+      }
+      const targetSpeed = Math.min(58, Math.max(14, Math.sqrt(38 / Math.max(maxCurv, 1e-4))));
+      let throttle: number;
+      let brake: number;
+      if (s.forwardSpeed > targetSpeed * 1.1) {
+        throttle = 0;
+        brake = 0.75;
+      } else if (s.forwardSpeed > targetSpeed * 0.95) {
+        throttle = 0.3;
+        brake = 0;
+      } else {
+        throttle = absA > 1.1 ? 0.3 : 1;
+        brake = 0;
+      }
+      game['autoDbg'] = { angle: +angle.toFixed(2), steer: +steer.toFixed(2), throttle, brake, tgt: Math.round(targetSpeed), spd: +s.speed.toFixed(1) };
       game['input'].setVirtual({ steer, throttle, brake, drift: false });
       } catch (e) {
         game['autoDbg'] = { err: 1, msg: 0 };
