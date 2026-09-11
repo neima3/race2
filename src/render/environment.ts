@@ -1,15 +1,16 @@
 import * as THREE from 'three';
+import type { ThemeDef } from '../track/defs';
 
-function makeSkyMaterial(): THREE.ShaderMaterial {
+function makeSkyMaterial(theme: ThemeDef): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
-      topColor: { value: new THREE.Color(0x1a2440) },
-      midColor: { value: new THREE.Color(0x7a4a8c) },
-      horizonColor: { value: new THREE.Color(0xff9a4d) },
-      sunColor: { value: new THREE.Color(0xffe9b0) },
-      sunDir: { value: new THREE.Vector3(-0.55, 0.28, -0.79).normalize() },
+      topColor: { value: new THREE.Color(theme.skyTop) },
+      midColor: { value: new THREE.Color(theme.skyMid) },
+      horizonColor: { value: new THREE.Color(theme.skyHorizon) },
+      sunColor: { value: new THREE.Color(theme.sunColor) },
+      sunDir: { value: new THREE.Vector3(...theme.sunDir).normalize() },
     },
     vertexShader: `
       varying vec3 vDir;
@@ -35,7 +36,7 @@ function makeSkyMaterial(): THREE.ShaderMaterial {
         col += sunColor * pow(sunAmt, 18.0) * 0.32;
         col += vec3(1.0, 0.75, 0.45) * pow(sunAmt, 3.5) * 0.12;
         float stars = step(0.9993, fract(sin(dot(floor(vDir * 260.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453));
-        col += stars * smoothstep(0.1, 0.5, h) * 0.55;
+        col += stars * smoothstep(0.05, 0.4, h) * 0.55;
         gl_FragColor = vec4(col, 1.0);
       }
     `,
@@ -84,17 +85,17 @@ export interface Environment {
   update(cameraPos: THREE.Vector3): void;
 }
 
-export function buildEnvironment(scene: THREE.Scene, quality: 'low' | 'medium' | 'high'): Environment {
+export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: 'low' | 'medium' | 'high'): Environment {
   const group = new THREE.Group();
   scene.add(group);
 
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(4200, 32, 18), makeSkyMaterial());
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(4200, 32, 18), makeSkyMaterial(theme));
   group.add(sky);
 
-  scene.fog = new THREE.Fog(0xd88a5c, 260, 2400);
+  scene.fog = new THREE.Fog(theme.fogColor, theme.fogNear, theme.fogFar);
 
-  const sunLight = new THREE.DirectionalLight(0xffd9a0, 2.6);
-  sunLight.position.set(-420, 220, -640);
+  const sunLight = new THREE.DirectionalLight(theme.sunColor, theme.sunIntensity);
+  const sunOffset = new THREE.Vector3(...theme.sunDir).normalize().multiplyScalar(460);
   if (quality !== 'low') {
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024);
@@ -110,18 +111,18 @@ export function buildEnvironment(scene: THREE.Scene, quality: 'low' | 'medium' |
   scene.add(sunLight);
   scene.add(sunLight.target);
 
-  const hemiLight = new THREE.HemisphereLight(0x8fb4ff, 0x8a5a3a, 0.85);
+  const hemiLight = new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, 0.85);
   scene.add(hemiLight);
 
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x7a4f34, roughness: 1 });
+  const groundMat = new THREE.MeshStandardMaterial({ color: theme.groundColor, roughness: 1 });
   const ground = new THREE.Mesh(new THREE.CircleGeometry(3600, 48), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.35;
   group.add(ground);
 
   const rng = seededRandom(1337);
-  const mesaMat = new THREE.MeshStandardMaterial({ color: 0x9c5a38, roughness: 0.95, flatShading: true });
-  const mesaMatFar = new THREE.MeshStandardMaterial({ color: 0x6e4468, roughness: 1, flatShading: true });
+  const mesaMat = new THREE.MeshStandardMaterial({ color: theme.mesaColor, roughness: 0.95, flatShading: true });
+  const mesaMatFar = new THREE.MeshStandardMaterial({ color: theme.mesaFarColor, roughness: 1, flatShading: true });
   const mesaGeoCache = new Map<string, THREE.BufferGeometry>();
   for (let i = 0; i < 26; i++) {
     const a = rng() * Math.PI * 2;
@@ -143,7 +144,7 @@ export function buildEnvironment(scene: THREE.Scene, quality: 'low' | 'medium' |
     group.add(m);
   }
 
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x8a5638, roughness: 1, flatShading: true });
+  const rockMat = new THREE.MeshStandardMaterial({ color: theme.rockColor, roughness: 1, flatShading: true });
   const rockGeo = new THREE.DodecahedronGeometry(1, 0);
   const rocks = new THREE.InstancedMesh(rockGeo, rockMat, 140);
   const dummy = new THREE.Object3D();
@@ -159,7 +160,7 @@ export function buildEnvironment(scene: THREE.Scene, quality: 'low' | 'medium' |
   }
   group.add(rocks);
 
-  const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffc9a0, transparent: true, opacity: 0.55, fog: false });
+  const cloudMat = new THREE.MeshBasicMaterial({ color: theme.cloudColor, transparent: true, opacity: theme.cloudOpacity, fog: false });
   const clouds = new THREE.Group();
   for (let i = 0; i < 14; i++) {
     const cloud = new THREE.Group();
@@ -182,7 +183,7 @@ export function buildEnvironment(scene: THREE.Scene, quality: 'low' | 'medium' |
     ground.position.x = cameraPos.x;
     ground.position.z = cameraPos.z;
     sunLight.target.position.copy(cameraPos);
-    sunLight.position.copy(cameraPos).add(new THREE.Vector3(-280, 260, -380));
+    sunLight.position.copy(cameraPos).add(sunOffset);
   };
 
   return { group, sunLight, hemiLight, update };

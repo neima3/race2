@@ -4,7 +4,7 @@ import { InputManager } from './core/input';
 import { SaveManager } from './core/save';
 import { AudioEngine } from './core/audio';
 import { TrackCurve } from './track/curve';
-import { TRACKS, type TrackDef } from './track/defs';
+import { TRACKS, THEMES, type TrackDef } from './track/defs';
 import { buildTrackMeshes, type TrackMeshes } from './track/builder';
 import { CarPhysics } from './physics/car';
 import { buildCarVisual, type CarVisual } from './render/car-model';
@@ -186,7 +186,7 @@ class Game {
     const curve = new TrackCurve(def.points, true);
     this.curve = curve;
 
-    this.environment = buildEnvironment(this.scene, this.quality);
+    this.environment = buildEnvironment(this.scene, THEMES[def.theme], this.quality);
     this.trackGroup = new THREE.Group();
     this.scene.add(this.trackGroup);
     this.scene.add(this.particles.points);
