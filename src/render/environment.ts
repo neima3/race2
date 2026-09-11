@@ -302,7 +302,7 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
   group.add(reflectors);
 
   const waterRef = { mesh: null as THREE.Mesh | null };
-  if (false && (theme.ambientSound === 'birds' || theme.ambientSound === 'waves')) {
+  if (theme.ambientSound === 'birds' || theme.ambientSound === 'waves') {
     const waterGeo = new THREE.CircleGeometry(3200, 40);
     const waterMat = new THREE.ShaderMaterial({
       transparent: true,
