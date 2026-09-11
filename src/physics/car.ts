@@ -46,6 +46,7 @@ export interface CarState {
   airborneTime: number;
   boostTime: number;
   wallHit: number;
+  onSlick: boolean;
   landedAt: number;
 }
 
@@ -100,6 +101,7 @@ export class CarPhysics {
       airborneTime: 0,
       boostTime: 0,
       wallHit: 0,
+      onSlick: false,
       landedAt: -10,
     };
   }
@@ -177,7 +179,8 @@ export class CarPhysics {
       const slopeAccel = worldDown.dot(forward) * t.gravity * 0.55;
       vF += slopeAccel * dt;
 
-      const grip = drift ? t.driftGrip : t.grip;
+      const gripBase = drift ? t.driftGrip : t.grip;
+      const grip = s.onSlick ? gripBase * 0.45 : gripBase;
       const gripMult = s.offroad ? t.offroadGrip / t.grip : 1;
       vL *= Math.max(0, 1 - grip * gripMult * dt);
 
@@ -186,7 +189,8 @@ export class CarPhysics {
       if (s.boostTime > 0 && vF < t.maxSpeed * 1.18) vF += 26 * dt;
 
       const speed = Math.abs(vF);
-      const yawCap = Math.min(t.maxYawRate, 38 / Math.max(speed, 3));
+      const yawCapRaw = Math.min(t.maxYawRate, 38 / Math.max(speed, 3));
+      const yawCap = yawCapRaw * (s.onSlick ? 0.75 : 1);
       const steerAuth = controlsEnabled ? steer : 0;
       let targetYaw = -steerAuth * yawCap;
       if (drift) targetYaw *= 1.4;

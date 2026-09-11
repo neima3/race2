@@ -237,6 +237,19 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef): TrackMeshes 
   gateGroup.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(startF.normal, startF.tangent).normalize(), startF.normal, startF.tangent));
   group.add(gateGroup);
 
+  for (const sl of def.slicks ?? []) {
+    const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
+    curve.frameAtDist(sl.dist, f);
+    const patch = new THREE.Mesh(
+      new THREE.PlaneGeometry(sl.w, sl.l),
+      new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.15, metalness: 0.6 }),
+    );
+    patch.position.copy(f.pos).addScaledVector(f.binormal, sl.lateral).addScaledVector(f.normal, 0.03);
+    patch.rotation.setFromRotationMatrix(new THREE.Matrix4().makeBasis(f.binormal, f.normal, f.tangent));
+    patch.rotateX(-Math.PI / 2);
+    group.add(patch);
+  }
+
   const rings: TrackMeshes['rings'] = [];
   const ringGroup = new THREE.Group();
   for (const r of def.rings ?? []) {

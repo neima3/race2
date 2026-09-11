@@ -72,6 +72,7 @@ class Game {
   private composer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
   private offroadTime = 0;
+  private wasOnSlick = false;
   private boostKick = 0;
   private skidMarks: SkidMarks | null = null;
   private shadowBlob: THREE.Sprite | null = null;
@@ -760,6 +761,23 @@ class Game {
 
     const simDt = 1 / 120;
     const timeScale = performance.now() < this.slowmoUntil ? 0.35 : 1;
+
+    let onSlick = false;
+    for (const sl of this.track.slicks ?? []) {
+      if (Math.abs(this.car!.state.trackDist - sl.dist) < sl.l / 2 && Math.abs(this.car!.state.lateral - sl.lateral) < sl.w / 2) {
+        onSlick = true;
+        break;
+      }
+    }
+    this.car!.state.onSlick = onSlick;
+    if (onSlick !== this.wasOnSlick && Math.abs(this.car!.state.forwardSpeed) > 12) {
+      this.particles.landingDust(this.car!.state.pos.clone());
+      this.audio.drift();
+      this.wasOnSlick = onSlick;
+    } else {
+      this.wasOnSlick = onSlick;
+    }
+
     this.acc += dt * timeScale;
     let steps = 0;
     while (this.acc >= simDt && steps < 8) {
