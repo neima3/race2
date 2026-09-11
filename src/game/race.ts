@@ -158,6 +158,22 @@ export class RaceController {
     return playerSplit - gt;
   }
 
+  ghostDistAt(elapsedMs: number): number | null {
+    if (!this.ghostActive || this.ghostDists.length < 2) return null;
+    const g = this.ghost;
+    if (elapsedMs <= g[0].t) return this.ghostDists[0];
+    if (elapsedMs >= g[g.length - 1].t) return this.ghostDists[this.ghostDists.length - 1];
+    let lo = 0;
+    let hi = g.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (g[mid].t < elapsedMs) lo = mid;
+      else hi = mid;
+    }
+    const t = (elapsedMs - g[lo].t) / Math.max(1, g[hi].t - g[lo].t);
+    return this.ghostDists[lo] + (this.ghostDists[hi] - this.ghostDists[lo]) * t;
+  }
+
   liveGhostDelta(currentDist: number, elapsedMs: number): number | null {
     if (!this.ghostActive || this.ghostDists.length < 2) return null;
     const d = this.ghostDists;

@@ -16,6 +16,10 @@ export class HUD {
   private liveDeltaEl: HTMLElement;
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
+  private progressTrack: HTMLElement;
+  private progressPlayer: HTMLElement;
+  private progressGhost: HTMLElement;
+  private progressTicks: HTMLElement;
 
   constructor() {
     this.root = el('div', 'hud hidden');
@@ -41,19 +45,34 @@ export class HUD {
     const bottomBar = el('div', 'hud-bottom');
     bottomBar.append(this.driftEl, speedWrap);
 
+    this.progressTrack = el('div', 'progress-track');
+    this.progressTicks = el('div', 'progress-ticks');
+    this.progressGhost = el('div', 'progress-dot ghost');
+    this.progressPlayer = el('div', 'progress-dot player');
+    this.progressTrack.append(this.progressTicks, this.progressGhost, this.progressPlayer);
+
     this.centerEl = el('div', 'hud-center');
     this.splitToast = el('div', 'hud-split-toast');
     this.respawnHint = el('div', 'hud-respawn-hint', 'OFF TRACK &mdash; RESPAWN &#8634; / X');
 
-    this.root.append(topBar, bottomBar, this.centerEl, this.splitToast, this.respawnHint);
+    this.root.append(topBar, bottomBar, this.progressTrack, this.centerEl, this.splitToast, this.respawnHint);
   }
 
-  show(trackName: string, bestMs: number | null, cpTotal: number): void {
+  show(trackName: string, bestMs: number | null, cpTotal: number, cpDists: number[] = [], trackLen = 1): void {
     this.trackNameEl.textContent = trackName;
     this.bestEl.textContent = bestMs != null ? `PB ${formatTimePrecise(bestMs)}` : '';
     this.cpEl.textContent = `CP 0/${cpTotal}`;
     this.timerEl.textContent = '0:00.000';
     this.speedEl.textContent = '0';
+    this.progressTicks.replaceChildren();
+    for (const d of cpDists) {
+      const tick = el('div', 'progress-tick');
+      tick.style.left = `${(d / trackLen) * 100}%`;
+      this.progressTicks.append(tick);
+    }
+    this.progressPlayer.style.left = '0%';
+    this.progressGhost.style.left = '0%';
+    this.progressGhost.style.display = 'none';
     this.root.classList.remove('hidden');
   }
 
@@ -101,6 +120,16 @@ export class HUD {
     this.splitToast.classList.add('show');
     if (this.toastTimer !== null) clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.splitToast.classList.remove('show'), 1600);
+  }
+
+  updateProgress(playerRatio: number, ghostRatio: number | null): void {
+    this.progressPlayer.style.left = `${Math.min(100, Math.max(0, playerRatio * 100))}%`;
+    if (ghostRatio === null) {
+      this.progressGhost.style.display = 'none';
+    } else {
+      this.progressGhost.style.display = 'block';
+      this.progressGhost.style.left = `${Math.min(100, Math.max(0, ghostRatio * 100))}%`;
+    }
   }
 
   showRespawnHint(show: boolean): void {

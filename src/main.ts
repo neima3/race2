@@ -5,6 +5,10 @@ import { SaveManager } from './core/save';
 import { AudioEngine } from './core/audio';
 import { TrackCurve } from './track/curve';
 import { TRACKS, THEMES, type TrackDef } from './track/defs';
+
+function curveLen(def: TrackDef): number {
+  return new TrackCurve(def.points, true, 6).length;
+}
 import { buildTrackMeshes, type TrackMeshes } from './track/builder';
 import { CarPhysics } from './physics/car';
 import { buildCarVisual, type CarVisual } from './render/car-model';
@@ -238,7 +242,13 @@ class Game {
     this.state = 'countdown';
     this.menu.hideAll();
     this.menu.hidePause();
-    this.hud.show(def.name, this.save.trackSave(def.id).bestTimeMs, def.checkpoints.length);
+    this.hud.show(
+      def.name,
+      this.save.trackSave(def.id).bestTimeMs,
+      def.checkpoints.length,
+      def.checkpoints.map((c) => c.dist),
+      curveLen(def),
+    );
     const forceTouch = new URLSearchParams(window.location.search).has('touch');
     const isTouch =
       forceTouch ||
@@ -492,6 +502,7 @@ class Game {
         this.track.checkpoints.length,
         liveDelta,
       );
+      this.hud.updateProgress(s.trackDist / this.curve!.length, this.race!.ghostDistAt(this.race!.elapsedMs) === null ? null : (this.race!.ghostDistAt(this.race!.elapsedMs) as number) / this.curve!.length);
       this.audio.updateEngine(Math.min(1, Math.abs(s.forwardSpeed) / 58), input.throttle, !s.grounded);
     }
 

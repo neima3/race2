@@ -196,6 +196,50 @@ button {
 
 .hud-respawn-hint.show { opacity: 1; }
 
+.progress-track {
+  position: absolute;
+  bottom: calc(76px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 44vw);
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  pointer-events: none;
+}
+
+.progress-tick {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 1px;
+  transform: translateX(-1px);
+}
+
+.progress-dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.progress-dot.player {
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(41, 230, 255, 0.9);
+}
+
+.progress-dot.ghost {
+  background: rgba(255, 255, 255, 0.75);
+  width: 7px;
+  height: 7px;
+}
+
+.touch-active .progress-track { display: none; }
+
 .hud-drift {
   font-family: var(--font-display);
   font-weight: 900;
