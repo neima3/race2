@@ -110,6 +110,29 @@ button {
   letter-spacing: 0.08em;
 }
 
+.hud-live-delta {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  min-height: 20px;
+}
+
+.hud-live-delta.ahead { color: #7dff6e; }
+.hud-live-delta.behind { color: #ff6e7d; }
+
+.split-delta {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  margin-top: 2px;
+}
+
+.split-delta.ahead, .delta-ahead { color: #7dff6e; }
+.split-delta.behind, .delta-behind { color: #ff6e7d; }
+
+.split-cp { font-size: 13px; letter-spacing: 0.14em; color: var(--muted); }
+
 .hud-cp-wrap {
   justify-self: end;
   display: flex;
@@ -561,6 +584,27 @@ button {
 }
 
 .finish-best { font-size: 14px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); }
+
+.finish-deltas, .finish-history {
+  width: 100%;
+  border-top: 1px solid var(--panel-border);
+  padding-top: 10px;
+  margin-top: 4px;
+}
+
+.fh-title { font-family: var(--font-display); font-size: 11px; letter-spacing: 0.18em; color: var(--accent); margin-bottom: 6px; }
+
+.delta-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 2px 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.delta-row .delta-split { color: var(--ink); font-family: var(--font-display); font-size: 13px; }
 
 /* ---------- Touch controls ---------- */
 

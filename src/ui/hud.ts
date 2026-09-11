@@ -13,6 +13,7 @@ export class HUD {
   private bestEl: HTMLElement;
   private driftEl: HTMLElement;
   private respawnHint: HTMLElement;
+  private liveDeltaEl: HTMLElement;
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
 
@@ -24,7 +25,8 @@ export class HUD {
     const timerWrap = el('div', 'hud-timer-wrap');
     this.timerEl = el('div', 'hud-timer', '0:00.000');
     this.bestEl = el('div', 'hud-best');
-    timerWrap.append(this.timerEl, this.bestEl);
+    this.liveDeltaEl = el('div', 'hud-live-delta');
+    timerWrap.append(this.timerEl, this.bestEl, this.liveDeltaEl);
     const cpWrap = el('div', 'hud-cp-wrap');
     this.cpEl = el('div', 'hud-cp');
     topBar.append(this.trackNameEl, timerWrap, cpWrap);
@@ -59,11 +61,20 @@ export class HUD {
     this.root.classList.add('hidden');
   }
 
-  update(elapsedMs: number, speedKmh: number, drift: boolean, cpDone: number, cpTotal: number): void {
+  update(elapsedMs: number, speedKmh: number, drift: boolean, cpDone: number, cpTotal: number, liveDelta: number | null): void {
     this.timerEl.textContent = formatTimePrecise(elapsedMs);
     this.speedEl.textContent = String(Math.round(speedKmh));
     this.cpEl.textContent = `CP ${cpDone}/${cpTotal}`;
     this.driftEl.classList.toggle('active', drift);
+    if (liveDelta === null) {
+      this.liveDeltaEl.textContent = '';
+      this.liveDeltaEl.classList.remove('ahead', 'behind');
+    } else {
+      const sign = liveDelta <= 0 ? '−' : '+';
+      this.liveDeltaEl.textContent = `${sign}${(Math.abs(liveDelta) / 1000).toFixed(2)}`;
+      this.liveDeltaEl.classList.toggle('ahead', liveDelta <= 0);
+      this.liveDeltaEl.classList.toggle('behind', liveDelta > 0);
+    }
   }
 
   setCountdown(label: string, cls: string): void {
@@ -80,7 +91,11 @@ export class HUD {
   }
 
   showSplit(ev: CheckpointEvent): void {
-    this.splitToast.innerHTML = `<div class="split-time">${formatTime(ev.splitMs)}</div>`;
+    const deltaHtml =
+      ev.deltaMs === null
+        ? ''
+        : `<div class="split-delta ${ev.deltaMs <= 0 ? 'ahead' : 'behind'}">${ev.deltaMs <= 0 ? '−' : '+'}${(Math.abs(ev.deltaMs) / 1000).toFixed(3)}</div>`;
+    this.splitToast.innerHTML = `<div class="split-time">${formatTime(ev.splitMs)}</div><div class="split-cp">CP ${ev.index + 1}/${ev.total}</div>${deltaHtml}`;
     this.splitToast.classList.remove('show');
     void this.splitToast.offsetWidth;
     this.splitToast.classList.add('show');

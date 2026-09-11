@@ -19,6 +19,8 @@ export interface FinishResult {
   medal: 'none' | 'bronze' | 'silver' | 'gold' | 'author';
   newBest: boolean;
   previousBest: number | null;
+  splitDetail: { splitMs: number; deltaMs: number | null }[];
+  isRecordLapCount?: number;
 }
 
 export interface RaceEvents {
@@ -93,6 +95,8 @@ export class RaceController {
   private boostCooldown = 0;
   private recording: GhostSample[] = [];
   private ghost: GhostSample[] = [];
+  private ghostDists: number[] = [];
+  private ghostCpSplits: number[] = [];
   ghostActive = false;
   checkpointSplits: number[] = [];
   controlsEnabled = false;
@@ -120,6 +124,53 @@ export class RaceController {
     const ghostData = this.save.trackSave(this.def.id).ghost;
     this.ghost = ghostData ? deserializeGhost(ghostData) : [];
     this.ghostActive = this.ghost.length > 1;
+    this.ghostDists = [];
+    this.ghostCpSplits = [];
+    if (this.ghostActive) {
+      const q = { index: 0, frame: { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 }, lateral: 0, vertical: 0, longitudinal: 0, dist: 0 };
+      let hint = 0;
+      for (const sample of this.ghost) {
+        this.curve.surfaceQuery(sample.pos, hint, q);
+        hint = q.index;
+        this.ghostDists.push(q.dist);
+      }
+      for (const cp of this.def.checkpoints) {
+        let split: number | null = null;
+        for (let i = 1; i < this.ghostDists.length; i++) {
+          const prev = this.ghostDists[i - 1];
+          const curr = this.ghostDists[i];
+          if (prev < cp.dist && curr >= cp.dist && curr - prev < this.curve.length * 0.5) {
+            split = this.ghost[i].t;
+            break;
+          }
+        }
+        this.ghostCpSplits.push(split ?? -1);
+      }
+    }
+  }
+
+  ghostSplitDelta(index: number): number | null {
+    if (index >= this.ghostCpSplits.length) return null;
+    const gt = this.ghostCpSplits[index];
+    if (gt < 0) return null;
+    const playerSplit = this.checkpointSplits[index];
+    if (playerSplit === undefined) return null;
+    return playerSplit - gt;
+  }
+
+  liveGhostDelta(currentDist: number, elapsedMs: number): number | null {
+    if (!this.ghostActive || this.ghostDists.length < 2) return null;
+    const d = this.ghostDists;
+    let lo = 0;
+    let hi = d.length - 1;
+    if (currentDist < d[0] || currentDist > d[d.length - 1]) return null;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (d[mid] < currentDist) lo = mid;
+      else hi = mid;
+    }
+    const ghostTimeAtDist = this.ghost[lo].t + ((currentDist - d[lo]) / Math.max(0.001, d[hi] - d[lo])) * (this.ghost[hi].t - this.ghost[lo].t);
+    return elapsedMs - ghostTimeAtDist;
   }
 
   beginRacing(): void {
@@ -206,7 +257,7 @@ export class RaceController {
           index: this.nextCheckpoint,
           total: cps.length,
           splitMs,
-          deltaMs: null,
+          deltaMs: this.ghostSplitDelta(this.nextCheckpoint),
         });
         this.nextCheckpoint++;
       }
@@ -251,7 +302,14 @@ export class RaceController {
     const ghostData = serializeGhost(this.recording);
     const prevBest = this.save.trackSave(this.def.id).bestTimeMs;
     const newBest = this.save.submitTime(this.def.id, timeMs, ghostData);
-    this.emit('finish', { timeMs, medal, newBest, previousBest: prevBest });
+    const splitDetail = this.checkpointSplits.map((splitMs, i) => ({
+      splitMs,
+      deltaMs: (() => {
+        const gt = this.ghostCpSplits[i];
+        return gt !== undefined && gt >= 0 ? splitMs - gt : null;
+      })(),
+    }));
+    this.emit('finish', { timeMs, medal, newBest, previousBest: prevBest, splitDetail });
   }
 
   ghostSampleAt(elapsedMs: number): { pos: THREE.Vector3; quat: THREE.Quaternion } | null {

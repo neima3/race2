@@ -483,12 +483,14 @@ class Game {
       }
       this.hud.showRespawnHint(this.offroadTime > 1.5 && (this.state === 'racing' || this.state === 'countdown'));
 
+      const liveDelta = this.race!.ghostActive ? this.race!.liveGhostDelta(s.trackDist, this.race!.elapsedMs) : null;
       this.hud.update(
         this.race!.elapsedMs,
         Math.abs(s.forwardSpeed) * kmh,
         s.driftAmount > 0.35 && s.grounded,
         this.race!.nextCheckpoint,
         this.track.checkpoints.length,
+        liveDelta,
       );
       this.audio.updateEngine(Math.min(1, Math.abs(s.forwardSpeed) / 58), input.throttle, !s.grounded);
     }

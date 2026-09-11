@@ -274,11 +274,29 @@ export class MenuManager {
       result.medal === 'none'
         ? '<div class="finish-medal none">NO MEDAL</div>'
         : `<div class="finish-medal banner-${result.medal}">${result.medal.toUpperCase()}</div>`;
+    const deltaRows = result.splitDetail
+      .map(
+        (s, i) =>
+          `<div class="delta-row"><span>CP ${i + 1}</span><span class="delta-split">${formatTimePrecise(s.splitMs)}</span><span class="${
+            s.deltaMs === null ? 'delta-none' : s.deltaMs <= 0 ? 'delta-ahead' : 'delta-behind'
+          }">${s.deltaMs === null ? '' : `${s.deltaMs <= 0 ? '−' : '+'}${(Math.abs(s.deltaMs) / 1000).toFixed(3)}`}</span></div>`,
+      )
+      .join('');
+    const deltaTable = deltaRows ? `<div class="finish-deltas">${deltaRows}</div>` : '';
+    const history = this.save.trackSave(track.id).history.slice(0, 5);
+    const historyHtml =
+      history.length > 1
+        ? `<div class="finish-history"><div class="fh-title">TOP TIMES</div>${history
+            .map((t, i) => `<div class="delta-row"><span>${i + 1}</span><span class="delta-split">${formatTimePrecise(t)}</span><span></span></div>`)
+            .join('')}</div>`
+        : '';
     panel.innerHTML = `
       <h2 class="screen-title">${track.name}</h2>
       <div class="finish-time">${formatTimePrecise(result.timeMs)}</div>
       ${medalHtml}
       <div class="finish-best">${result.newBest ? '&#127942; NEW PERSONAL BEST' : `Best: ${formatTimePrecise(result.previousBest ?? result.timeMs)}`}</div>
+      ${deltaTable}
+      ${historyHtml}
     `;
     const retry = el('button', 'menu-btn primary', 'RETRY');
     retry.addEventListener('click', () => this.onRestart());
