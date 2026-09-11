@@ -53,6 +53,7 @@ export interface TrackMeshes {
   boostPads: { mesh: THREE.Mesh; dist: number; lateral: number; strength: number; mat: THREE.MeshBasicMaterial }[];
   checkpointGates: { group: THREE.Group; dist: number; mat: THREE.MeshBasicMaterial }[];
   roadMat: THREE.MeshStandardMaterial;
+  rings: { pos: THREE.Vector3; radius: number }[];
 }
 
 export function buildTrackMeshes(curve: TrackCurve, def: TrackDef): TrackMeshes {
@@ -234,5 +235,21 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef): TrackMeshes 
   gateGroup.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(startF.normal, startF.tangent).normalize(), startF.normal, startF.tangent));
   group.add(gateGroup);
 
-  return { group, boostPads, checkpointGates, roadMat };
+  const rings: TrackMeshes['rings'] = [];
+  const ringGroup = new THREE.Group();
+  for (const r of def.rings ?? []) {
+    const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
+    curve.frameAtDist(r.dist, f);
+    const center = f.pos.clone().addScaledVector(f.binormal, r.lateral).addScaledVector(f.normal, r.height);
+    const geo = new THREE.TorusGeometry(r.radius, 0.22, 10, 40);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x9df3ff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending });
+    const ring = new THREE.Mesh(geo, mat);
+    ring.position.copy(center);
+    ring.lookAt(center.clone().add(f.tangent));
+    ringGroup.add(ring);
+    rings.push({ pos: center, radius: r.radius });
+  }
+  if ((def.rings?.length ?? 0) > 0) group.add(ringGroup);
+
+  return { group, boostPads, checkpointGates, roadMat, rings };
 }

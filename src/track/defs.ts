@@ -64,6 +64,13 @@ export interface CheckpointDef {
   dist: number;
 }
 
+export interface RingDef {
+  dist: number;
+  lateral: number;
+  height: number;
+  radius: number;
+}
+
 export interface TrackDef {
   id: string;
   name: string;
@@ -74,6 +81,7 @@ export interface TrackDef {
   points: ControlPoint[];
   checkpoints: CheckpointDef[];
   boosts: BoostDef[];
+  rings?: RingDef[];
   medals: { author: number; gold: number; silver: number; bronze: number };
 }
 
@@ -239,10 +247,12 @@ const TRACK_5: TrackDef = {
     cp(0, 0, -70, 10),
     cp(-5, 4, -140, 10),
     cp(-10, 10, -210, 10),
-    cp(-8, 14, -280, 10),
-    cp(-40, 10, -340, 9.5, 12),
-    cp(-105, 5, -365, 9.5, 16),
-    cp(-170, 2, -340, 9.5, 18),
+    cp(-10, 12, -255, 10),
+    cp(-12, 15.5, -295, 10),
+    cp(-20, 8, -318, 10),
+    cp(-45, 8.5, -348, 9.5, 12),
+    cp(-105, 4, -368, 9.5, 16),
+    cp(-170, 1, -340, 9.5, 18),
     cp(-195, 0, -280, 10, 14),
     cp(-185, 2, -210, 10, 10),
     cp(-150, 6, -150, 10, 8),
@@ -255,7 +265,12 @@ const TRACK_5: TrackDef = {
     { dist: 60, lateral: 0, strength: 7 },
     { dist: 620, lateral: 0, strength: 8 },
   ],
-  medals: { author: 22000, gold: 24500, silver: 28500, bronze: 36000 },
+  rings: [
+    { dist: 268, lateral: 0, height: 3.2, radius: 3.8 },
+    { dist: 292, lateral: 0, height: 2.6, radius: 3.8 },
+    { dist: 316, lateral: 0, height: 2.2, radius: 3.8 },
+  ],
+  medals: { author: 23000, gold: 25500, silver: 29500, bronze: 37000 },
 };
 
 const TRACK_6: TrackDef = {

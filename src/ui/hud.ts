@@ -16,6 +16,7 @@ export class HUD {
   private liveDeltaEl: HTMLElement;
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
+  driftPoints = 0;
   private progressTrack: HTMLElement;
   private progressPlayer: HTMLElement;
   private progressGhost: HTMLElement;
@@ -85,6 +86,9 @@ export class HUD {
     this.speedEl.textContent = String(Math.round(speedKmh));
     this.cpEl.textContent = `CP ${cpDone}/${cpTotal}`;
     this.driftEl.classList.toggle('active', drift);
+    if (drift) {
+      this.driftEl.textContent = `DRIFT +${Math.round(this.driftPoints)}`;
+    }
     if (liveDelta === null) {
       this.liveDeltaEl.textContent = '';
       this.liveDeltaEl.classList.remove('ahead', 'behind');

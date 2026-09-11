@@ -79,6 +79,8 @@ class Game {
   private skidPrevL2: THREE.Vector3 | null = null;
   private skidPrevR2: THREE.Vector3 | null = null;
   private slowmoUntil = 0;
+  private ringsHit = new Set<string>();
+  private driftScore = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.runtimeMuted =
@@ -328,6 +330,8 @@ class Game {
     this.audio.startMusic();
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
     this.race!.start();
+    this.ringsHit.clear();
+    this.driftScore = 0;
     this.ghostVisual!.group.visible = this.save.settings.showGhost && this.race!.ghostActive;
     this.hud.clearCenter();
   }
@@ -566,6 +570,27 @@ class Game {
         this.particles.wallSparks(s.pos.clone().addScaledVector(f.binormal, side * f.halfWidth), f.binormal.clone().multiplyScalar(-side));
       }
 
+      if (this.meshes) {
+        for (let ri = 0; ri < this.meshes.rings.length; ri++) {
+          const ring = this.meshes.rings[ri];
+          const key = `${this.track.id}:${ri}`;
+          if (this.ringsHit.has(key)) continue;
+          if (s.pos.distanceTo(ring.pos) < ring.radius) {
+            this.ringsHit.add(key);
+            this.car!.applyBoost(7, 1.2);
+            this.audio.boost();
+            this.rig.addShake(0.4);
+            this.boostKick = 0.8;
+            this.particles.wallSparks(s.pos.clone(), new THREE.Vector3(0, 1, 0));
+            this.input.rumble(0.6, 0.5, 200);
+          }
+        }
+      }
+
+      if (s.driftAmount > 0.3 && s.grounded && s.speed > 14) {
+        this.driftScore += s.driftAmount * s.speed * dt * 12;
+      }
+
       const stuckOffroad = s.offroad && s.grounded && s.speed < 6;
       if (stuckOffroad) {
         this.offroadTime += dt;
@@ -580,6 +605,7 @@ class Game {
       if (sl) sl.style.opacity = String(Math.max(0, (speedRatio - 0.62) / 0.38) * 0.85);
       const vg = document.getElementById('vignette');
       if (vg) vg.style.opacity = String(0.25 + speedRatio * 0.45);
+      this.hud.driftPoints = this.driftScore;
       this.hud.update(
         this.race!.elapsedMs,
         Math.abs(s.forwardSpeed) * kmh,
