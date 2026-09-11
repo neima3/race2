@@ -1,16 +1,16 @@
 # RACE2 — 10x Development Roadmap (2026-09-10)
 
 ## Progress tracker
-- [ ] Phase 1: Game feel & car dynamics depth
-- [ ] Phase 2: Per-track visual themes (4 environments)
-- [ ] Phase 3: Content — 4 new tracks (5–8)
-- [ ] Phase 4: Time-attack depth — splits, deltas, top-10
-- [ ] Phase 5: HUD/UI 2.0
-- [ ] Phase 6: Audio 2.0 — adaptive layers + theme ambience
-- [ ] Phase 7: Garage — paint + body variants
-- [ ] Phase 8: Performance & mobile hardening
-- [ ] Phase 9: Juice & polish sweep
-- [ ] Phase 10: Bonus content + release QA + deploy
+- [x] Phase 1: Game feel & car dynamics depth
+- [x] Phase 2: Per-track visual themes (4 environments)
+- [x] Phase 3: Content — 4 new tracks (5–8)
+- [x] Phase 4: Time-attack depth — splits, deltas, top-10
+- [x] Phase 5: HUD/UI 2.0
+- [x] Phase 6: Audio 2.0 — adaptive layers + theme ambience
+- [x] Phase 7: Garage — paint + body variants
+- [x] Phase 8: Performance & mobile hardening
+- [x] Phase 9: Juice & polish sweep
+- [x] Phase 10: Bonus content + release QA + deploy
 
 **Goal statement (full ambition, not sliced):** Make RACE2 a genuinely fun, visually stunning, professional Trackmania-class browser racer: 8 tracks across 4 distinct visual themes, deep time-attack (splits, deltas, top-10), a garage, rich game feel, adaptive audio, 60 fps on mid mobile — shipped to race2.neima.me with full QA evidence.
 
