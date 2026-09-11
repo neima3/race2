@@ -71,6 +71,8 @@ class Game {
   private offroadTime = 0;
   private boostKick = 0;
   private skidMarks: SkidMarks | null = null;
+  private shadowBlob: THREE.Sprite | null = null;
+  private sunFlare: THREE.Sprite | null = null;
   private frameMsAvg = 16;
   private resScale = 1;
   private prevForwardSpeed = 0;
@@ -274,7 +276,7 @@ class Game {
     const curve = new TrackCurve(def.points, true);
     this.curve = curve;
 
-    this.environment = buildEnvironment(this.scene, THEMES[def.theme], this.quality);
+    this.environment = buildEnvironment(this.scene, THEMES[def.theme], this.quality, curve);
     this.trackGroup = new THREE.Group();
     this.scene.add(this.trackGroup);
     this.scene.add(this.particles.points);
@@ -282,6 +284,33 @@ class Game {
     this.meshes = buildTrackMeshes(curve, def);
     this.trackGroup.add(this.meshes.group);
     this.trackGroup.add(buildTrackProps(curve, def.theme, this.quality));
+
+    const blobCanvas = document.createElement('canvas');
+    blobCanvas.width = 64;
+    blobCanvas.height = 64;
+    const bctx = blobCanvas.getContext('2d')!;
+    const grd = bctx.createRadialGradient(32, 32, 4, 32, 32, 30);
+    grd.addColorStop(0, 'rgba(0,0,0,0.55)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    bctx.fillStyle = grd;
+    bctx.fillRect(0, 0, 64, 64);
+    this.shadowBlob = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(blobCanvas), transparent: true, depthWrite: false }));
+    this.shadowBlob.scale.set(3.4, 3.4, 1);
+    this.trackGroup.add(this.shadowBlob);
+    if (!this.sunFlare) {
+      const flareCanvas = document.createElement('canvas');
+      flareCanvas.width = 128;
+      flareCanvas.height = 128;
+      const fctx = flareCanvas.getContext('2d')!;
+      const fgrd = fctx.createRadialGradient(64, 64, 6, 64, 64, 62);
+      fgrd.addColorStop(0, 'rgba(255,240,210,0.9)');
+      fgrd.addColorStop(0.35, 'rgba(255,200,140,0.28)');
+      fgrd.addColorStop(1, 'rgba(255,180,120,0)');
+      fctx.fillStyle = fgrd;
+      fctx.fillRect(0, 0, 128, 128);
+      this.sunFlare = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(flareCanvas), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      this.scene.add(this.sunFlare);
+    }
 
     if (this.quality !== 'low') {
       this.meshes.group.traverse((o) => {
@@ -615,6 +644,16 @@ class Game {
     const s = this.car!.state;
     this.carVisual!.group.position.copy(s.pos);
     this.carVisual!.group.quaternion.copy(s.quat);
+
+    if (this.shadowBlob) {
+      const f = this.curve!.frames[s.trackIndex];
+      this.shadowBlob.position.copy(s.pos).addScaledVector(f.normal, -0.25);
+      this.shadowBlob.position.x = s.pos.x;
+      this.shadowBlob.position.z = s.pos.z;
+      const air = s.grounded ? 0 : Math.min(1, s.airborneTime * 1.4);
+      this.shadowBlob.scale.set(3.4 + air * 2.2, 3.4 + air * 2.2, 1);
+      (this.shadowBlob.material as THREE.SpriteMaterial).opacity = 1 - air * 0.8;
+    }
     const wheelR = 0.34;
     this.carVisual!.wheelSpin += (s.forwardSpeed / wheelR) * dt;
     const spin = this.carVisual!.wheelSpin;

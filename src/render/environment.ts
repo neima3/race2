@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { ThemeDef } from '../track/defs';
+import type { TrackCurve } from '../track/curve';
 
 function makeSkyMaterial(theme: ThemeDef): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -86,7 +87,7 @@ export interface Environment {
   animate(t: number, dt: number): void;
 }
 
-export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: 'low' | 'medium' | 'high'): Environment {
+export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: 'low' | 'medium' | 'high', curveRef: TrackCurve): Environment {
   const group = new THREE.Group();
   scene.add(group);
 
@@ -250,12 +251,77 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
 
   let clock = 0;
 
+  const reflectors = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.12, 6, 5),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(theme.hemiSky).lerp(new THREE.Color(0xffffff), 0.5) }),
+    260,
+  );
+  {
+    const d = new THREE.Object3D();
+    let n = 0;
+    const spacing = 26;
+    const count = Math.floor(curveRef.length / spacing);
+    for (let i = 0; i < count && n < 260; i++) {
+      const dist = i * spacing;
+      const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
+      curveRef.frameAtDist(dist, f);
+      for (const side of [-1, 1]) {
+        d.position.copy(f.pos).addScaledVector(f.binormal, side * (f.halfWidth + 0.3)).addScaledVector(f.normal, 0.35);
+        d.updateMatrix();
+        reflectors.setMatrixAt(n++, d.matrix);
+      }
+    }
+    reflectors.count = n;
+  }
+  group.add(reflectors);
+
+  let water: THREE.Mesh | null = null;
+  if (theme.ambientSound === 'birds' || theme.ambientSound === 'waves') {
+    const waterGeo = new THREE.CircleGeometry(3200, 40);
+    const waterMat = new THREE.ShaderMaterial({
+      transparent: true,
+      uniforms: { uTime: { value: 0 }, colorA: { value: new THREE.Color(theme.ambientSound === 'birds' ? 0x3a6a9a : 0x2a5a6a) } },
+      vertexShader: `
+        uniform float uTime;
+        varying vec2 vUv2;
+        varying float vWave;
+        void main() {
+          vec3 p = position;
+          float w = sin(p.x * 0.008 + uTime * 0.9) * cos(p.y * 0.006 - uTime * 0.7);
+          p.z += w * 2.2;
+          vWave = w;
+          vUv2 = p.xy;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 colorA;
+        varying float vWave;
+        void main() {
+          vec3 c = colorA + vWave * 0.12;
+          gl_FragColor = vec4(c, 0.82);
+        }
+      `,
+    });
+    water = new THREE.Mesh(waterGeo, waterMat);
+    water.rotation.x = -Math.PI / 2;
+    water.position.y = -8;
+    group.add(water);
+  }
+
+  let clock2 = 0;
   const update = (cameraPos: THREE.Vector3): void => {
     sky.position.copy(cameraPos);
     ground.position.x = cameraPos.x;
     ground.position.z = cameraPos.z;
     sunLight.target.position.copy(cameraPos);
     sunLight.position.copy(cameraPos).add(sunOffset);
+    if (water) {
+      clock2 += 0.016;
+      (water.material as THREE.ShaderMaterial).uniforms.uTime.value = clock2;
+      water.position.x = cameraPos.x;
+      water.position.z = cameraPos.z;
+    }
   };
 
   const animate = (t: number, dt: number): void => {
