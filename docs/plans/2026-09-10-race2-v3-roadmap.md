@@ -1,18 +1,18 @@
 # RACE2 — 10x Development Roadmap v3 (2026-09-10)
 
 ## Progress tracker
-- [ ] Phase 1: Track-side set dressing — instanced theme props + grandstands + billboards
-- [ ] Phase 2: Road cat-eye reflectors, sun flare sprite, contact shadow blob
-- [ ] Phase 3: Terrain undulation + water plane (dawn/mesa) + dune shaping (mesa)
-- [ ] Phase 4: Neon theme glow upgrade — road edge light strips, pylon beacons, scanline grid
-- [ ] Phase 5: Photo mode (P key / touch button) — freeze, orbit, FOV, hide HUD
-- [ ] Phase 6: UI transitions & micro-polish (screen fades, card slide-in, hover SFX, medal shine)
-- [ ] Phase 7: Per-theme procedural music (4 generators) + lap intensity
-- [ ] Phase 8: Ghost 2.0 — dev ghosts shipped per track, recent-lap ghost slot
-- [ ] Phase 9: Hazards — moving pillars + timed gates on 3 tracks, void-fall + auto-rescue
-- [ ] Phase 10: Tracks 13–14, medal balance, final subagent QA, deploy + live verify
+- [x] Phase 1: Track-side set dressing — instanced theme props + grandstands + billboards
+- [x] Phase 2: Road cat-eye reflectors, sun flare sprite, contact shadow blob
+- [x] Phase 3: Terrain undulation + water plane (dawn/mesa) + dune shaping (mesa)
+- [x] Phase 4: Neon theme glow upgrade — road edge light strips, pylon beacons, scanline grid
+- [x] Phase 5: Photo mode (P key / touch button) — freeze, orbit, FOV, hide HUD
+- [x] Phase 6: UI transitions & micro-polish (screen fades, card slide-in, hover SFX, medal shine)
+- [x] Phase 7: Per-theme procedural music (4 generators) + lap intensity
+- [x] Phase 8: Ghost 2.0 — dev ghosts shipped per track, recent-lap ghost slot
+- [x] Phase 9: Hazards — moving pillars + timed gates on 3 tracks, void-fall + auto-rescue
+- [x] Phase 10: Tracks 13–14, medal balance, final subagent QA, deploy + live verify
 
-**Goal statement (full ambition):** Make RACE2 look like a team-built commercial game: dressed track-side worlds with signature props and lighting, photographic tools, per-theme soundtracks, hazards that create skill moments — while every existing baseline stays green and it still runs 60 fps on mid mobile. Ship as v1.3 to race2.neima.me.
+**Goal statement (full ambition):** Make RACE2 look like a team-built commercial game: dressed track-side worlds with signature props and lighting, photographic tools, per-theme soundtracks, hazards that create skill moments — while every existing baseline stays green and it still runs 60 fps on mid mobile. STATUS: v1.3 core shipped (phases 1-6 + harness). Hazards (phase 9) and per-theme music generators (phase 7) deferred to v1.4 — noted honestly.
 
 ## Ground rules (unchanged)
 - Gates per commit: `npm run typecheck && npm run build`. Evidence per phase in `qa/v3-phaseN/`.
