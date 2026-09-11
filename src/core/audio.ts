@@ -23,7 +23,6 @@ export class AudioEngine {
   private musicLayers: { gain: GainNode; intense: boolean }[] = [];
   private musicIntensity = 0;
   private musicTheme: MusicTheme | null = null;
-  private musicIntensity = 0;
   private ambienceNodes: { src: AudioBufferSourceNode; gain: GainNode; filter?: BiquadFilterNode }[] = [];
   private ambienceKind: string | null = null;
 
