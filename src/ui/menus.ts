@@ -78,7 +78,8 @@ export class MenuManager {
     });
     buttons.append(play, garage, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
-    screen.append(logo, buttons, hint);
+    const credits = el('div', 'title-credits', `v1.1.0 — built with Three.js · © 2026 neima.me`);
+    screen.append(logo, buttons, hint, credits);
     return screen;
   }
 

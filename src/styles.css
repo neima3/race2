@@ -791,3 +791,5 @@ button {
   opacity: 0.25;
   background: radial-gradient(ellipse at 50% 50%, transparent 52%, rgba(4, 6, 14, 0.85) 100%);
 }
+
+.title-credits { font-size: 11px; letter-spacing: 0.14em; color: rgba(242, 245, 255, 0.4); text-transform: uppercase; }

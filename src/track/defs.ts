@@ -353,4 +353,64 @@ const TRACK_8: TrackDef = {
   medals: { author: 32000, gold: 35500, silver: 41000, bronze: 52000 },
 };
 
-export const TRACKS: TrackDef[] = [TRACK_1, TRACK_2, TRACK_3, TRACK_4, TRACK_5, TRACK_6, TRACK_7, TRACK_8];
+const TRACK_9: TrackDef = {
+  id: 'twilight-gauntlet',
+  name: 'Twilight Gauntlet',
+  subtitle: 'Dusk marathon over the mesas',
+  accent: 0xff8a3d,
+  accentName: '#ff8a3d',
+  theme: 'mesa',
+  points: [
+    cp(0, 0, 0, 8),
+    cp(-4, 2, -70, 8, 12),
+    cp(-30, 6, -130, 7.5, 22),
+    cp(-85, 10, -160, 7.5, 26),
+    cp(-150, 12, -150, 7, -24),
+    cp(-185, 13, -95, 7, -28),
+    cp(-175, 14, -35, 7, 24),
+    cp(-130, 15, -5, 7, 18),
+    cp(-80, 14, 10, 7.5, -14),
+    cp(-45, 11, -10, 7.5, -22),
+    cp(-42, 7, -65, 7.5, -20),
+    cp(-80, 4, -100, 8, -10),
+    cp(-135, 2, -110, 8, 10),
+    cp(-172, 0, -145, 8, 16),
+    cp(-158, 0, -192, 8, 18),
+    cp(-108, 0, -210, 8, 14),
+    cp(-58, 0, -195, 8, 10),
+    cp(-28, 0, -150, 8, 4),
+    cp(-16, 0, -100, 8, 0),
+  ],
+  checkpoints: [{ dist: 330 }, { dist: 680 }, { dist: 1020 }],
+  boosts: [
+    { dist: 330, lateral: 0, strength: 8 },
+    { dist: 1000, lateral: 0, strength: 9 },
+  ],
+  medals: { author: 31000, gold: 34500, silver: 40000, bronze: 50000 },
+};
+
+const TRACK_10: TrackDef = {
+  id: 'neon-circuit',
+  name: 'Neon Circuit',
+  subtitle: 'Short, fast, glowing',
+  accent: 0x9dff3d,
+  accentName: '#9dff3d',
+  theme: 'neon',
+  points: [
+    cp(0, 0, 0, 9),
+    cp(0, 0, -55, 9),
+    cp(-3, 1, -110, 8.5, 14),
+    cp(-30, 3, -150, 8, 20),
+    cp(-80, 5, -168, 8, 24),
+    cp(-130, 6, -150, 8, -20),
+    cp(-158, 6, -105, 8, -22),
+    cp(-148, 5, -55, 8.5, 18),
+    cp(-110, 3, -22, 9, 12),
+    cp(-60, 1, -8, 9, 6),
+  ],
+  checkpoints: [{ dist: 190 }, { dist: 380 }],
+  boosts: [{ dist: 100, lateral: 0, strength: 7 }],
+  medals: { author: 15500, gold: 17500, silver: 20500, bronze: 26000 },
+};
+
+export const TRACKS: TrackDef[] = [TRACK_1, TRACK_2, TRACK_3, TRACK_4, TRACK_5, TRACK_6, TRACK_7, TRACK_8, TRACK_9, TRACK_10];
