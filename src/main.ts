@@ -13,6 +13,9 @@ import { buildTrackMeshes, type TrackMeshes } from './track/builder';
 import { CarPhysics } from './physics/car';
 import { buildCarVisual, type CarVisual } from './render/car-model';
 import { SkidMarks } from './render/skidmarks';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { GarageSystem } from './systems/garage';
 import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem } from './render/particles';
@@ -62,6 +65,8 @@ class Game {
   private autoTicks = 0;
   private autoDbg: Record<string, number> = {};
   private runtimeMuted: boolean;
+  private composer: EffectComposer | null = null;
+  private bloomPass: UnrealBloomPass | null = null;
   private offroadTime = 0;
   private boostKick = 0;
   private skidMarks: SkidMarks | null = null;
@@ -160,6 +165,32 @@ class Game {
     this.renderer.shadowMap.enabled = this.quality !== 'low';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.onResize();
+    this.setupComposer();
+  }
+
+  private setupComposer(): void {
+    if (this.quality === 'high') {
+      if (!this.composer) {
+        this.composer = new EffectComposer(this.renderer);
+        this.bloomPass = new UnrealBloomPass(
+          new THREE.Vector2(window.innerWidth, window.innerHeight),
+          0.42,
+          0.65,
+          0.82,
+        );
+        this.composer.addPass(this.bloomPass);
+      }
+      this.composer.passes[0] = new RenderPass(this.scene, this.rig.camera);
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+    } else {
+      this.composer = null;
+      this.bloomPass = null;
+    }
+  }
+
+  private renderFrame(): void {
+    if (this.composer && this.quality === 'high') this.composer.render();
+    else this.renderer.render(this.scene, this.rig.camera);
   }
 
   private dynamicRes(fps: number): void {
@@ -182,6 +213,7 @@ class Game {
     this.renderer.setSize(w, h);
     this.rig.camera.aspect = w / Math.max(1, h);
     this.rig.camera.updateProjectionMatrix();
+    if (this.composer) this.composer.setSize(w, h);
   }
 
   private clearTrackScene(): void {
@@ -421,7 +453,7 @@ class Game {
     }
 
     if (this.state === 'paused') {
-      this.renderer.render(this.scene, this.rig.camera);
+      this.renderFrame();
       return;
     }
 
@@ -448,7 +480,7 @@ class Game {
         }
       }
       this.environment?.update(this.rig.camera.position);
-      this.renderer.render(this.scene, this.rig.camera);
+      this.renderFrame();
       return;
     }
 
@@ -581,7 +613,7 @@ class Game {
     this.rig.update(dt, s);
     this.environment?.update(this.rig.camera.position);
     this.particles.update(dt);
-    this.renderer.render(this.scene, this.rig.camera);
+    this.renderFrame();
   };
 }
 
