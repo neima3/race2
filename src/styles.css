@@ -818,3 +818,35 @@ button {
 .touch-controls.touch-lefty .tc-right { left: auto; right: calc(18px + var(--safe-right)); }
 .touch-controls.touch-lefty .tc-gas { right: auto; left: calc(18px + var(--safe-left)); }
 .touch-controls.touch-lefty .tc-brake { right: auto; left: calc(122px + var(--safe-left)); }
+
+.achv-list {
+  width: min(560px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.achv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  opacity: 0.5;
+}
+
+.achv-row.done { opacity: 1; border-color: rgba(255, 207, 63, 0.4); }
+
+.achv-name { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
+.achv-row.done .achv-name { color: var(--gold); }
+.achv-desc { font-size: 13px; color: var(--muted); }
+
+.achv-check {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--gold);
+  width: 32px;
+  text-align: center;
+}

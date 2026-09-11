@@ -4,7 +4,7 @@ import type { TrackDef } from '../track/defs';
 import type { FinishResult } from '../game/race';
 import { PAINTS, type CarBodyStyle } from '../render/car-model';
 
-export type MenuScreen = 'title' | 'tracks' | 'settings' | 'garage' | 'none';
+export type MenuScreen = 'title' | 'tracks' | 'settings' | 'garage' | 'achievements' | 'none';
 
 interface MedalState {
   author: boolean;
@@ -50,6 +50,7 @@ export class MenuManager {
   private pauseScreen: HTMLElement;
   private finishScreen: HTMLElement;
   private garageScreen: HTMLElement;
+  private achievementsScreen: HTMLElement;
   garageCanvas: HTMLCanvasElement | null = null;
   isGarageOpen = false;
   onGarageChange: (paint: number, body: CarBodyStyle) => void = () => {};
@@ -63,8 +64,9 @@ export class MenuManager {
     this.pauseScreen = this.buildPause();
     this.finishScreen = el('div', 'screen hidden');
     this.garageScreen = el('div', 'screen hidden');
+    this.achievementsScreen = el('div', 'screen hidden');
 
-    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.pauseScreen, this.finishScreen);
+    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.pauseScreen, this.finishScreen);
     this.buildTracksScreen();
   }
 
@@ -88,7 +90,12 @@ export class MenuManager {
       this.buildSettingsScreen();
       this.show('settings');
     });
-    buttons.append(play, garage, settings);
+    const achievements = el('button', 'menu-btn', 'ACHIEVEMENTS');
+    achievements.addEventListener('click', () => {
+      this.buildAchievements();
+      this.show('achievements');
+    });
+    buttons.append(play, garage, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
     const credits = el('div', 'title-credits', `v1.1.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
@@ -342,6 +349,43 @@ export class MenuManager {
     this.garageScreen.append(header, wrap);
   }
 
+  private buildAchievements(): void {
+    const screen = this.achievementsScreen;
+    screen.replaceChildren();
+    const header = el('div', 'screen-header');
+    header.append(el('h2', 'screen-title', 'ACHIEVEMENTS'));
+    const back = el('button', 'menu-btn small', '&#8592; BACK');
+    back.addEventListener('click', () => this.show('title'));
+    header.append(back);
+
+    const stats = this.tracks.map((t) => ({ stars: starsForTime(this.save.trackSave(t.id).bestTimeMs, t.medals), best: this.save.trackSave(t.id).bestTimeMs }));
+    const total = stats.reduce((s, x) => s + x.stars, 0);
+    const medaled = stats.filter((s) => s.stars > 0).length;
+    const golds = stats.filter((s) => s.stars >= 3).length;
+    const authors = stats.filter((s) => s.stars >= 4).length;
+    const defs: { name: string; desc: string; done: boolean }[] = [
+      { name: 'First Blood', desc: 'Earn any medal', done: medaled > 0 },
+      { name: 'Regular', desc: 'Medal 5 tracks', done: medaled >= 5 },
+      { name: 'Collector', desc: 'Medal all 12 tracks', done: medaled >= 12 },
+      { name: 'Golden Touch', desc: '3 gold medals', done: golds >= 3 },
+      { name: 'Midas Fleet', desc: 'Gold on every track', done: golds >= 12 },
+      { name: 'Dev Time', desc: '1 author medal', done: authors >= 1 },
+      { name: 'Studio Record', desc: 'Author on 6 tracks', done: authors >= 6 },
+      { name: 'Neima Standard', desc: 'Author on all 12 tracks', done: authors >= 12 },
+      { name: 'Star Struck', desc: '10 stars', done: total >= 10 },
+      { name: 'Constellation', desc: '24 stars', done: total >= 24 },
+      { name: 'Galaxy Brain', desc: '40+ stars', done: total >= 40 },
+      { name: 'Completionist', desc: '48 stars — everything', done: total >= 48 },
+    ];
+    const list = el('div', 'achv-list');
+    for (const a of defs) {
+      const row = el('div', 'achv-row' + (a.done ? ' done' : ''));
+      row.innerHTML = `<div><div class="achv-name">${a.name}</div><div class="achv-desc">${a.desc}</div></div><div class="achv-check">${a.done ? '&#10003;' : '&#9675;'}</div>`;
+      list.append(row);
+    }
+    screen.append(header, list);
+  }
+
   private buildPause(): HTMLElement {
     const screen = el('div', 'screen overlay-screen hidden');
     const panel = el('div', 'panel');
@@ -438,7 +482,7 @@ export class MenuManager {
 
   hideAll(): void {
     this.isGarageOpen = false;
-    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.pauseScreen, this.finishScreen]) {
+    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.pauseScreen, this.finishScreen]) {
       s.classList.add('hidden');
     }
   }
@@ -454,6 +498,7 @@ export class MenuManager {
       this.isGarageOpen = true;
       this.garageScreen.classList.remove('hidden');
     }
+    else if (screen === 'achievements') this.achievementsScreen.classList.remove('hidden');
   }
 
   private patchSettings(patch: Partial<Settings>): void {
