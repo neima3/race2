@@ -71,6 +71,7 @@ class Game {
   private skidPrevR: THREE.Vector3 | null = null;
   private skidPrevL2: THREE.Vector3 | null = null;
   private skidPrevR2: THREE.Vector3 | null = null;
+  private slowmoUntil = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.runtimeMuted =
@@ -381,6 +382,11 @@ class Game {
       const cp = payload as RaceEvents['checkpoint'];
       this.audio.checkpoint();
       this.hud.showSplit(cp);
+      const gate = this.meshes?.checkpointGates[cp.index];
+      if (gate) {
+        gate.group.scale.set(1.12, 1.12, 1.12);
+        window.setTimeout(() => gate.group.scale.set(1, 1, 1), 240);
+      }
     } else if (ev === 'boost') {
       this.audio.boost();
       this.input.rumble(0.7, 0.4, 220);
@@ -412,7 +418,10 @@ class Game {
       this.audio.finish(r.medal);
       this.input.rumble(0.5, 0.9, 500);
       this.hud.showFinish(r);
-      this.particles.confetti(this.car!.state.pos.clone());
+      const tierBase = r.medal === 'author' ? 0x29e6ff : r.medal === 'gold' ? 0xffcf3f : r.medal === 'silver' ? 0xd7dee8 : r.medal === 'bronze' ? 0xe08d4f : 0x29e6ff;
+      const tierColors = [new THREE.Color(tierBase), new THREE.Color(tierBase).lerp(new THREE.Color(0xffffff), 0.6), new THREE.Color(tierBase).lerp(new THREE.Color(0x000000), 0.25)];
+      this.particles.confetti(this.car!.state.pos.clone(), tierColors);
+      this.slowmoUntil = performance.now() + 850;
       window.setTimeout(() => {
         this.state = 'finished';
         this.hud.clearCenter();
@@ -483,7 +492,8 @@ class Game {
     }
 
     const simDt = 1 / 120;
-    this.acc += dt;
+    const timeScale = performance.now() < this.slowmoUntil ? 0.35 : 1;
+    this.acc += dt * timeScale;
     let steps = 0;
     while (this.acc >= simDt && steps < 8) {
       this.race!.update(simDt * 1000, input);
@@ -572,6 +582,11 @@ class Game {
       this.hud.showRespawnHint(this.offroadTime > 1.5 && (this.state === 'racing' || this.state === 'countdown'));
 
       const liveDelta = this.race!.ghostActive ? this.race!.liveGhostDelta(s.trackDist, this.race!.elapsedMs) : null;
+      const speedRatio = Math.min(1, Math.abs(s.forwardSpeed) / 58);
+      const sl = document.getElementById('speedlines');
+      if (sl) sl.style.opacity = String(Math.max(0, (speedRatio - 0.62) / 0.38) * 0.85);
+      const vg = document.getElementById('vignette');
+      if (vg) vg.style.opacity = String(0.25 + speedRatio * 0.45);
       this.hud.update(
         this.race!.elapsedMs,
         Math.abs(s.forwardSpeed) * kmh,

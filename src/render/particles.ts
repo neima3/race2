@@ -152,10 +152,10 @@ export class ParticleSystem {
     }
   }
 
-  confetti(pos: THREE.Vector3): void {
-    const palette = [0x29e6ff, 0xffb52e, 0xff4d6d, 0x7dff6e, 0xb44dff].map((h) => new THREE.Color(h));
+  confetti(pos: THREE.Vector3, palette?: THREE.Color[]): void {
+    const colors = palette ?? [0x29e6ff, 0xffb52e, 0xff4d6d, 0x7dff6e, 0xb44dff].map((h) => new THREE.Color(h));
     for (let i = 0; i < 60; i++) {
-      const c = palette[Math.floor(Math.random() * palette.length)];
+      const c = colors[Math.floor(Math.random() * colors.length)];
       this.spawn(
         pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 8, Math.random() * 4, (Math.random() - 0.5) * 8)),
         new THREE.Vector3((Math.random() - 0.5) * 9, 6 + Math.random() * 8, (Math.random() - 0.5) * 9),

@@ -770,3 +770,24 @@ button {
   color: #04121a;
   border-color: transparent;
 }
+
+#speedlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(255,255,255,0.14) 0deg 0.35deg, transparent 0.35deg 3deg);
+  mask-image: radial-gradient(circle at 50% 50%, transparent 34%, black 78%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 34%, black 78%);
+  mix-blend-mode: screen;
+}
+
+#vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0.25;
+  background: radial-gradient(ellipse at 50% 50%, transparent 52%, rgba(4, 6, 14, 0.85) 100%);
+}
