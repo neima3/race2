@@ -116,7 +116,32 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
   const hemiLight = new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, 0.85);
   scene.add(hemiLight);
 
-  const groundMat = new THREE.MeshStandardMaterial({ color: theme.groundColor, roughness: 1 });
+  let groundMat: THREE.Material;
+  if (theme.ambientSound === 'synth') {
+    const gc = document.createElement('canvas');
+    gc.width = 256;
+    gc.height = 256;
+    const gx = gc.getContext('2d')!;
+    gx.fillStyle = '#10131f';
+    gx.fillRect(0, 0, 256, 256);
+    gx.strokeStyle = 'rgba(54, 240, 255, 0.16)';
+    gx.lineWidth = 2;
+    for (let i = 0; i <= 256; i += 32) {
+      gx.beginPath();
+      gx.moveTo(i, 0);
+      gx.lineTo(i, 256);
+      gx.moveTo(0, i);
+      gx.lineTo(256, i);
+      gx.stroke();
+    }
+    const gtex = new THREE.CanvasTexture(gc);
+    gtex.wrapS = THREE.RepeatWrapping;
+    gtex.wrapT = THREE.RepeatWrapping;
+    gtex.repeat.set(60, 60);
+    groundMat = new THREE.MeshStandardMaterial({ map: gtex, color: theme.groundColor, roughness: 0.8, emissive: 0x0a1a24, emissiveIntensity: 0.6 });
+  } else {
+    groundMat = new THREE.MeshStandardMaterial({ color: theme.groundColor, roughness: 1 });
+  }
   const ground = new THREE.Mesh(new THREE.CircleGeometry(3600, 48), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.35;

@@ -148,7 +148,9 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef): TrackMeshes 
       stripeIndices.push(aR, aR + 4, aR + 1, aR + 1, aR + 4, aR + 5);
     }
   }
-  const stripeMat = new THREE.MeshBasicMaterial({ color: def.accent });
+  const stripeMat = new THREE.MeshBasicMaterial({
+    color: def.theme === 'neon' ? new THREE.Color(def.accent).multiplyScalar(2.2) : def.accent,
+  });
   const stripeGeo = new THREE.BufferGeometry();
   stripeGeo.setAttribute('position', new THREE.Float32BufferAttribute(stripePositions, 3));
   stripeGeo.setAttribute('normal', new THREE.Float32BufferAttribute(stripeNormals, 3));
