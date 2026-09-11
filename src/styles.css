@@ -810,3 +810,11 @@ button {
 .track-stars { display: flex; gap: 2px; justify-content: flex-end; font-size: 11px; }
 .pstar { opacity: 0.22; filter: grayscale(1); }
 .pstar.on { opacity: 1; filter: none; }
+
+.hud.practice .hud-timer-wrap { visibility: hidden; }
+.hud.practice .hud-best { visibility: hidden; }
+
+.touch-controls.touch-lefty .tc-left { left: auto; right: calc(122px + var(--safe-right)); }
+.touch-controls.touch-lefty .tc-right { left: auto; right: calc(18px + var(--safe-right)); }
+.touch-controls.touch-lefty .tc-gas { right: auto; left: calc(18px + var(--safe-left)); }
+.touch-controls.touch-lefty .tc-brake { right: auto; left: calc(122px + var(--safe-left)); }

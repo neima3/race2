@@ -100,6 +100,7 @@ export class RaceController {
   ghostActive = false;
   checkpointSplits: number[] = [];
   controlsEnabled = false;
+  practice = false;
 
   constructor(
     private car: CarPhysics,
@@ -239,8 +240,15 @@ export class RaceController {
       return;
     }
 
-    this.elapsedMs += dtMs;
+    if (this.phase === 'racing' && !this.practice) {
+      this.elapsedMs += dtMs;
+    }
     car.step(dtMs / 1000, input.steer, input.throttle, input.brake, input.drift, true);
+
+    if (this.practice) {
+      this.prevDist = car.state.trackDist;
+      return;
+    }
 
     if (car.state.forwardSpeed > 1) {
       this.maxProgress = Math.max(this.maxProgress, car.state.trackDist);

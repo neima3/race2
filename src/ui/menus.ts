@@ -37,6 +37,7 @@ export class MenuManager {
   onPlayTrack: (track: TrackDef) => void = () => {};
   onQuitToMenu: () => void = () => {};
   onResume: () => void = () => {};
+  onPractice: () => void = () => {};
   onRestart: () => void = () => {};
   onSettingsChanged: (s: Settings) => void = () => {};
   onTiltRequest: () => void = () => {};
@@ -218,6 +219,31 @@ export class MenuManager {
         { value: 'off', label: 'Off' },
       ], (v) => this.patchSettings({ showGhost: v === 'on' })),
     );
+    row(
+      'REDUCED MOTION',
+      select(s.reducedMotion ? 'on' : 'off', [
+        { value: 'off', label: 'Off' },
+        { value: 'on', label: 'On' },
+      ], (v) => this.patchSettings({ reducedMotion: v === 'on' })),
+    );
+    row(
+      'CAMERA SHAKE',
+      select(String(s.shakeIntensity), [
+        { value: '1', label: 'Full' },
+        { value: '0.5', label: 'Half' },
+        { value: '0', label: 'Off' },
+      ], (v) => this.patchSettings({ shakeIntensity: parseFloat(v) })),
+    );
+    row(
+      'LEFT-HANDED TOUCH',
+      select(s.leftyTouch ? 'on' : 'off', [
+        { value: 'off', label: 'Off' },
+        { value: 'on', label: 'On' },
+      ], (v) => {
+        this.patchSettings({ leftyTouch: v === 'on' });
+        this.root.classList.toggle('touch-lefty', v === 'on');
+      }),
+    );
 
     const sensWrap = el('div', 'setting-range-wrap');
     const sens = el('input', 'setting-range') as HTMLInputElement;
@@ -322,6 +348,9 @@ export class MenuManager {
     panel.append(el('h2', 'screen-title', 'PAUSED'));
     const resume = el('button', 'menu-btn primary', 'RESUME');
     resume.addEventListener('click', () => this.onResume());
+    const practice = el('button', 'menu-btn', 'PRACTICE MODE');
+    practice.id = 'practice-btn';
+    practice.addEventListener('click', () => this.onPractice());
     const restart = el('button', 'menu-btn', 'RESTART TRACK');
     restart.addEventListener('click', () => this.onRestart());
     const settings = el('button', 'menu-btn', 'SETTINGS');
@@ -332,13 +361,15 @@ export class MenuManager {
     });
     const quit = el('button', 'menu-btn danger', 'QUIT TO MENU');
     quit.addEventListener('click', () => this.onQuitToMenu());
-    panel.append(resume, restart, settings, quit);
+    panel.append(resume, practice, restart, settings, quit);
     screen.append(panel);
     return screen;
   }
 
-  showPause(): void {
+  showPause(practiceAvailable: boolean): void {
     this.pauseScreen.classList.remove('hidden');
+    const p = document.getElementById('practice-btn');
+    if (p) p.classList.toggle('hidden', !practiceAvailable);
     this.titleScreen.classList.add('hidden');
     this.tracksScreen.classList.add('hidden');
     this.settingsScreen.classList.add('hidden');

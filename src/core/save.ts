@@ -15,6 +15,9 @@ export interface Settings {
   steeringSensitivity: number;
   touchSteer: TouchSteerMode;
   showGhost: boolean;
+  reducedMotion: boolean;
+  shakeIntensity: number;
+  leftyTouch: boolean;
 }
 
 const SAVE_KEY = 'race2.save.v1';
@@ -36,6 +39,9 @@ const DEFAULT_SETTINGS: Settings = {
   steeringSensitivity: 1.0,
   touchSteer: 'buttons',
   showGhost: true,
+  reducedMotion: false,
+  shakeIntensity: 1,
+  leftyTouch: false,
 };
 
 function emptyTrackSave(): TrackSave {

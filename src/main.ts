@@ -101,12 +101,18 @@ class Game {
     this.rig = new CameraRig(canvas.clientWidth / Math.max(1, canvas.clientHeight));
     this.applyQualitySettings();
 
-    this.menu = new MenuManager(this.save, TRACKS);
     this.touch = new TouchControls(this.input);
+    this.menu = new MenuManager(this.save, TRACKS);
+    if (this.save.settings.leftyTouch) this.touch.root.classList.add('touch-lefty');
     document.getElementById('ui-root')!.append(this.hud.root, this.touch.root, this.menu.root);
 
     this.menu.onPlayTrack = (t) => this.startTrack(t);
     this.menu.onResume = () => this.resume();
+    this.menu.onPractice = () => {
+      if (this.race) this.race.practice = true;
+      this.hud.root.classList.add('practice');
+      this.resume();
+    };
     this.menu.onRestart = () => this.startTrack(this.track);
     this.menu.onQuitToMenu = () => this.quitToMenu();
     this.menu.onTiltRequest = () => void this.input.requestTiltPermission();
@@ -127,6 +133,7 @@ class Game {
         }
       }
       if (this.ghostVisual) this.ghostVisual.group.visible = s.showGhost;
+      this.touch.root.classList.toggle('touch-lefty', s.leftyTouch);
     };
     this.touch.onPause = () => {
       if (this.state === 'racing' || this.state === 'countdown') this.pause();
@@ -172,6 +179,12 @@ class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.onResize();
     this.setupComposer();
+  }
+
+  private shake(amount: number): void {
+    const s = this.save.settings;
+    if (s.reducedMotion) return;
+    this.rig.addShake(amount * s.shakeIntensity);
   }
 
   private setupComposer(): void {
@@ -310,6 +323,8 @@ class Game {
       this.rig.snapBehind(this.car!.state);
     }
     this.state = 'countdown';
+    this.race!.practice = false;
+    this.hud.root.classList.remove('practice');
     this.menu.hideAll();
     this.menu.hidePause();
     this.hud.show(
@@ -343,7 +358,7 @@ class Game {
   private pause(): void {
     if (this.state !== 'racing' && this.state !== 'countdown') return;
     this.state = 'paused';
-    this.menu.showPause();
+    this.menu.showPause(!this.race?.practice);
     this.audio.suspend();
   }
 
@@ -391,12 +406,12 @@ class Game {
     } else if (ev === 'boost') {
       this.audio.boost();
       this.input.rumble(0.7, 0.4, 220);
-      this.rig.addShake(0.5);
+      this.shake(0.5);
       this.boostKick = 1;
     } else if (ev === 'wallHit') {
       this.audio.crash();
       this.input.rumble(0.9, 0.6, 180);
-      this.rig.addShake(0.7);
+      this.shake(0.7);
       if (this.meshes && this.car) {
         const f = this.curve!.frames[this.car.state.trackIndex];
         const side = Math.sign(this.car.state.lateral) || 1;
@@ -409,7 +424,7 @@ class Game {
       const l = payload as RaceEvents['landed'];
       this.audio.land();
       this.input.rumble(0.8, 0.5, 140);
-      this.rig.addShake(Math.min(0.9, l.airTime * 0.8));
+      this.shake(Math.min(0.9, l.airTime * 0.8));
       if (this.car) this.particles.landingDust(this.car.state.pos.clone());
       this.carVisual?.setBodyPose(0, 0, Math.min(0.34, l.airTime * 0.45));
     } else if (ev === 'respawn') {
@@ -422,7 +437,7 @@ class Game {
       const tierBase = r.medal === 'author' ? 0x29e6ff : r.medal === 'gold' ? 0xffcf3f : r.medal === 'silver' ? 0xd7dee8 : r.medal === 'bronze' ? 0xe08d4f : 0x29e6ff;
       const tierColors = [new THREE.Color(tierBase), new THREE.Color(tierBase).lerp(new THREE.Color(0xffffff), 0.6), new THREE.Color(tierBase).lerp(new THREE.Color(0x000000), 0.25)];
       this.particles.confetti(this.car!.state.pos.clone(), tierColors);
-      this.slowmoUntil = performance.now() + 850;
+      this.slowmoUntil = this.save.settings.reducedMotion ? 0 : performance.now() + 850;
       window.setTimeout(() => {
         this.state = 'finished';
         this.hud.clearCenter();
@@ -669,7 +684,7 @@ class Game {
             this.ringsHit.add(key);
             this.car!.applyBoost(7, 1.2);
             this.audio.boost();
-            this.rig.addShake(0.4);
+            this.shake(0.4);
             this.boostKick = 0.8;
             this.particles.wallSparks(s.pos.clone(), new THREE.Vector3(0, 1, 0));
             this.input.rumble(0.6, 0.5, 200);
@@ -692,9 +707,9 @@ class Game {
       const liveDelta = this.race!.ghostActive ? this.race!.liveGhostDelta(s.trackDist, this.race!.elapsedMs) : null;
       const speedRatio = Math.min(1, Math.abs(s.forwardSpeed) / 58);
       const sl = document.getElementById('speedlines');
-      if (sl) sl.style.opacity = String(Math.max(0, (speedRatio - 0.62) / 0.38) * 0.85);
+      if (sl) sl.style.opacity = this.save.settings.reducedMotion ? '0' : String(Math.max(0, (speedRatio - 0.62) / 0.38) * 0.85);
       const vg = document.getElementById('vignette');
-      if (vg) vg.style.opacity = String(0.25 + speedRatio * 0.45);
+      if (vg) vg.style.opacity = this.save.settings.reducedMotion ? '0.2' : String(0.25 + speedRatio * 0.45);
       this.hud.driftPoints = this.driftScore;
       this.hud.update(
         this.race!.elapsedMs,
