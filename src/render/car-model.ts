@@ -61,19 +61,41 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarB
     depthWrite: !ghost,
   });
 
+  const accent2Mat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(paintColor).offsetHSL(0.5, 0, 0.08),
+    transparent: ghost,
+    opacity: ghost ? 0.25 : 1,
+    depthWrite: !ghost,
+  });
+
   const chassis = new THREE.Mesh(new THREE.BoxGeometry(style === 'tank' ? 1.95 : style === 'aero' ? 1.55 : 1.7, style === 'tank' ? 0.45 : 0.34, 3.4), bodyMat);
   chassis.position.y = 0.42;
   chassis.castShadow = !ghost;
   bodyGroup.add(chassis);
 
-  if (style === 'tank') {
-    for (const sx of [-0.98, 0.98]) {
-      const pod = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 2.0), darkMat);
-      pod.position.set(sx, 0.42, -0.3);
-      pod.castShadow = !ghost;
-      bodyGroup.add(pod);
-    }
+  for (const z of [0.6, -0.4]) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.02, 1.4), accent2Mat);
+    stripe.position.set(-0.22, (style === 'tank' ? 0.45 : 0.34) / 2 + 0.42 + 0.011, z);
+    bodyGroup.add(stripe);
+    const stripe2 = stripe.clone();
+    stripe2.position.x = 0.22;
+    bodyGroup.add(stripe2);
   }
+
+  const pontoonW = style === 'tank' ? 0.34 : style === 'aero' ? 0.2 : 0.26;
+  for (const sx of [-1, 1]) {
+    const pod = new THREE.Mesh(new THREE.BoxGeometry(pontoonW, 0.26, 2.1), darkMat);
+    pod.position.set(sx * (1.7 / 2 + pontoonW / 2 - 0.02), 0.4, -0.35);
+    pod.castShadow = !ghost;
+    bodyGroup.add(pod);
+  }
+
+  const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 0.5), darkMat);
+  splitter.position.set(0, 0.24, 1.6);
+  bodyGroup.add(splitter);
+  const diffuser = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.2, 0.4), darkMat);
+  diffuser.position.set(0, 0.3, -1.75);
+  bodyGroup.add(diffuser);
 
   const noseGeo = new THREE.BufferGeometry();
   noseGeo.setAttribute(
@@ -98,6 +120,13 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarB
   const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }));
   helmet.position.set(0, 0.86, -0.18);
   bodyGroup.add(helmet);
+
+  for (const sx of [-0.16, 0.16]) {
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.28, 3, 6), accent2Mat);
+    arm.rotation.x = Math.PI / 2.2;
+    arm.position.set(sx, 0.62, 0.22);
+    bodyGroup.add(arm);
+  }
 
   const halo = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.05, 6, 14, Math.PI), darkMat);
   halo.rotation.x = -Math.PI / 2;
@@ -149,6 +178,9 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarB
     wheel.castShadow = !ghost;
     const hub = new THREE.Mesh(hubGeo, hubMat);
     wheel.add(hub);
+    const disc = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 6, 16), new THREE.MeshStandardMaterial({ color: 0xff5533, roughness: 0.5, emissive: 0x330b00 }));
+    disc.rotation.y = Math.PI / 2;
+    wheel.add(disc);
     group.add(wheel);
     wheels.push(wheel);
   }
