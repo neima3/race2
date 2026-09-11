@@ -214,23 +214,35 @@ export class TrackCurve {
     const n = frames.length;
     const last = n - 1;
     const consider = (i: number): number => (i === last ? 0 : i);
-    let best = -1;
-    let bestCost = Infinity;
+    let bestPhys = Infinity;
+    let bestPhysIdx = -1;
     for (let k = -windowSize; k <= windowSize; k++) {
       const i = consider(((((hintIndex + k) % n) + n) % n));
-      const d = frames[i].pos.distanceToSquared(pos) + k * k * 0.16;
-      if (d < bestCost) {
-        bestCost = d;
-        best = i;
+      const d = frames[i].pos.distanceToSquared(pos);
+      if (d < bestPhys) {
+        bestPhys = d;
+        bestPhysIdx = i;
       }
     }
-    if (best < 0 || bestCost > 3600) {
+    if (bestPhysIdx < 0 || bestPhys > 3600) {
       for (let i = 0; i < last; i++) {
         const d = frames[i].pos.distanceToSquared(pos);
-        if (d < bestCost) {
-          bestCost = d;
-          best = i;
+        if (d < bestPhys) {
+          bestPhys = d;
+          bestPhysIdx = i;
         }
+      }
+      return Math.max(0, bestPhysIdx);
+    }
+    const cutoff = bestPhys * 1.69;
+    let best = bestPhysIdx;
+    let bestK = windowSize + 1;
+    for (let k = -windowSize; k <= windowSize; k++) {
+      const i = consider(((((hintIndex + k) % n) + n) % n));
+      const d = frames[i].pos.distanceToSquared(pos);
+      if (d <= cutoff && Math.abs(k) < bestK) {
+        bestK = Math.abs(k);
+        best = i;
       }
     }
     return Math.max(0, best);
