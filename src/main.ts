@@ -748,6 +748,7 @@ window.__race2 = {
       pos: car ? { x: +car.state.pos.x.toFixed(1), y: +car.state.pos.y.toFixed(1), z: +car.state.pos.z.toFixed(1) } : null,
       speedMs: car ? +car.state.speed.toFixed(1) : 0,
       forwardMs: car ? +car.state.forwardSpeed.toFixed(1) : 0,
+      pitch: car ? +(Math.asin(Math.max(-1, Math.min(1, new THREE.Vector3(0, 0, 1).applyQuaternion(car.state.quat).y))) * (180 / Math.PI)).toFixed(0) : 0,
       grounded: car?.state.grounded,
       trackDist: car ? Math.round(car.state.trackDist) : 0,
       trackLen: car ? Math.round(car['curve'].length ?? 0) : 0,

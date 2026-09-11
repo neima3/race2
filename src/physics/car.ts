@@ -251,6 +251,13 @@ export class CarPhysics {
       const airYaw = this.tmpQ.setFromAxisAngle(worldDown, steer * 0.9 * dt);
       s.quat.premultiply(airYaw);
 
+      const pitchInput = (throttle - brake) * (controlsEnabled ? 1 : 0);
+      if (Math.abs(pitchInput) > 0.05) {
+        const localX = this.tmpV1.set(1, 0, 0).applyQuaternion(s.quat).normalize();
+        const airPitch = this.tmpQ.setFromAxisAngle(localX, pitchInput * 2.4 * dt);
+        s.quat.premultiply(airPitch).normalize();
+      }
+
       this.curve.surfaceQuery(s.pos, s.trackIndex, this.query);
       s.trackIndex = this.query.index;
       const nf = this.query.frame;
