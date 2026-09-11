@@ -13,6 +13,7 @@ import { buildTrackMeshes, type TrackMeshes } from './track/builder';
 import { CarPhysics } from './physics/car';
 import { buildCarVisual, type CarVisual } from './render/car-model';
 import { SkidMarks } from './render/skidmarks';
+import { GarageSystem } from './systems/garage';
 import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem } from './render/particles';
 import { CameraRig } from './render/camera';
@@ -33,6 +34,7 @@ class Game {
   private save = new SaveManager();
   private audio = new AudioEngine();
   private hud = new HUD();
+  private garage: GarageSystem;
   private particles = new ParticleSystem();
   private menu: MenuManager;
   private touch: TouchControls;
@@ -101,6 +103,7 @@ class Game {
     this.menu.onGarageChange = (paint, body) => {
       this.applyPlayerStyle(paint, body);
     };
+    this.garage = new GarageSystem(this.save);
     this.menu.onSettingsChanged = (s) => {
       this.audio.setMusicEnabled(this.runtimeMuted ? false : s.music);
       this.audio.setSfxEnabled(this.runtimeMuted ? false : s.sfx);
@@ -204,56 +207,14 @@ class Game {
     this.loadTrackIntoScene(this.track);
   }
 
-  private garageRenderer: THREE.WebGLRenderer | null = null;
-  private garageScene: THREE.Scene | null = null;
-  private garageCamera: THREE.PerspectiveCamera | null = null;
-  private garageCar: CarVisual | null = null;
-
-  private applyPlayerStyle(paint: number, body: 'standard' | 'aero' | 'tank'): void {
-    if (this.garageCar) this.garageCar.setPaint(paint);
-    if (this.carVisual) {
-      this.carVisual.setPaint(paint);
-    }
+  private applyPlayerStyle(_paint: number, body: 'standard' | 'aero' | 'tank'): void {
+    this.garage.applyTo(this.carVisual!, this.ghostVisual ?? null);
     if (this.track && this.save.profile.body !== body) {
       this.save.updateProfile({ body });
       this.loadTrackIntoScene(this.track);
       if (this.state === 'menu') this.car!.placeAtFrame(0, 8);
     }
-    if (this.ghostVisual) this.ghostVisual.setPaint(paint);
   }
-
-  private renderGaragePreview(): void {
-    const canvas = this.menu.garageCanvas;
-    if (!canvas) return;
-    if (!this.garageRenderer || !this.garageScene || !this.garageCamera) {
-      this.garageRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-      this.garageRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-      this.garageScene = new THREE.Scene();
-      this.garageCamera = new THREE.PerspectiveCamera(40, canvas.width / canvas.height, 0.1, 50);
-      this.garageCamera.position.set(3.6, 2.2, 4.6);
-      this.garageCamera.lookAt(0, 0.4, 0);
-      const key = new THREE.DirectionalLight(0xfff0dd, 2.2);
-      key.position.set(4, 6, 3);
-      const rim = new THREE.DirectionalLight(0x8fb4ff, 1.4);
-      rim.position.set(-5, 3, -4);
-      this.garageScene.add(key, rim, new THREE.HemisphereLight(0xbdd4f0, 0x222222, 0.9));
-      this.garageCar = buildCarVisual(this.save.profile.paint, false, this.save.profile.body);
-      this.garageScene.add(this.garageCar.group);
-      this.garageStyle = this.save.profile.body;
-    }
-    if (this.garageCar && this.save.profile.body !== this.garageStyle) {
-      this.garageScene.remove(this.garageCar.group);
-      this.garageCar = buildCarVisual(this.save.profile.paint, false, this.save.profile.body);
-      this.garageScene.add(this.garageCar.group);
-      this.garageStyle = this.save.profile.body;
-    }
-    if (this.garageCar) {
-      this.garageCar.group.rotation.y = performance.now() * 0.0006;
-    }
-    this.garageRenderer.render(this.garageScene, this.garageCamera);
-  }
-
-  private garageStyle: 'standard' | 'aero' | 'tank' = 'standard';
 
   private loadTrackIntoScene(def: TrackDef): void {
     this.clearTrackScene();
@@ -473,7 +434,7 @@ class Game {
 
     if (this.state === 'menu') {
       if (this.menu.isGarageOpen) {
-        this.renderGaragePreview();
+        this.garage.renderPreview(this.menu.garageCanvas!);
       } else {
         this.menuOrbitAngle += dt * 0.08;
         if (this.curve && this.car) {
