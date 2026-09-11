@@ -176,7 +176,7 @@ export class ParticleSystem {
         continue;
       }
       p.life -= dt;
-      if (p.life <= 0) {
+      if (p.life <= 0 || !Number.isFinite(p.pos.x + p.pos.y + p.pos.z + p.vel.x + p.vel.y + p.vel.z)) {
         p.active = false;
         this.sizes[i] = 0;
         continue;

@@ -47,6 +47,7 @@ export class SkidMarks {
   }
 
   addSegment(left: THREE.Vector3, right: THREE.Vector3, leftPrev: THREE.Vector3, rightPrev: THREE.Vector3, strength: number): void {
+    if (![left, right, leftPrev, rightPrev].every((v) => Number.isFinite(v.x + v.y + v.z))) return;
     const q = this.cursor;
     this.cursor = (this.cursor + 1) % MAX_QUADS;
     const v = q * 4;

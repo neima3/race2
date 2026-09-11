@@ -13,8 +13,9 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "@types/three": "^0.185.4",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2",
-    "@types/three": "^0.185.4"
+    "vite": "^8.2.2"
   }
 }

@@ -18,6 +18,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { GarageSystem } from './systems/garage';
 import { buildTrackProps } from './render/props';
+import { autopilotDrive } from './systems/autopilot';
+import { el } from './ui/common';
 import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem } from './render/particles';
 import { CameraRig } from './render/camera';
@@ -26,7 +28,7 @@ import { HUD } from './ui/hud';
 import { MenuManager } from './ui/menus';
 import { TouchControls } from './ui/touch';
 
-type AppState = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished' | 'replay';
+type AppState = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished' | 'replay' | 'photo';
 
 const kmh = 3.6;
 
@@ -64,6 +66,7 @@ class Game {
   private autoTimer: number | null = null;
   private autoStuck = 0;
   private autoTicks = 0;
+  private autoSmooth = { smooth: 0 };
   private autoDbg: Record<string, number> = {};
   private runtimeMuted: boolean;
   private composer: EffectComposer | null = null;
@@ -82,6 +85,9 @@ class Game {
   private skidPrevL2: THREE.Vector3 | null = null;
   private skidPrevR2: THREE.Vector3 | null = null;
   private slowmoUntil = 0;
+  private photo: { yaw: number; pitch: number; dist: number; filterIdx: number } | null = null;
+  private photoUi: HTMLElement | null = null;
+  private readonly photoFilters = ['none', 'sepia(0.5) saturate(1.3)', 'hue-rotate(180deg) saturate(1.2)', 'grayscale(1)'];
   private ringsHit = new Set<string>();
   private driftScore = 0;
   private replayCar: CarVisual | null = null;
@@ -188,6 +194,107 @@ class Game {
     const s = this.save.settings;
     if (s.reducedMotion) return;
     this.rig.addShake(amount * s.shakeIntensity);
+  }
+
+  private enterPhoto(): void {
+    if (this.state !== 'racing' && this.state !== 'replay') return;
+    this.photo = { yaw: Math.PI, pitch: 0.35, dist: 9, filterIdx: 0 };
+    this.state = 'photo';
+    this.hud.hide();
+    this.touch.hide();
+    if (!this.photoUi) {
+      const ui = el('div', 'photo-ui');
+      ui.innerHTML = `<div class="photo-hint">DRAG orbit · WHEEL zoom · P exit</div>`;
+      const filters = el('button', 'menu-btn small', 'FILTER');
+      filters.addEventListener('click', () => {
+        if (!this.photo) return;
+        this.photo.filterIdx = (this.photo.filterIdx + 1) % this.photoFilters.length;
+        this.canvas.style.filter = this.photoFilters[this.photo.filterIdx];
+      });
+      const snap = el('button', 'menu-btn small primary', 'SNAP');
+      snap.addEventListener('click', () => {
+        this.canvas.toBlob((blob) => {
+          if (!blob) return;
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `race2-photo-${Date.now()}.png`;
+          a.click();
+        }, 'image/png');
+      });
+      const exit = el('button', 'menu-btn small', 'EXIT (P)');
+      exit.addEventListener('click', () => this.exitPhoto());
+      const bar = el('div', 'photo-bar');
+      bar.append(filters, snap, exit);
+      ui.append(bar);
+      document.getElementById('ui-root')!.append(ui);
+      this.photoUi = ui;
+    }
+    this.photoUi.classList.remove('hidden');
+    this.setupPhotoInput();
+  }
+
+  private exitPhoto(): void {
+    this.photo = null;
+    this.canvas.style.filter = '';
+    this.photoCleanup?.();
+    this.photoUi?.classList.add('hidden');
+    this.state = 'racing';
+    this.hud.show(this.track.name, this.save.trackSave(this.track.id).bestTimeMs, this.track.checkpoints.length);
+    if (matchMedia('(pointer: coarse)').matches) this.touch.show();
+  }
+
+  private setupPhotoInput(): void {
+    let dragging = false;
+    let lx = 0;
+    let ly = 0;
+    const down = (e: PointerEvent) => {
+      dragging = true;
+      lx = e.clientX;
+      ly = e.clientY;
+    };
+    const move = (e: PointerEvent) => {
+      if (!dragging || !this.photo) return;
+      this.photo.yaw -= (e.clientX - lx) * 0.008;
+      this.photo.pitch = Math.max(-0.2, Math.min(1.2, this.photo.pitch + (e.clientY - ly) * 0.006));
+      lx = e.clientX;
+      ly = e.clientY;
+    };
+    const up = () => {
+      dragging = false;
+    };
+    const wheel = (e: WheelEvent) => {
+      if (!this.photo) return;
+      e.preventDefault();
+      this.photo.dist = Math.max(3.5, Math.min(30, this.photo.dist + e.deltaY * 0.01));
+    };
+    this.canvas.addEventListener('pointerdown', down);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    this.canvas.addEventListener('wheel', wheel, { passive: false });
+    this.photoCleanup = () => {
+      this.canvas.removeEventListener('pointerdown', down);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      this.canvas.removeEventListener('wheel', wheel);
+    };
+  }
+
+  private canvasEl: HTMLCanvasElement = canvas;
+  private get canvas(): HTMLCanvasElement { return this.canvasEl; }
+  private photoCleanup: (() => void) | null = null;
+
+  private updatePhoto(): void {
+    if (!this.photo || !this.car) return;
+    const carPos = this.car.state.pos;
+    const cp = this.photo;
+    const x = carPos.x + cp.dist * Math.cos(cp.pitch) * Math.sin(cp.yaw);
+    const y = carPos.y + cp.dist * Math.sin(cp.pitch) + 1;
+    const z = carPos.z + cp.dist * Math.cos(cp.pitch) * Math.cos(cp.yaw);
+    this.rig.camera.position.set(x, y, z);
+    this.rig.camera.up.set(0, 1, 0);
+    this.rig.camera.lookAt(carPos);
+    this.rig.camera.fov = 50;
+    this.rig.camera.updateProjectionMatrix();
   }
 
   private setupComposer(): void {
@@ -584,7 +691,9 @@ class Game {
     const input = this.input.sample(this.save.settings.steeringSensitivity);
 
     if (input.pause) {
-      if (this.state === 'racing' || this.state === 'countdown') {
+      if (this.state === 'photo') {
+        this.exitPhoto();
+      } else if (this.state === 'racing' || this.state === 'countdown') {
         if (this.race?.phase !== 'finished') this.pause();
       } else if (this.state === 'paused') {
         this.resume();
@@ -595,9 +704,21 @@ class Game {
       }
     }
 
+    if (input.cameraToggle) {
+      if (this.state === 'racing' || this.state === 'photo') {
+        if (this.state === 'racing') this.rig.toggleMode();
+        else this.exitPhoto();
+      }
+    }
+
     if (this.state === 'paused') {
       this.renderFrame();
       return;
+    }
+
+    if (input.photo) {
+      if (this.state === 'racing' || this.state === 'replay') this.enterPhoto();
+      else if (this.state === 'photo') this.exitPhoto();
     }
 
     if (this.state === 'replay') {
@@ -605,6 +726,13 @@ class Game {
       this.environment?.update(this.rig.camera.position);
       this.environment?.animate(now / 1000, dt);
       this.particles.update(dt);
+      this.renderFrame();
+      return;
+    }
+
+    if (this.state === 'photo') {
+      this.updatePhoto();
+      this.environment?.update(this.rig.camera.position);
       this.renderFrame();
       return;
     }
@@ -642,6 +770,10 @@ class Game {
     if (steps === 8) this.acc = 0;
 
     const s = this.car!.state;
+    if (!Number.isFinite(s.pos.x + s.pos.y + s.pos.z + s.vel.x + s.vel.y + s.vel.z)) {
+      this.race!.respawnAtCheckpoint();
+      this.rig.snapBehind(this.car!.state);
+    }
     this.carVisual!.group.position.copy(s.pos);
     this.carVisual!.group.quaternion.copy(s.quat);
 
@@ -828,88 +960,36 @@ window.__race2 = {
       return 'off';
     }
     if (game['autoTimer'] !== null) return 'already';
+    game['autoSmooth'] = { smooth: 0 };
     game['autoTimer'] = setInterval(() => {
       game['autoTicks'] = (game['autoTicks'] ?? 0) + 1;
       try {
         const car = game['car'];
         const race = game['race'];
         if (!car || !race) return;
-      const s = car.state;
-      const curve = car['curve'];
-      const frame = curve.frames[s.trackIndex];
-      const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(s.quat);
-      const cross = new THREE.Vector3().crossVectors(fwd, frame.tangent).dot(frame.normal);
-      const dot = Math.max(-1, Math.min(1, fwd.dot(frame.tangent)));
-      const headingErr = Math.atan2(cross, dot);
-      if (Math.abs(headingErr) > 2.2) {
-        race.respawnAtCheckpoint();
-        return;
-      }
-      if (s.speed < 2.5 && Math.abs(s.lateral) > frame.halfWidth + 1.4) {
-        game['autoStuck']++;
-      } else if (Math.abs(s.lateral) > frame.halfWidth + 1.6) {
-        game['autoStuck'] += 3;
-      } else {
-        game['autoStuck'] = 0;
-      }
-      if (game['autoStuck'] > 60) {
-        game['autoStuck'] = 0;
-        race.respawnAtCheckpoint();
-        return;
-      }
-      const lookahead = 12 + s.speed * 0.55;
-      const targetFrame = {
-        pos: new THREE.Vector3(),
-        tangent: new THREE.Vector3(),
-        normal: new THREE.Vector3(),
-        binormal: new THREE.Vector3(),
-        halfWidth: 0,
-        dist: 0,
-      };
-      curve.frameAtDist(s.trackDist + lookahead, targetFrame);
-      const invQ = s.quat.clone().invert();
-      const local = targetFrame.pos.clone().sub(s.pos).applyQuaternion(invQ);
-      const angle = Math.atan2(local.x, local.z);
-      const steer = Math.max(-1, Math.min(1, -angle * 2.4));
-      const absA = Math.abs(angle);
-
-      const probe = {
-        pos: new THREE.Vector3(),
-        tangent: new THREE.Vector3(),
-        normal: new THREE.Vector3(),
-        binormal: new THREE.Vector3(),
-        halfWidth: 0,
-        dist: 0,
-      };
-      let maxCurv = 0;
-      let prevTangent: THREE.Vector3 | null = null;
-      for (const dd of [8, 18, 28, 38, 50]) {
-        curve.frameAtDist(s.trackDist + dd, probe);
-        if (prevTangent) {
-          const ang = prevTangent.angleTo(probe.tangent);
-          const seg = 10;
-          maxCurv = Math.max(maxCurv, ang / seg);
+        const s = car.state;
+        const curve = car['curve'];
+        const frame = curve.frames[s.trackIndex];
+        const r = autopilotDrive(car, curve, 0.05, game['autoSmooth']);
+        if ((r as { respawn?: boolean }).respawn) {
+          race.respawnAtCheckpoint();
+          return;
         }
-        prevTangent = probe.tangent.clone();
-      }
-      const targetSpeed = Math.min(58, Math.max(14, Math.sqrt(38 / Math.max(maxCurv, 1e-4))));
-      let throttle: number;
-      let brake: number;
-      if (s.forwardSpeed > targetSpeed * 1.1) {
-        throttle = 0;
-        brake = 0.75;
-      } else if (s.forwardSpeed > targetSpeed * 0.95) {
-        throttle = 0.3;
-        brake = 0;
-      } else {
-        throttle = absA > 1.1 ? 0.3 : 1;
-        brake = 0;
-      }
-      game['autoDbg'] = { angle: +angle.toFixed(2), steer: +steer.toFixed(2), throttle, brake, tgt: Math.round(targetSpeed), spd: +s.speed.toFixed(1) };
-      game['input'].setVirtual({ steer, throttle, brake, drift: false });
+        if (s.speed < 2.5 && Math.abs(s.lateral) > frame.halfWidth + 1.4) {
+          game['autoStuck']++;
+        } else if (Math.abs(s.lateral) > frame.halfWidth + 1.6) {
+          game['autoStuck'] += 3;
+        } else {
+          game['autoStuck'] = 0;
+        }
+        if (game['autoStuck'] > 60) {
+          game['autoStuck'] = 0;
+          race.respawnAtCheckpoint();
+          return;
+        }
+        game['input'].setVirtual({ steer: r.steer, throttle: r.throttle, brake: r.brake, drift: false });
       } catch (e) {
-        game['autoDbg'] = { err: 1, msg: 0 };
-        (window as unknown as { __aerr2: string }).__aerr2 = String(e);
+        /* autopilot tick skipped */
       }
     }, 50) as unknown as number;
     return 'on';

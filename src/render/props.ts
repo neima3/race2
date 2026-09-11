@@ -142,6 +142,8 @@ function makeBillboardTexture(): THREE.CanvasTexture {
 
 export function buildTrackProps(curve: TrackCurve, theme: ThemeId, quality: 'low' | 'medium' | 'high'): THREE.Group {
   const group = new THREE.Group();
+  const DISABLED = false;
+  if (DISABLED) return group;
   const rng = (() => {
     let s = 90210;
     return () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
@@ -232,7 +234,7 @@ export function buildTrackProps(curve: TrackCurve, theme: ThemeId, quality: 'low
     const row = new THREE.Mesh(new THREE.BoxGeometry(26, 0.8, 1.6), standMat);
     row.position.set(0, 0.5 + r * 0.8, -r * 1.7);
     grandstand.add(row);
-    const crowd = new THREE.InstancedMesh(new THREE.SphereGeometry(0.22, 5, 4), new THREE.MeshStandardMaterial({ vertexColors: true }), 26);
+    const crowd = new THREE.InstancedMesh(new THREE.SphereGeometry(0.22, 5, 4), new THREE.MeshStandardMaterial({ roughness: 0.8 }), 26);
     const cd = new THREE.Object3D();
     const palette = [0x29e6ff, 0xffb52e, 0xff4d6d, 0x7dff6e, 0xffffff].map((h) => new THREE.Color(h));
     for (let c = 0; c < 26; c++) {

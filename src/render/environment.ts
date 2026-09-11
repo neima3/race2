@@ -281,6 +281,7 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     new THREE.MeshBasicMaterial({ color: new THREE.Color(theme.hemiSky).lerp(new THREE.Color(0xffffff), 0.5) }),
     260,
   );
+  reflectors.visible = false;
   {
     const d = new THREE.Object3D();
     let n = 0;
@@ -300,8 +301,8 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
   }
   group.add(reflectors);
 
-  let water: THREE.Mesh | null = null;
-  if (theme.ambientSound === 'birds' || theme.ambientSound === 'waves') {
+  const waterRef = { mesh: null as THREE.Mesh | null };
+  if (false && (theme.ambientSound === 'birds' || theme.ambientSound === 'waves')) {
     const waterGeo = new THREE.CircleGeometry(3200, 40);
     const waterMat = new THREE.ShaderMaterial({
       transparent: true,
@@ -328,7 +329,8 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
         }
       `,
     });
-    water = new THREE.Mesh(waterGeo, waterMat);
+    waterRef.mesh = new THREE.Mesh(waterGeo, waterMat);
+    const water = waterRef.mesh as THREE.Mesh;
     water.rotation.x = -Math.PI / 2;
     water.position.y = -8;
     group.add(water);
@@ -341,11 +343,12 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     ground.position.z = cameraPos.z;
     sunLight.target.position.copy(cameraPos);
     sunLight.position.copy(cameraPos).add(sunOffset);
-    if (water) {
+    const w = waterRef.mesh;
+    if (w) {
       clock2 += 0.016;
-      (water.material as THREE.ShaderMaterial).uniforms.uTime.value = clock2;
-      water.position.x = cameraPos.x;
-      water.position.z = cameraPos.z;
+      (w.material as THREE.ShaderMaterial).uniforms.uTime.value = clock2;
+      w.position.x = cameraPos.x;
+      w.position.z = cameraPos.z;
     }
   };
 

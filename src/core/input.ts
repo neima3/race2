@@ -8,6 +8,7 @@ export interface InputFrame {
   restart: boolean;
   cameraToggle: boolean;
   pause: boolean;
+  photo: boolean;
 }
 
 const KEY_STEER_LEFT = new Set(['ArrowLeft', 'KeyA']);
@@ -20,6 +21,7 @@ const KEY_RESTART = new Set(['KeyR', 'Enter']);
 const KEY_CAMERA = new Set(['KeyC']);
 const KEY_PAUSE = new Set(['Escape', 'KeyP']);
 const KEY_LOOKBACK = new Set(['KeyQ', 'KeyB']);
+const KEY_PHOTO = new Set(['KeyP']);
 
 export class InputManager {
   private keysDown = new Set<string>();
@@ -34,7 +36,7 @@ export class InputManager {
     camera: false,
     lookBack: false,
   };
-  private prevAction = { respawn: false, restart: false, camera: false, pause: false };
+  private prevAction = { respawn: false, restart: false, camera: false, pause: false, photo: false };
   private gamepadIndex: number | null = null;
   private tilt = { gamma: 0, active: false };
   private steerSmoothed = 0;
@@ -152,6 +154,7 @@ export class InputManager {
     let brake = 0;
     let drift = false;
     let lookBack = false;
+    let photo = false;
     let respawn = false;
     let restart = false;
     let cameraToggle = false;
@@ -164,6 +167,7 @@ export class InputManager {
       else if (KEY_BRAKE.has(code)) brake = 1;
       else if (KEY_DRIFT.has(code)) drift = true;
       else if (KEY_LOOKBACK.has(code)) lookBack = true;
+      else if (KEY_PHOTO.has(code)) photo = true;
       else if (KEY_RESPAWN.has(code)) respawn = true;
       else if (KEY_RESTART.has(code)) restart = true;
       else if (KEY_CAMERA.has(code)) cameraToggle = true;
@@ -220,7 +224,8 @@ export class InputManager {
     const edgeRestart = restart && !this.prevAction.restart;
     const edgeCamera = cameraToggle && !this.prevAction.camera;
     const edgePause = pause && !this.prevAction.pause;
-    this.prevAction = { respawn, restart, camera: cameraToggle, pause };
+    const edgePhoto = photo && !this.prevAction.photo;
+    this.prevAction = { respawn, restart, camera: cameraToggle, pause, photo };
 
     return {
       steer: this.steerSmoothed,
@@ -232,6 +237,7 @@ export class InputManager {
       restart: edgeRestart,
       cameraToggle: edgeCamera,
       pause: edgePause,
+      photo: edgePhoto,
     };
   }
 }

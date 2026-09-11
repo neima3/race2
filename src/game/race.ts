@@ -293,7 +293,7 @@ export class RaceController {
             const crossedFinish = prev > len * 0.75 && curr < len * 0.25;
       const progressValid = this.maxProgress > len * 0.92;
       const roadHalf = this.curve.frames[car.state.trackIndex].halfWidth;
-      const onRoad = Math.abs(car.state.lateral) < roadHalf + 1.2;
+      const onRoad = Math.abs(car.state.lateral) < roadHalf + 2.0;
       const moving = car.state.forwardSpeed > 8;
       if (crossedFinish && progressValid && onRoad && moving) {
         this.finish();
