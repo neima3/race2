@@ -2,7 +2,7 @@
 
 ## Progress tracker
 - [x] Phase 1: Correctness sweep — ship-stoppers & latent bugs
-- [ ] Phase 2: Rivals core — AI opponents, grid starts, positions, multi-lap races
+- [x] Phase 2: Rivals core — AI opponents, grid starts, positions, multi-lap races
 - [ ] Phase 3: Rival identity + race HUD — names/colors, position tracker, minimap
 - [ ] Phase 4: Career — cups, points, podiums, trophies
 - [ ] Phase 5: Car progression — distinct tuning per body, unlocks, stat bars

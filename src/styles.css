@@ -152,6 +152,17 @@ button {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
+.hud-lap {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.hud-lap.hidden { display: none; }
+
 .hud-bottom {
   position: absolute;
   bottom: calc(18px + var(--safe-bottom));
@@ -904,6 +915,12 @@ button {
   color: #1a0d02;
   border-color: transparent;
   box-shadow: 0 0 18px rgba(255, 181, 46, 0.4);
+}
+
+.mode-chip.rivals.on {
+  background: linear-gradient(135deg, #7d5cff, #29e6ff);
+  color: #02121a;
+  box-shadow: 0 0 18px rgba(41, 230, 255, 0.4);
 }
 
 .hud-driftmode {

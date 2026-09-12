@@ -14,6 +14,7 @@ export class HUD {
   private driftEl: HTMLElement;
   private respawnHint: HTMLElement;
   private liveDeltaEl: HTMLElement;
+  private lapEl: HTMLElement;
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
   driftPoints = 0;
@@ -37,6 +38,8 @@ export class HUD {
     timerWrap.append(this.timerEl, this.bestEl, this.liveDeltaEl);
     const cpWrap = el('div', 'hud-cp-wrap');
     this.cpEl = el('div', 'hud-cp');
+    this.lapEl = el('div', 'hud-lap hidden');
+    cpWrap.append(this.lapEl, this.cpEl);
     topBar.append(this.trackNameEl, timerWrap, cpWrap);
 
     this.speedEl = el('div', 'hud-speed', '0');
@@ -164,6 +167,15 @@ export class HUD {
     } else {
       this.progressGhost.style.display = 'block';
       this.progressGhost.style.left = `${Math.min(100, Math.max(0, ghostRatio * 100))}%`;
+    }
+  }
+
+  setLapCounter(text: string | null): void {
+    if (text === null) {
+      this.lapEl.classList.add('hidden');
+    } else {
+      this.lapEl.textContent = text;
+      this.lapEl.classList.remove('hidden');
     }
   }
 

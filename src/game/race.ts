@@ -5,6 +5,7 @@ import type { TrackDef } from '../track/defs';
 import type { InputFrame } from '../core/input';
 import type { SaveManager } from '../core/save';
 import { DEV_GHOSTS } from '../track/devghosts.gen';
+import { updateBoostPads, resetPads, type PadState } from './rules';
 
 export type RacePhase = 'countdown' | 'racing' | 'finished';
 
@@ -33,6 +34,8 @@ export interface RaceEvents {
   landed: { airTime: number };
   finish: FinishResult;
   respawn: undefined;
+  lap: { lap: number; totalLaps: number };
+  finalLap: undefined;
 }
 
 interface GhostSample {
@@ -90,10 +93,14 @@ export class RaceController {
   elapsedMs = 0;
   countdownMs = 3600;
   nextCheckpoint = 0;
+  totalLaps = 1;
+  writesRecords = true;
+  lapsDone = 0;
+  private lapOffset = 0;
+  private progressDatum = 0;
   private prevDist = 0;
   private maxProgress = 0;
-  private lastBoostIndex = -1;
-  private boostCooldown = 0;
+  private pads: PadState = { lastBoostIndex: -1, boostCooldown: 0 };
   private recording: GhostSample[] = [];
   private ghost: GhostSample[] = [];
   private ghostDists: number[] = [];
@@ -109,7 +116,11 @@ export class RaceController {
     private def: TrackDef,
     private save: SaveManager,
     private emit: <K extends keyof RaceEvents>(event: K, payload?: RaceEvents[K]) => void,
-  ) {}
+    opts: { laps?: number; writesRecords?: boolean } = {},
+  ) {
+    if (opts.laps !== undefined) this.totalLaps = opts.laps;
+    if (opts.writesRecords !== undefined) this.writesRecords = opts.writesRecords;
+  }
 
   start(): void {
     this.phase = 'countdown';
@@ -118,15 +129,21 @@ export class RaceController {
     this.nextCheckpoint = 0;
     this.checkpointSplits = [];
     this.recording = [];
-    this.lastBoostIndex = -1;
-    this.boostCooldown = 0;
+    resetPads(this.pads);
     this.controlsEnabled = false;
     this.prevDist = this.car.state.trackDist;
     this.maxProgress = this.car.state.trackDist;
-    const playerGhost = this.save.trackSave(this.def.id).ghost;
-    const devGhost = DEV_GHOSTS[this.def.id];
-    const ghostData = playerGhost ?? devGhost ?? null;
-    this.ghost = ghostData ? deserializeGhost(ghostData) : [];
+    this.lapsDone = 0;
+    this.lapOffset = this.car.state.trackDist > this.curve.length * 0.5 ? -1 : 0;
+    this.progressDatum = this.lapOffset * this.curve.length + this.car.state.trackDist;
+    if (this.writesRecords) {
+      const playerGhost = this.save.trackSave(this.def.id).ghost;
+      const devGhost = DEV_GHOSTS[this.def.id];
+      const ghostData = playerGhost ?? devGhost ?? null;
+      this.ghost = ghostData ? deserializeGhost(ghostData) : [];
+    } else {
+      this.ghost = [];
+    }
     this.ghostActive = this.ghost.length > 1;
     this.ghostDists = [];
     this.ghostCpSplits = [];
@@ -207,6 +224,19 @@ export class RaceController {
     return this.save.trackSave(this.def.id).bestTimeMs;
   }
 
+  get totalProgress(): number {
+    return (this.lapOffset + this.lapsDone) * this.curve.length + this.car.state.trackDist;
+  }
+
+  get lapNumber(): number {
+    const traveled = this.totalProgress - this.progressDatum;
+    return Math.min(this.totalLaps, Math.max(1, Math.floor(traveled / this.curve.length) + 1));
+  }
+
+  get completedLaps(): number {
+    return this.lapOffset + this.lapsDone;
+  }
+
   respawnAtCheckpoint(): void {
     if (this.phase !== 'racing') return;
     const targetDist = this.nextCheckpoint === 0 ? 8 : this.def.checkpoints[this.nextCheckpoint - 1].dist;
@@ -219,7 +249,7 @@ export class RaceController {
     }
     this.car.placeAtFrame(idx, targetDist);
     this.prevDist = targetDist;
-    this.lastBoostIndex = -1;
+    this.pads.lastBoostIndex = -1;
     this.emit('respawn');
   }
 
@@ -257,28 +287,15 @@ export class RaceController {
       this.maxProgress = Math.max(this.maxProgress, car.state.trackDist);
     }
 
-    if (this.boostCooldown > 0) this.boostCooldown -= dtMs;
-
-    for (let i = 0; i < this.def.boosts.length; i++) {
-      const b = this.def.boosts[i];
-      if (i === this.lastBoostIndex) continue;
-      if (this.boostCooldown > 0) continue;
-      const d = car.state.trackDist;
-      const near = Math.abs(d - b.dist) < 6;
-      const latOk = Math.abs(car.state.lateral - b.lateral) < 3.6;
-      if (near && latOk && car.state.grounded) {
-        car.applyBoost(b.strength, 1.6);
-        this.lastBoostIndex = i;
-        this.boostCooldown = 400;
-        this.emit('boost', { index: i });
-      }
-    }
+    const picked = updateBoostPads(car, this.def, this.pads, dtMs);
+    if (picked !== null) this.emit('boost', { index: picked });
 
     const prev = this.prevDist;
     const curr = car.state.trackDist;
     const len = this.curve.length;
     const cps = this.def.checkpoints;
-    if (this.nextCheckpoint < cps.length) {
+    const crossedWrap = prev > len * 0.75 && curr < len * 0.25;
+    if (this.nextCheckpoint < cps.length && !crossedWrap) {
       const target = cps[this.nextCheckpoint].dist;
       const crossed = prev < target && curr >= target && curr - prev < len * 0.5;
       if (crossed && Math.abs(car.state.lateral) < car.tuning.restHeight + 12) {
@@ -292,19 +309,32 @@ export class RaceController {
         });
         this.nextCheckpoint++;
       }
-    } else {
-            const crossedFinish = prev > len * 0.75 && curr < len * 0.25;
-      const progressValid = this.maxProgress > len * 0.92;
-      const roadHalf = this.curve.frames[car.state.trackIndex].halfWidth;
-      const onRoad = Math.abs(car.state.lateral) < roadHalf + 2.0;
-      const moving = car.state.forwardSpeed > 8;
-      if (crossedFinish && progressValid && onRoad && moving) {
-        this.finish();
+    } else if (crossedWrap) {
+      const cpsDone = this.nextCheckpoint >= cps.length;
+      const rollout = this.lapsDone === 0 && this.lapOffset === -1 && this.nextCheckpoint === 0;
+      if (cpsDone || rollout) {
+        const roadHalf = this.curve.frames[car.state.trackIndex].halfWidth;
+        const onRoad = Math.abs(car.state.lateral) < roadHalf + 2.0;
+        const moving = car.state.forwardSpeed > 8;
+        const progressValid = rollout || this.maxProgress > len * 0.92;
+        if (onRoad && moving && progressValid) {
+          this.lapsDone++;
+          const eff = this.lapOffset + this.lapsDone;
+          this.nextCheckpoint = 0;
+          this.maxProgress = curr;
+          this.pads.lastBoostIndex = -1;
+          if (eff >= this.totalLaps && cpsDone) {
+            this.finish();
+          } else {
+            this.emit('lap', { lap: this.lapNumber, totalLaps: this.totalLaps });
+            if (eff === this.totalLaps - 1) this.emit('finalLap');
+          }
+        }
       }
     }
     this.prevDist = curr;
 
-    if (this.recording.length === 0 || this.recording[this.recording.length - 1].t <= this.elapsedMs - GHOST_INTERVAL_MS) {
+    if (this.writesRecords && (this.recording.length === 0 || this.recording[this.recording.length - 1].t <= this.elapsedMs - GHOST_INTERVAL_MS)) {
       this.recording.push({
         t: this.elapsedMs,
         pos: car.state.pos.clone(),
@@ -330,9 +360,12 @@ export class RaceController {
     const m = this.def.medals;
     const medal =
       timeMs <= m.author ? 'author' : timeMs <= m.gold ? 'gold' : timeMs <= m.silver ? 'silver' : timeMs <= m.bronze ? 'bronze' : 'none';
-    const ghostData = serializeGhost(this.recording);
+    let newBest = false;
     const prevBest = this.save.trackSave(this.def.id).bestTimeMs;
-    const newBest = this.save.submitTime(this.def.id, timeMs, ghostData);
+    if (this.writesRecords) {
+      const ghostData = serializeGhost(this.recording);
+      newBest = this.save.submitTime(this.def.id, timeMs, ghostData);
+    }
     const splitDetail = this.checkpointSplits.map((splitMs, i) => ({
       splitMs,
       deltaMs: (() => {

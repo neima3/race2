@@ -82,6 +82,14 @@ export class CarPhysics {
     return this.yawRate;
   }
   private prevSignedDist = 0;
+  private placeFrame = {
+    pos: new THREE.Vector3(),
+    tangent: new THREE.Vector3(),
+    normal: new THREE.Vector3(),
+    binormal: new THREE.Vector3(),
+    halfWidth: 0,
+    dist: 0,
+  };
 
   constructor(curve: TrackCurve, tuning: Partial<CarTuning> = {}) {
     this.curve = curve;
@@ -122,6 +130,35 @@ export class CarPhysics {
     this.state.trackIndex = (((frameIndex % this.curve.frames.length) + this.curve.frames.length) % this.curve.frames.length);
     this.state.trackDist = dist;
     this.state.lateral = 0;
+    this.prevSignedDist = this.tuning.restHeight;
+    this.query.index = this.state.trackIndex;
+  }
+
+  placeAt(dist: number, lateral: number): void {
+    this.curve.frameAtDist(dist, this.placeFrame);
+    const f = this.placeFrame;
+    this.state.pos.copy(f.pos).addScaledVector(f.binormal, lateral).addScaledVector(f.normal, this.tuning.restHeight);
+    const left = this.tmpV3.crossVectors(f.normal, f.tangent).normalize();
+    this.m.makeBasis(left, f.normal, f.tangent);
+    this.state.quat.setFromRotationMatrix(this.m);
+    this.state.vel.set(0, 0, 0);
+    this.state.grounded = true;
+    this.state.offroad = false;
+    this.state.driftAmount = 0;
+    this.state.boostTime = 0;
+    this.state.airborneTime = 0;
+    this.yawRate = 0;
+    const frames = this.curve.frames;
+    let lo = 0;
+    let hi = frames.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (frames[mid].dist < f.dist) lo = mid + 1;
+      else hi = mid;
+    }
+    this.state.trackIndex = lo % frames.length;
+    this.state.trackDist = f.dist;
+    this.state.lateral = lateral;
     this.prevSignedDist = this.tuning.restHeight;
     this.query.index = this.state.trackIndex;
   }

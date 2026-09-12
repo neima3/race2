@@ -24,6 +24,8 @@ import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem } from './render/particles';
 import { CameraRig } from './render/camera';
 import { RaceController, type RaceEvents } from './game/race';
+import { RivalManager, DEFAULT_RIVAL_LAPS, type RivalMode } from './game/rivals';
+import { computeOnSlick, moverOverlap, applyMoverScrub } from './game/rules';
 import { HUD } from './ui/hud';
 import { MenuManager } from './ui/menus';
 import { TouchControls } from './ui/touch';
@@ -55,6 +57,9 @@ class Game {
   private carVisual: CarVisual | null = null;
   private ghostVisual: CarVisual | null = null;
   private race: RaceController | null = null;
+  private rivals: RivalManager | null = null;
+  private rivalMode = false;
+  private moverSnap: { dist: number; lat: number }[] = [];
   private track: TrackDef = TRACKS[0];
 
   private state: AppState = 'menu';
@@ -464,17 +469,28 @@ class Game {
       payload?: RaceEvents[K]
     ) => this.onRaceEvent(ev, payload));
 
+    this.rivals = new RivalManager(curve, def, this.trackGroup, this.quality !== 'low');
+
     this.rig.snapBehind(this.car.state);
     this.menuOrbitAngle = 0;
   }
 
   private startTrack(def: TrackDef): void {
+    this.rivalMode = this.menu.rivalsMode;
     if (def.id !== this.track.id) {
       this.loadTrackIntoScene(def);
+    }
+    if (this.rivalMode && this.rivals) {
+      const slot = this.rivals.gridSlot(3);
+      this.car!.placeAt(slot.dist, slot.lateral);
+      this.rivals.totalLaps = DEFAULT_RIVAL_LAPS;
+      this.rivals.placeOnGrid();
+      this.rivals.setVisible(true);
     } else {
       this.car!.placeAtFrame(0, 8);
-      this.rig.snapBehind(this.car!.state);
+      this.rivals?.setVisible(false);
     }
+    this.rig.snapBehind(this.car!.state);
     this.state = 'countdown';
     this.race!.practice = false;
     this.hud.root.classList.remove('practice');
@@ -502,7 +518,10 @@ class Game {
     this.audio.startEngine();
     this.audio.startMusic(def.theme);
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
+    this.race!.totalLaps = this.rivalMode ? DEFAULT_RIVAL_LAPS : 1;
+    this.race!.writesRecords = !this.rivalMode;
     this.race!.start();
+    this.hud.setLapCounter(this.rivalMode ? `LAP ${this.race!.lapNumber}/${this.race!.totalLaps}` : null);
     this.ringsHit.clear();
     this.driftScore = 0;
     this.ghostVisual!.group.visible = this.save.settings.showGhost && this.race!.ghostActive;
@@ -535,6 +554,7 @@ class Game {
     this.audio.stopAmbience();
     if (this.car) this.car.placeAtFrame(0, 8);
     if (this.ghostVisual) this.ghostVisual.group.visible = false;
+    this.rivals?.setVisible(false);
     this.rig.snapBehind(this.car!.state);
   }
 
@@ -584,11 +604,20 @@ class Game {
       this.carVisual?.setBodyPose(0, 0, Math.min(0.34, l.airTime * 0.45));
     } else if (ev === 'respawn') {
       this.rig.snapBehind(this.car!.state);
+    } else if (ev === 'lap') {
+      const l = payload as RaceEvents['lap'];
+      this.hud.setLapCounter(`LAP ${l.lap}/${l.totalLaps}`);
+    } else if (ev === 'finalLap') {
+      this.hud.setLapCounter('FINAL LAP');
     } else if (ev === 'finish') {
       const r = payload as RaceEvents['finish'];
       this.audio.finish(r.medal);
       this.input.rumble(0.5, 0.9, 500);
       this.hud.showFinish(r);
+      if (this.rivalMode && this.rivals) {
+        const st = this.rivals.freeze(this.race!.totalProgress);
+        console.log('[rivals] finish order: ' + st.map((s, i) => `P${i + 1} ${s.name}${s.gapMeters > 0 ? ` +${Math.round(s.gapMeters)}m` : ''}`).join(' | '));
+      }
       const tierBase = r.medal === 'author' ? 0x29e6ff : r.medal === 'gold' ? 0xffcf3f : r.medal === 'silver' ? 0xd7dee8 : r.medal === 'bronze' ? 0xe08d4f : 0x29e6ff;
       const tierColors = [new THREE.Color(tierBase), new THREE.Color(tierBase).lerp(new THREE.Color(0xffffff), 0.6), new THREE.Color(tierBase).lerp(new THREE.Color(0x000000), 0.25)];
       this.particles.confetti(this.car!.state.pos.clone(), tierColors);
@@ -597,22 +626,24 @@ class Game {
         this.state = 'finished';
         this.hud.clearCenter();
         this.hud.showRespawnHint(false);
-        this.save.addStats({
-          laps: 1,
-          totalDrift: Math.round(this.lapDrift),
-          totalAir: Math.round(this.lapAir * 100) / 100,
-          wallHits: this.lapWalls,
-          cleanLaps: this.lapWalls === 0 ? 1 : 0,
-        });
-        this.lapDrift = 0;
-        this.lapAir = 0;
-        this.lapWalls = 0;
-        if (this.driftMode) {
-          const ts = this.save.trackSave(this.track.id);
-          const prevBest = ts.driftBest ?? 0;
-          if (this.driftScore > prevBest) {
-            ts.driftBest = Math.round(this.driftScore);
-            this.save.persistSaves();
+        if (!this.rivalMode) {
+          this.save.addStats({
+            laps: 1,
+            totalDrift: Math.round(this.lapDrift),
+            totalAir: Math.round(this.lapAir * 100) / 100,
+            wallHits: this.lapWalls,
+            cleanLaps: this.lapWalls === 0 ? 1 : 0,
+          });
+          this.lapDrift = 0;
+          this.lapAir = 0;
+          this.lapWalls = 0;
+          if (this.driftMode) {
+            const ts = this.save.trackSave(this.track.id);
+            const prevBest = ts.driftBest ?? 0;
+            if (this.driftScore > prevBest) {
+              ts.driftBest = Math.round(this.driftScore);
+              this.save.persistSaves();
+            }
           }
         }
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
@@ -633,6 +664,7 @@ class Game {
       this.trackGroup!.add(this.replayCar.group);
     }
     this.replayCar.group.visible = true;
+    this.rivals?.setVisible(false);
     this.replay = { samples, t: samples[0].t, camPos: new THREE.Vector3(), nextSwap: 0 };
     this.state = 'replay';
     this.menu.hideAll();
@@ -804,13 +836,7 @@ class Game {
     const simDt = 1 / 120;
     const timeScale = performance.now() < this.slowmoUntil ? 0.35 : 1;
 
-    let onSlick = false;
-    for (const sl of this.track.slicks ?? []) {
-      if (Math.abs(this.car!.state.trackDist - sl.dist) < sl.l / 2 && Math.abs(this.car!.state.lateral - sl.lateral) < sl.w / 2) {
-        onSlick = true;
-        break;
-      }
-    }
+    const onSlick = computeOnSlick(this.track.slicks, this.car!.state.trackDist, this.car!.state.lateral);
     this.car!.state.onSlick = onSlick;
     if (onSlick !== this.wasOnSlick && Math.abs(this.car!.state.forwardSpeed) > 12) {
       this.particles.landingDust(this.car!.state.pos.clone());
@@ -824,6 +850,10 @@ class Game {
     let steps = 0;
     while (this.acc >= simDt && steps < 8) {
       this.race!.update(simDt * 1000, input);
+      if (this.rivalMode && this.rivals) {
+        const mode: RivalMode = this.race!.phase === 'countdown' ? 'countdown' : 'racing';
+        this.rivals.update(simDt * 1000, mode, this.race!.totalProgress, this.moverSnap);
+      }
       this.acc -= simDt;
       steps++;
     }
@@ -862,6 +892,10 @@ class Game {
     const bodyPitch = -this.accelSmoothed * 0.0032;
     const squash = s.grounded ? 0 : Math.min(0.3, s.airborneTime * 0.25);
     this.carVisual!.setBodyPose(bodyRoll, bodyPitch, squash);
+
+    if (this.rivalMode && this.rivals) {
+      this.rivals.updateVisuals(dt, this.particles, this.track.accent);
+    }
 
     if (this.skidMarks) {
       this.skidMarks.fadeAll(dt);
@@ -981,10 +1015,13 @@ class Game {
       const f = this.curve!.frames[this.curve!.closestFrameIndex(m.mesh.position, Math.floor((m.dist / this.curve!.length) * this.curve!.frames.length), 30)];
       const lat = (f.halfWidth + 0.8) * Math.sin(now * 0.001 * m.speed + m.phase);
       m.mesh.position.copy(f.pos).addScaledVector(f.binormal, lat).addScaledVector(f.normal, 2.3);
+      if (mi >= this.moverSnap.length) this.moverSnap.push({ dist: 0, lat: 0 });
+      this.moverSnap[mi].dist = m.dist;
+      this.moverSnap[mi].lat = lat;
       if (this.state === 'racing' && this.car) {
         const s = this.car.state;
-        if (Math.abs(s.trackDist - m.dist) < 2.2 && Math.abs(s.lateral - lat) < 1.5) {
-          s.vel.multiplyScalar(Math.max(0, 1 - 3.5 * (1 / 120)));
+        if (moverOverlap(s.trackDist, s.lateral, m.dist, lat)) {
+          applyMoverScrub(this.car, 1 / 120);
           if (!this.moverCooldown.has(mi)) {
             this.moverCooldown.add(mi);
             this.audio.crash();
@@ -996,6 +1033,7 @@ class Game {
         }
       }
     }
+    this.moverSnap.length = this.meshes!.movers.length;
     for (const gate of this.meshes!.checkpointGates) {
       const passed = this.race!.nextCheckpoint > this.meshes!.checkpointGates.indexOf(gate);
       gate.mat.color.set(passed ? 0x35ff7a : 0x7ef3ff);
@@ -1019,7 +1057,7 @@ declare global {
   interface Window {
     __race2: {
       inst: Game;
-      start: (trackIndex: number) => void;
+      start: (trackIndex: number, rivals?: boolean) => void;
       drive: (v: { steer?: number; throttle?: number; brake?: number; drift?: boolean }) => void;
       auto: (on: boolean) => string;
       state: () => object;
@@ -1027,13 +1065,18 @@ declare global {
       skipCountdown: () => void;
       mute: () => void;
       finishLine: () => void;
+      rivals: () => object;
+      standings: () => object;
     };
   }
 }
 
 window.__race2 = {
   inst: game,
-  start: (trackIndex: number) => game['startTrack'](TRACKS[Math.max(0, Math.min(TRACKS.length - 1, trackIndex))]),
+  start: (trackIndex: number, rivals?: boolean) => {
+    game['menu'].rivalsMode = rivals === true;
+    game['startTrack'](TRACKS[Math.max(0, Math.min(TRACKS.length - 1, trackIndex))]);
+  },
   auto: (on: boolean) => {
     if (!on) {
       game['input'].setVirtual({ steer: 0, throttle: 0, brake: 0, drift: false });
@@ -1123,6 +1166,13 @@ window.__race2 = {
       race['prevDist'] = car['curve'].length - 30;
       car.applyBoost(30, 3);
     }
+  },
+  rivals: () => game['rivals']?.telemetry() ?? [],
+  standings: () => {
+    const race = game['race'];
+    const rivals = game['rivals'];
+    if (!game['rivalMode'] || !rivals || !race) return [];
+    return rivals.standings(race.totalProgress);
   },
 };
 

@@ -34,6 +34,7 @@ function starsForTime(bestMs: number | null, medals: TrackDef['medals']): number
 
 export class MenuManager {
   driftAttack = false;
+  rivalsMode = false;
   readonly root: HTMLElement;
   onPlayTrack: (track: TrackDef) => void = () => {};
   onQuitToMenu: () => void = () => {};
@@ -114,9 +115,16 @@ export class MenuManager {
     const driftChip = el('button', 'mode-chip' + (this.driftAttack ? ' on' : ''), 'DRIFT ATTACK');
     driftChip.addEventListener('click', () => {
       this.driftAttack = !this.driftAttack;
+      if (this.driftAttack) this.rivalsMode = false;
       this.buildTracksScreen();
     });
-    right.append(driftChip);
+    const rivalsChip = el('button', 'mode-chip rivals' + (this.rivalsMode ? ' on' : ''), 'RIVALS');
+    rivalsChip.addEventListener('click', () => {
+      this.rivalsMode = !this.rivalsMode;
+      if (this.rivalsMode) this.driftAttack = false;
+      this.buildTracksScreen();
+    });
+    right.append(driftChip, rivalsChip);
     right.append(el('div', 'star-total', `&#11088; ${totalStars}/48`));
     const back = el('button', 'menu-btn small', '&#8592; BACK');
     back.addEventListener('click', () => this.show('title'));
