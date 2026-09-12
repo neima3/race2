@@ -1,16 +1,16 @@
 # RACE2 — 10x Development Roadmap v4 (2026-09-10)
 
 ## Progress tracker
-- [ ] Phase 1: Dev ghosts — harness-generated, shipped per track
-- [ ] Phase 2: Music 2.0 — four per-theme procedural generators
-- [ ] Phase 3: Slick zones (grip patches) + tire spray
-- [ ] Phase 4: Moving shoulder pillars (T6 + T8)
-- [ ] Phase 5: Drift attack mode — score UI + separate best per track
-- [ ] Phase 6: Achievements 2.0 — telemetry-driven (drift, air, clean laps)
-- [ ] Phase 7: World life 2 — banner wave, crowd bob, theme particle ambience
-- [ ] Phase 8: Camera 2 — photo filters upgrade, replay auto-cut director
-- [ ] Phase 9: Performance & memory audit
-- [ ] Phase 10: Balance pass + full QA (harness + subagent sweep) + deploy
+- [x] Phase 1: Dev ghosts — harness-generated, shipped per track
+- [x] Phase 2: Music 2.0 — four per-theme procedural generators
+- [x] Phase 3: Slick zones (grip patches) + tire spray
+- [x] Phase 4: Moving shoulder pillars (T6 + T8)
+- [x] Phase 5: Drift attack mode — score UI + separate best per track
+- [x] Phase 6: Achievements 2.0 — telemetry-driven (drift, air, clean laps)
+- [x] Phase 7: World life 2 — banner wave, crowd bob, theme particle ambience
+- [x] Phase 8: Camera 2 — photo filters upgrade, replay auto-cut director
+- [x] Phase 9: Performance & memory audit
+- [x] Phase 10: Balance pass + full QA (harness + subagent sweep) + deploy
 
 **Goal statement (full ambition):** Deepen mastery and identity: race shipped dev ghosts day one, four distinct soundtracks, drift scoring as a meta, hazards that create skill moments, and a living crowd — with the headless harness green for all tracks and a clean deploy of v1.4 to race2.neima.me.
 
