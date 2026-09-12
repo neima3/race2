@@ -55,6 +55,7 @@ export class MenuManager {
   garageCanvas: HTMLCanvasElement | null = null;
   isGarageOpen = false;
   onGarageChange: (paint: number, body: CarBodyStyle) => void = () => {};
+  private pausePractice = false;
 
   constructor(private save: SaveManager, private tracks: TrackDef[]) {
     this.root = el('div', 'menu-layer');
@@ -89,6 +90,7 @@ export class MenuManager {
     const settings = el('button', 'menu-btn', 'SETTINGS');
     settings.addEventListener('click', () => {
       this.buildSettingsScreen();
+      this.settingsScreen.dataset.returnTo = 'title';
       this.show('settings');
     });
     const achievements = el('button', 'menu-btn', 'ACHIEVEMENTS');
@@ -115,7 +117,7 @@ export class MenuManager {
       this.buildTracksScreen();
     });
     right.append(driftChip);
-    right.append(el('div', 'star-total', `&#11088; ${totalStars}/40`));
+    right.append(el('div', 'star-total', `&#11088; ${totalStars}/48`));
     const back = el('button', 'menu-btn small', '&#8592; BACK');
     back.addEventListener('click', () => this.show('title'));
     right.append(back);
@@ -161,7 +163,14 @@ export class MenuManager {
     const header = el('div', 'screen-header');
     header.append(el('h2', 'screen-title', 'SETTINGS'));
     const back = el('button', 'menu-btn small', '&#8592; BACK');
-    back.addEventListener('click', () => this.show('title'));
+    back.addEventListener('click', () => {
+      if (this.settingsScreen.dataset.returnTo === 'pause') {
+        this.settingsScreen.dataset.returnTo = 'title';
+        this.showPause(this.pausePractice);
+      } else {
+        this.show('title');
+      }
+    });
     header.append(back);
 
     const list = el('div', 'settings-list');
@@ -389,7 +398,7 @@ export class MenuManager {
       { name: 'Frequent Flyer', desc: '60s of total air time', done: st.totalAir >= 60, progress: `${Math.min(Math.round(st.totalAir), 60)}/60s` },
       { name: 'Wallflower', desc: '50 wall hits — try the middle', done: st.wallHits >= 50, progress: `${Math.min(st.wallHits, 50)}/50` },
       { name: 'Marathoner', desc: 'Complete 25 laps', done: st.laps >= 25, progress: `${Math.min(st.laps, 25)}/25` },
-      { name: 'Untouchable', desc: '3 laps with no wall hits', done: false, progress: 'live' },
+      { name: 'Untouchable', desc: '3 laps with no wall hits', done: st.cleanLaps >= 3, progress: `${Math.min(st.cleanLaps, 3)}/3` },
     ];
     const list = el('div', 'achv-list');
     for (const a of defs) {
@@ -425,6 +434,7 @@ export class MenuManager {
   }
 
   showPause(practiceAvailable: boolean): void {
+    this.pausePractice = practiceAvailable;
     this.pauseScreen.classList.remove('hidden');
     const p = document.getElementById('practice-btn');
     if (p) p.classList.toggle('hidden', !practiceAvailable);

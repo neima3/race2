@@ -100,6 +100,10 @@ class Game {
   private replayCar: CarVisual | null = null;
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
   private lastFinish: { result: RaceEvents['finish']; hasNext: boolean } | null = null;
+  private canvasEl: HTMLCanvasElement = canvas;
+  private get canvas(): HTMLCanvasElement { return this.canvasEl; }
+  private photoCleanup: (() => void) | null = null;
+  private debugCensus = import.meta.env.DEV || new URLSearchParams(window.location.search).has('debug');
 
   constructor(canvas: HTMLCanvasElement) {
     this.runtimeMuted =
@@ -293,10 +297,6 @@ class Game {
       this.canvas.removeEventListener('wheel', wheel);
     };
   }
-
-  private canvasEl: HTMLCanvasElement = canvas;
-  private get canvas(): HTMLCanvasElement { return this.canvasEl; }
-  private photoCleanup: (() => void) | null = null;
 
   private updatePhoto(): void {
     if (!this.photo || !this.car) return;
@@ -602,6 +602,7 @@ class Game {
           totalDrift: Math.round(this.lapDrift),
           totalAir: Math.round(this.lapAir * 100) / 100,
           wallHits: this.lapWalls,
+          cleanLaps: this.lapWalls === 0 ? 1 : 0,
         });
         this.lapDrift = 0;
         this.lapAir = 0;
@@ -711,7 +712,7 @@ class Game {
     this.fpsTime += dt;
     if (this.fpsTime >= 2) {
       const fps = this.fpsFrames / this.fpsTime;
-      {
+      if (this.debugCensus) {
         const info = this.renderer.info;
         console.log('[census] fps:' + fps.toFixed(0) + ' calls:' + info.render.calls + ' tris:' + info.render.triangles + ' geoms:' + info.memory.geometries + ' tex:' + info.memory.textures);
       }
@@ -933,8 +934,8 @@ class Game {
       if (s.driftAmount > 0.3 && s.grounded && s.speed > 14) {
         this.driftScore += s.driftAmount * s.speed * dt * 12;
         this.lapDrift += s.driftAmount * s.speed * dt * 12;
-        if (!s.grounded) this.lapAir += dt;
       }
+      if (!s.grounded) this.lapAir += dt;
 
       const stuckOffroad = s.offroad && s.grounded && s.speed < 6;
       if (stuckOffroad) {

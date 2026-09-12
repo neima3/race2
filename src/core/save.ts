@@ -26,6 +26,10 @@ const SETTINGS_KEY = 'race2.settings.v1';
 const PLAYER_KEY = 'race2.player.v1';
 const STATS_KEY = 'race2.stats.v1';
 
+export const SCHEMA_VERSION = 1;
+
+type Stored<T> = T & { schemaVersion?: number };
+
 export interface PlayerProfile {
   paint: number;
   body: 'standard' | 'aero' | 'tank';
@@ -36,9 +40,10 @@ export interface LifetimeStats {
   totalDrift: number;
   totalAir: number;
   wallHits: number;
+  cleanLaps: number;
 }
 
-const DEFAULT_STATS: LifetimeStats = { laps: 0, totalDrift: 0, totalAir: 0, wallHits: 0 };
+const DEFAULT_STATS: LifetimeStats = { laps: 0, totalDrift: 0, totalAir: 0, wallHits: 0, cleanLaps: 0 };
 
 const DEFAULT_PROFILE: PlayerProfile = { paint: 0x29e6ff, body: 'standard' };
 
@@ -68,6 +73,7 @@ export class SaveManager {
   private _settings: Settings;
   private _profile: PlayerProfile;
   private _stats: LifetimeStats;
+  private storedSchemaVersion = 0;
 
   constructor() {
     this.saves = this.loadSaves();
@@ -76,10 +82,18 @@ export class SaveManager {
     this._stats = this.loadStats();
   }
 
+  private noteSchemaVersion(v: unknown): void {
+    if (typeof v === 'number' && Number.isFinite(v) && v > this.storedSchemaVersion) this.storedSchemaVersion = v;
+  }
+
   private loadStats(): LifetimeStats {
     try {
       const raw = localStorage.getItem(STATS_KEY);
-      if (raw) return { ...DEFAULT_STATS, ...(JSON.parse(raw) as Partial<LifetimeStats>) };
+      if (raw) {
+        const parsed = JSON.parse(raw) as Stored<Partial<LifetimeStats>>;
+        this.noteSchemaVersion(parsed.schemaVersion);
+        return { ...DEFAULT_STATS, ...parsed };
+      }
     } catch {
       /* blocked */
     }
@@ -89,7 +103,11 @@ export class SaveManager {
   private loadProfile(): PlayerProfile {
     try {
       const raw = localStorage.getItem(PLAYER_KEY);
-      if (raw) return { ...DEFAULT_PROFILE, ...(JSON.parse(raw) as Partial<PlayerProfile>) };
+      if (raw) {
+        const parsed = JSON.parse(raw) as Stored<Partial<PlayerProfile>>;
+        this.noteSchemaVersion(parsed.schemaVersion);
+        return { ...DEFAULT_PROFILE, ...parsed };
+      }
     } catch {
       /* corrupted — defaults */
     }
@@ -106,12 +124,17 @@ export class SaveManager {
       totalDrift: this._stats.totalDrift + (delta.totalDrift ?? 0),
       totalAir: this._stats.totalAir + (delta.totalAir ?? 0),
       wallHits: this._stats.wallHits + (delta.wallHits ?? 0),
+      cleanLaps: this._stats.cleanLaps + (delta.cleanLaps ?? 0),
     };
     try {
-      localStorage.setItem(STATS_KEY, JSON.stringify(this._stats));
+      localStorage.setItem(STATS_KEY, JSON.stringify({ ...this._stats, schemaVersion: SCHEMA_VERSION }));
     } catch {
       /* blocked */
     }
+  }
+
+  get schemaVersion(): number {
+    return this.storedSchemaVersion || SCHEMA_VERSION;
   }
 
   get profile(): PlayerProfile {
@@ -121,7 +144,7 @@ export class SaveManager {
   updateProfile(patch: Partial<PlayerProfile>): void {
     this._profile = { ...this._profile, ...patch };
     try {
-      localStorage.setItem(PLAYER_KEY, JSON.stringify(this._profile));
+      localStorage.setItem(PLAYER_KEY, JSON.stringify({ ...this._profile, schemaVersion: SCHEMA_VERSION }));
     } catch {
       /* storage blocked */
     }
@@ -131,8 +154,11 @@ export class SaveManager {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as AllSaves;
-        if (parsed && typeof parsed.tracks === 'object') return parsed;
+        const parsed = JSON.parse(raw) as Stored<AllSaves>;
+        if (parsed && typeof parsed.tracks === 'object') {
+          this.noteSchemaVersion(parsed.schemaVersion);
+          return parsed;
+        }
       }
     } catch {
       /* corrupted — start fresh */
@@ -143,7 +169,11 @@ export class SaveManager {
   private loadSettings(): Settings {
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
-      if (raw) return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+      if (raw) {
+        const parsed = JSON.parse(raw) as Stored<Partial<Settings>>;
+        this.noteSchemaVersion(parsed.schemaVersion);
+        return { ...DEFAULT_SETTINGS, ...parsed };
+      }
     } catch {
       /* corrupted — defaults */
     }
@@ -152,7 +182,7 @@ export class SaveManager {
 
   persistSaves(): void {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(this.saves));
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ ...this.saves, schemaVersion: SCHEMA_VERSION }));
     } catch {
       /* storage full or blocked */
     }
@@ -160,7 +190,7 @@ export class SaveManager {
 
   persistSettings(): void {
     try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(this._settings));
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...this._settings, schemaVersion: SCHEMA_VERSION }));
     } catch {
       /* storage blocked */
     }
