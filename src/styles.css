@@ -949,3 +949,16 @@ button {
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
+
+.cut-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0.75;
+  pointer-events: none;
+  z-index: 15;
+  animation: cutFlash 260ms ease-out forwards;
+}
+@keyframes cutFlash {
+  to { opacity: 0; }
+}

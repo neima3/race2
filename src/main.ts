@@ -674,6 +674,9 @@ class Game {
 
     if (t >= this.replay.nextSwap) {
       this.replay.nextSwap = t + 6500;
+      const flash = el('div', 'cut-flash');
+      document.getElementById('ui-root')!.append(flash);
+      window.setTimeout(() => flash.remove(), 260);
       const carPos = this.replayCar.group.position;
       const idx = this.curve!.closestFrameIndex(carPos, this.car!.state.trackIndex, 40);
       const f = this.curve!.frames[idx];
@@ -702,6 +705,10 @@ class Game {
     this.fpsTime += dt;
     if (this.fpsTime >= 2) {
       const fps = this.fpsFrames / this.fpsTime;
+      {
+        const info = this.renderer.info;
+        console.log('[census] fps:' + fps.toFixed(0) + ' calls:' + info.render.calls + ' tris:' + info.render.triangles + ' geoms:' + info.memory.geometries + ' tex:' + info.memory.textures);
+      }
       this.fpsFrames = 0;
       this.fpsTime = 0;
       this.frameMsAvg = (this.frameMsAvg * 0.5 + (1000 / Math.max(1, fps)) * 0.5);
