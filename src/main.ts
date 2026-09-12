@@ -73,6 +73,9 @@ class Game {
   private bloomPass: UnrealBloomPass | null = null;
   private offroadTime = 0;
   private wasOnSlick = false;
+  private lapDrift = 0;
+  private lapAir = 0;
+  private lapWalls = 0;
   private moverCooldown = new Set<number>();
   private boostKick = 0;
   private skidMarks: SkidMarks | null = null;
@@ -92,6 +95,7 @@ class Game {
   private readonly photoFilters = ['none', 'sepia(0.5) saturate(1.3)', 'hue-rotate(180deg) saturate(1.2)', 'grayscale(1)'];
   private ringsHit = new Set<string>();
   private driftScore = 0;
+  private driftMode = false;
   private replayCar: CarVisual | null = null;
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
   private lastFinish: { result: RaceEvents['finish']; hasNext: boolean } | null = null;
@@ -117,7 +121,10 @@ class Game {
     if (this.save.settings.leftyTouch) this.touch.root.classList.add('touch-lefty');
     document.getElementById('ui-root')!.append(this.hud.root, this.touch.root, this.menu.root);
 
-    this.menu.onPlayTrack = (t) => this.startTrack(t);
+    this.menu.onPlayTrack = (t) => {
+      this.driftMode = this.menu.driftAttack;
+      this.startTrack(t);
+    };
     this.menu.onResume = () => this.resume();
     this.menu.onPractice = () => {
       if (this.race) this.race.practice = true;
@@ -469,11 +476,12 @@ class Game {
     this.menu.hidePause();
     this.hud.show(
       def.name,
-      this.save.trackSave(def.id).bestTimeMs,
+      this.driftMode ? null : this.save.trackSave(def.id).bestTimeMs,
       def.checkpoints.length,
       def.checkpoints.map((c) => c.dist),
       curveLen(def),
     );
+    this.hud.setDriftMode(this.driftMode, this.save.trackSave(def.id).driftBest ?? 0);
     const forceTouch = new URLSearchParams(window.location.search).has('touch');
     const isTouch =
       forceTouch ||
@@ -549,6 +557,7 @@ class Game {
       this.shake(0.5);
       this.boostKick = 1;
     } else if (ev === 'wallHit') {
+      this.lapWalls++;
       this.audio.crash();
       this.input.rumble(0.9, 0.6, 180);
       this.shake(0.7);
@@ -582,10 +591,27 @@ class Game {
         this.state = 'finished';
         this.hud.clearCenter();
         this.hud.showRespawnHint(false);
+        this.save.addStats({
+          laps: 1,
+          totalDrift: Math.round(this.lapDrift),
+          totalAir: Math.round(this.lapAir * 100) / 100,
+          wallHits: this.lapWalls,
+        });
+        this.lapDrift = 0;
+        this.lapAir = 0;
+        this.lapWalls = 0;
+        if (this.driftMode) {
+          const ts = this.save.trackSave(this.track.id);
+          const prevBest = ts.driftBest ?? 0;
+          if (this.driftScore > prevBest) {
+            ts.driftBest = Math.round(this.driftScore);
+            this.save.persistSaves();
+          }
+        }
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
         const hasNext = idx < TRACKS.length - 1;
         this.lastFinish = { result: r, hasNext };
-        this.menu.showFinish(this.track, r, hasNext);
+        this.menu.showFinish(this.track, r, hasNext, this.driftMode ? Math.round(this.driftScore) : null);
         this.touch.hide();
         this.audio.stopEngine();
       }, 1400);
@@ -892,6 +918,8 @@ class Game {
 
       if (s.driftAmount > 0.3 && s.grounded && s.speed > 14) {
         this.driftScore += s.driftAmount * s.speed * dt * 12;
+        this.lapDrift += s.driftAmount * s.speed * dt * 12;
+        if (!s.grounded) this.lapAir += dt;
       }
 
       const stuckOffroad = s.offroad && s.grounded && s.speed < 6;
@@ -909,6 +937,7 @@ class Game {
       const vg = document.getElementById('vignette');
       if (vg) vg.style.opacity = this.save.settings.reducedMotion ? '0.2' : String(0.25 + speedRatio * 0.45);
       this.hud.driftPoints = this.driftScore;
+      this.hud.updateDriftScore(this.driftScore);
       this.hud.update(
         this.race!.elapsedMs,
         Math.abs(s.forwardSpeed) * kmh,

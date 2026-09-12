@@ -33,6 +33,7 @@ function starsForTime(bestMs: number | null, medals: TrackDef['medals']): number
 }
 
 export class MenuManager {
+  driftAttack = false;
   readonly root: HTMLElement;
   onPlayTrack: (track: TrackDef) => void = () => {};
   onQuitToMenu: () => void = () => {};
@@ -108,6 +109,12 @@ export class MenuManager {
     const header = el('div', 'screen-header');
     header.append(el('h2', 'screen-title', 'SELECT TRACK'));
     const right = el('div', 'tracks-header-right');
+    const driftChip = el('button', 'mode-chip' + (this.driftAttack ? ' on' : ''), 'DRIFT ATTACK');
+    driftChip.addEventListener('click', () => {
+      this.driftAttack = !this.driftAttack;
+      this.buildTracksScreen();
+    });
+    right.append(driftChip);
     right.append(el('div', 'star-total', `&#11088; ${totalStars}/40`));
     const back = el('button', 'menu-btn small', '&#8592; BACK');
     back.addEventListener('click', () => this.show('title'));
@@ -363,24 +370,31 @@ export class MenuManager {
     const medaled = stats.filter((s) => s.stars > 0).length;
     const golds = stats.filter((s) => s.stars >= 3).length;
     const authors = stats.filter((s) => s.stars >= 4).length;
-    const defs: { name: string; desc: string; done: boolean }[] = [
+    const st = this.save.stats;
+    const defs: { name: string; desc: string; done: boolean; progress?: string }[] = [
       { name: 'First Blood', desc: 'Earn any medal', done: medaled > 0 },
-      { name: 'Regular', desc: 'Medal 5 tracks', done: medaled >= 5 },
-      { name: 'Collector', desc: 'Medal all 12 tracks', done: medaled >= 12 },
-      { name: 'Golden Touch', desc: '3 gold medals', done: golds >= 3 },
-      { name: 'Midas Fleet', desc: 'Gold on every track', done: golds >= 12 },
-      { name: 'Dev Time', desc: '1 author medal', done: authors >= 1 },
-      { name: 'Studio Record', desc: 'Author on 6 tracks', done: authors >= 6 },
-      { name: 'Neima Standard', desc: 'Author on all 12 tracks', done: authors >= 12 },
-      { name: 'Star Struck', desc: '10 stars', done: total >= 10 },
-      { name: 'Constellation', desc: '24 stars', done: total >= 24 },
-      { name: 'Galaxy Brain', desc: '40+ stars', done: total >= 40 },
-      { name: 'Completionist', desc: '48 stars — everything', done: total >= 48 },
+      { name: 'Regular', desc: 'Medal 5 tracks', done: medaled >= 5, progress: `${medaled}/12` },
+      { name: 'Collector', desc: 'Medal all 12 tracks', done: medaled >= 12, progress: `${medaled}/12` },
+      { name: 'Golden Touch', desc: '3 gold medals', done: golds >= 3, progress: `${golds}/3` },
+      { name: 'Midas Fleet', desc: 'Gold on every track', done: golds >= 12, progress: `${golds}/12` },
+      { name: 'Dev Time', desc: '1 author medal', done: authors >= 1, progress: `${authors}/1` },
+      { name: 'Studio Record', desc: 'Author on 6 tracks', done: authors >= 6, progress: `${authors}/6` },
+      { name: 'Neima Standard', desc: 'Author on all 12 tracks', done: authors >= 12, progress: `${authors}/12` },
+      { name: 'Star Struck', desc: '10 stars', done: total >= 10, progress: `${total}/10` },
+      { name: 'Constellation', desc: '24 stars', done: total >= 24, progress: `${total}/24` },
+      { name: 'Galaxy Brain', desc: '40+ stars', done: total >= 40, progress: `${total}/48` },
+      { name: 'Completionist', desc: '48 stars — everything', done: total >= 48, progress: `${total}/48` },
+      { name: 'Lane Hopper', desc: 'Complete 5 laps', done: st.laps >= 5, progress: `${Math.min(st.laps, 5)}/5` },
+      { name: 'Sideways Society', desc: '10,000 drift points (lifetime)', done: st.totalDrift >= 10000, progress: `${Math.min(Math.round(st.totalDrift), 10000)}/10000` },
+      { name: 'Frequent Flyer', desc: '60s of total air time', done: st.totalAir >= 60, progress: `${Math.min(Math.round(st.totalAir), 60)}/60s` },
+      { name: 'Wallflower', desc: '50 wall hits — try the middle', done: st.wallHits >= 50, progress: `${Math.min(st.wallHits, 50)}/50` },
+      { name: 'Marathoner', desc: 'Complete 25 laps', done: st.laps >= 25, progress: `${Math.min(st.laps, 25)}/25` },
+      { name: 'Untouchable', desc: '3 laps with no wall hits', done: false, progress: 'live' },
     ];
     const list = el('div', 'achv-list');
     for (const a of defs) {
       const row = el('div', 'achv-row' + (a.done ? ' done' : ''));
-      row.innerHTML = `<div><div class="achv-name">${a.name}</div><div class="achv-desc">${a.desc}</div></div><div class="achv-check">${a.done ? '&#10003;' : '&#9675;'}</div>`;
+      row.innerHTML = `<div><div class="achv-name">${a.name}</div><div class="achv-desc">${a.desc}</div></div><div class="achv-meta">${a.progress ? `<div class="achv-progress">${a.progress}</div>` : ''}<div class="achv-check">${a.done ? '&#10003;' : '&#9675;'}</div></div>`;
       list.append(row);
     }
     screen.append(header, list);
@@ -423,7 +437,7 @@ export class MenuManager {
     this.pauseScreen.classList.add('hidden');
   }
 
-  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean): void {
+  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null): void {
     this.finishScreen.replaceChildren();
     const panel = el('div', 'panel finish-panel');
     const medalHtml =
@@ -438,10 +452,17 @@ export class MenuManager {
           }">${s.deltaMs === null ? '' : `${s.deltaMs <= 0 ? '−' : '+'}${(Math.abs(s.deltaMs) / 1000).toFixed(3)}`}</span></div>`,
       )
       .join('');
+    const driftHtml =
+      driftScore !== null
+        ? (() => {
+            const best = this.save.trackSave(track.id).driftBest ?? 0;
+            return `<div class="finish-drift">DRIFT SCORE <b>${Math.round(driftScore)}</b>${best > 0 && driftScore >= best ? ' &#127942; NEW BEST' : driftScore > 0 ? ` · BEST ${best}` : ''}</div>`;
+          })()
+        : '';
     const deltaTable = deltaRows ? `<div class="finish-deltas">${deltaRows}</div>` : '';
     const history = this.save.trackSave(track.id).history.slice(0, 5);
     const historyHtml =
-      history.length > 1
+      history.length > 1 && driftScore === null
         ? `<div class="finish-history"><div class="fh-title">TOP TIMES</div>${history
             .map((t, i) => `<div class="delta-row"><span>${i + 1}</span><span class="delta-split">${formatTimePrecise(t)}</span><span></span></div>`)
             .join('')}</div>`
@@ -450,6 +471,7 @@ export class MenuManager {
       <h2 class="screen-title">${track.name}</h2>
       <div class="finish-time">${formatTimePrecise(result.timeMs)}</div>
       ${medalHtml}
+      ${driftHtml}
       <div class="finish-best">${result.newBest ? '&#127942; NEW PERSONAL BEST' : `Best: ${formatTimePrecise(result.previousBest ?? result.timeMs)}`}</div>
       ${deltaTable}
       ${historyHtml}

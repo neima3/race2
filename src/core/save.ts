@@ -5,6 +5,7 @@ export interface TrackSave {
   bestTimeMs: number | null;
   history: number[];
   ghost: string | null;
+  driftBest?: number;
 }
 
 export interface Settings {
@@ -23,11 +24,21 @@ export interface Settings {
 const SAVE_KEY = 'race2.save.v1';
 const SETTINGS_KEY = 'race2.settings.v1';
 const PLAYER_KEY = 'race2.player.v1';
+const STATS_KEY = 'race2.stats.v1';
 
 export interface PlayerProfile {
   paint: number;
   body: 'standard' | 'aero' | 'tank';
 }
+
+export interface LifetimeStats {
+  laps: number;
+  totalDrift: number;
+  totalAir: number;
+  wallHits: number;
+}
+
+const DEFAULT_STATS: LifetimeStats = { laps: 0, totalDrift: 0, totalAir: 0, wallHits: 0 };
 
 const DEFAULT_PROFILE: PlayerProfile = { paint: 0x29e6ff, body: 'standard' };
 
@@ -56,11 +67,23 @@ export class SaveManager {
   private saves: AllSaves;
   private _settings: Settings;
   private _profile: PlayerProfile;
+  private _stats: LifetimeStats;
 
   constructor() {
     this.saves = this.loadSaves();
     this._settings = this.loadSettings();
     this._profile = this.loadProfile();
+    this._stats = this.loadStats();
+  }
+
+  private loadStats(): LifetimeStats {
+    try {
+      const raw = localStorage.getItem(STATS_KEY);
+      if (raw) return { ...DEFAULT_STATS, ...(JSON.parse(raw) as Partial<LifetimeStats>) };
+    } catch {
+      /* blocked */
+    }
+    return { ...DEFAULT_STATS };
   }
 
   private loadProfile(): PlayerProfile {
@@ -71,6 +94,24 @@ export class SaveManager {
       /* corrupted — defaults */
     }
     return { ...DEFAULT_PROFILE };
+  }
+
+  get stats(): LifetimeStats {
+    return this._stats;
+  }
+
+  addStats(delta: Partial<LifetimeStats>): void {
+    this._stats = {
+      laps: this._stats.laps + (delta.laps ?? 0),
+      totalDrift: this._stats.totalDrift + (delta.totalDrift ?? 0),
+      totalAir: this._stats.totalAir + (delta.totalAir ?? 0),
+      wallHits: this._stats.wallHits + (delta.wallHits ?? 0),
+    };
+    try {
+      localStorage.setItem(STATS_KEY, JSON.stringify(this._stats));
+    } catch {
+      /* blocked */
+    }
   }
 
   get profile(): PlayerProfile {

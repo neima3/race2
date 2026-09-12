@@ -17,6 +17,9 @@ export class HUD {
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
   driftPoints = 0;
+  private driftModeEl: HTMLElement | null = null;
+  private driftMode = false;
+  private driftBest = 0;
   private progressTrack: HTMLElement;
   private progressPlayer: HTMLElement;
   private progressGhost: HTMLElement;
@@ -59,6 +62,32 @@ export class HUD {
     this.root.append(topBar, bottomBar, this.progressTrack, this.centerEl, this.splitToast, this.respawnHint);
   }
 
+  setDriftMode(on: boolean, best: number): void {
+    this.driftMode = on;
+    this.driftBest = best;
+    if (on && !this.driftModeEl) {
+      this.driftModeEl = el('div', 'hud-driftmode');
+      this.root.append(this.driftModeEl);
+    }
+    if (this.driftModeEl) {
+      this.driftModeEl.classList.toggle('hidden', !on);
+      if (on) this.driftModeEl.innerHTML = `<div class="dm-title">DRIFT ATTACK</div><div class="dm-score" id="dm-score">0</div><div class="dm-best">BEST ${Math.round(best)}</div>`;
+    }
+    if (on) {
+      this.timerEl.style.visibility = 'hidden';
+      this.bestEl.style.visibility = 'hidden';
+    } else {
+      this.timerEl.style.visibility = '';
+      this.bestEl.style.visibility = '';
+    }
+  }
+
+  updateDriftScore(score: number): void {
+    if (!this.driftMode) return;
+    const elScore = document.getElementById('dm-score');
+    if (elScore) elScore.textContent = String(Math.round(score));
+  }
+
   show(trackName: string, bestMs: number | null, cpTotal: number, cpDists: number[] = [], trackLen = 1): void {
     this.trackNameEl.textContent = trackName;
     this.bestEl.textContent = bestMs != null ? `PB ${formatTimePrecise(bestMs)}` : '';
@@ -87,7 +116,9 @@ export class HUD {
     this.cpEl.textContent = `CP ${cpDone}/${cpTotal}`;
     this.driftEl.classList.toggle('active', drift);
     if (drift) {
-      this.driftEl.textContent = `DRIFT +${Math.round(this.driftPoints)}`;
+      this.driftEl.textContent = this.driftMode
+        ? `DRIFT ${Math.round(this.driftPoints)} / ${this.driftBest}`
+        : `DRIFT +${Math.round(this.driftPoints)}`;
     }
     if (liveDelta === null) {
       this.liveDeltaEl.textContent = '';
