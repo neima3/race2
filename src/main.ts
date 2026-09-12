@@ -46,6 +46,7 @@ class Game {
   private touch: TouchControls;
 
   private quality: 'low' | 'medium' | 'high' = 'medium';
+  private autoDowngrade: 'low' | 'medium' | null = null;
   private environment: Environment | null = null;
   private trackGroup: THREE.Group | null = null;
   private meshes: TrackMeshes | null = null;
@@ -182,13 +183,18 @@ class Game {
   private applyQualitySettings(): void {
     const s = this.save.settings.quality;
     if (s === 'auto') {
-      const isMobile =
-        matchMedia('(pointer: coarse)').matches ||
-        navigator.maxTouchPoints > 0 ||
-        'ontouchstart' in window;
-      this.quality = isMobile ? 'low' : 'medium';
+      if (this.autoDowngrade) {
+        this.quality = this.autoDowngrade;
+      } else {
+        const isMobile =
+          matchMedia('(pointer: coarse)').matches ||
+          navigator.maxTouchPoints > 0 ||
+          'ontouchstart' in window;
+        this.quality = isMobile ? 'low' : 'medium';
+      }
     } else {
       this.quality = s;
+      this.autoDowngrade = null;
     }
     const dpr = window.devicePixelRatio;
     const maxDpr = this.quality === 'low' ? 1.4 : this.quality === 'medium' ? 1.8 : 2.2;
@@ -716,8 +722,9 @@ class Game {
       else this.lowFpsStreak = 0;
       if (this.lowFpsStreak >= 2 && this.quality !== 'low' && this.save.settings.quality === 'auto') {
         this.quality = this.quality === 'high' ? 'medium' : 'low';
+        this.autoDowngrade = this.quality;
         this.applyQualitySettings();
-        this.rebuildScene();
+        if (this.state === 'menu') this.rebuildScene();
         this.lowFpsStreak = 0;
       }
       if (this.state !== 'menu') this.dynamicRes(fps);

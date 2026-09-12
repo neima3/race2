@@ -16,7 +16,7 @@ function pineGeometry(): THREE.BufferGeometry {
   c2.translate(0, 4.6, 0);
   const c3 = new THREE.ConeGeometry(0.8, 1.8, 7);
   c3.translate(0, 5.9, 0);
-  const merged = mergeGeometries([trunk, c1, c2, c3].map(g => g.toNonIndexed()))!;
+  const merged = mergeGeometries([trunk, c1, c2, c3].map((g) => (g.index ? g.toNonIndexed() : g)))!;
   const count = merged.getAttribute('position').count;
   const colors = new Float32Array(count * 3);
   const brown = vineColor(0x5a4630);
@@ -42,7 +42,7 @@ function cactusGeometry(): THREE.BufferGeometry {
   const armR = new THREE.CylinderGeometry(0.2, 0.22, 1.1, 6);
   armR.rotateZ(-1.2);
   armR.translate(0.7, 1.5, 0);
-  const merged = mergeGeometries([body, armL, armR].map(g => g.toNonIndexed()))!;
+  const merged = mergeGeometries([body, armL, armR].map((g) => (g.index ? g.toNonIndexed() : g)))!;
   const count = merged.getAttribute('position').count;
   const colors = new Float32Array(count * 3);
   const green = vineColor(0x4f7a44);
@@ -67,7 +67,7 @@ function joshuaGeometry(): THREE.BufferGeometry {
     b.translate(Math.cos(a) * 0.8, 2.1 + Math.random() * 0.5, Math.sin(a) * 0.8);
     blobs.push(b);
   }
-  const merged = mergeGeometries(blobs.map(g => g.toNonIndexed()))!;
+  const merged = mergeGeometries(blobs.map((g) => (g.index ? g.toNonIndexed() : g)))!;
   const count = merged.getAttribute('position').count;
   const colors = new Float32Array(count * 3);
   const c = new THREE.Color();
@@ -87,7 +87,7 @@ function pylonGeometry(): THREE.BufferGeometry {
   post.translate(0, 2.6, 0);
   const top = new THREE.BoxGeometry(0.9, 0.5, 0.9);
   top.translate(0, 5.2, 0);
-  const merged = mergeGeometries([post, top].map(g => g.toNonIndexed()))!;
+  const merged = mergeGeometries([post, top].map((g) => (g.index ? g.toNonIndexed() : g)))!;
   const count = merged.getAttribute('position').count;
   const colors = new Float32Array(count * 3);
   const c = new THREE.Color();
@@ -107,7 +107,7 @@ function billboardGeometry(): THREE.BufferGeometry {
   legs.translate(0, 1.7, 0);
   const board = new THREE.BoxGeometry(5.4, 2.4, 0.18);
   board.translate(0, 4.2, 0);
-  const merged = mergeGeometries([legs, board].map(g => g.toNonIndexed()))!;
+  const merged = mergeGeometries([legs, board].map((g) => (g.index ? g.toNonIndexed() : g)))!;
   const count = merged.getAttribute('position').count;
   const colors = new Float32Array(count * 3);
   const c = new THREE.Color();

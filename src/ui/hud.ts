@@ -120,7 +120,7 @@ export class HUD {
         ? `DRIFT ${Math.round(this.driftPoints)} / ${this.driftBest}`
         : `DRIFT +${Math.round(this.driftPoints)}`;
     }
-    if (liveDelta === null) {
+    if (liveDelta === null || this.driftMode) {
       this.liveDeltaEl.textContent = '';
       this.liveDeltaEl.classList.remove('ahead', 'behind');
     } else {
