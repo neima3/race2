@@ -73,6 +73,7 @@ class Game {
   private bloomPass: UnrealBloomPass | null = null;
   private offroadTime = 0;
   private wasOnSlick = false;
+  private moverCooldown = new Set<number>();
   private boostKick = 0;
   private skidMarks: SkidMarks | null = null;
   private shadowBlob: THREE.Sprite | null = null;
@@ -929,6 +930,27 @@ class Game {
     for (const pad of this.meshes!.boostPads) {
       const t = now * 0.002;
       pad.mat.map!.offset.y = -t % 1;
+    }
+
+    for (let mi = 0; mi < this.meshes!.movers.length; mi++) {
+      const m = this.meshes!.movers[mi];
+      const f = this.curve!.frames[this.curve!.closestFrameIndex(m.mesh.position, Math.floor((m.dist / this.curve!.length) * this.curve!.frames.length), 30)];
+      const lat = (f.halfWidth + 0.8) * Math.sin(now * 0.001 * m.speed + m.phase);
+      m.mesh.position.copy(f.pos).addScaledVector(f.binormal, lat).addScaledVector(f.normal, 2.3);
+      if (this.state === 'racing' && this.car) {
+        const s = this.car.state;
+        if (Math.abs(s.trackDist - m.dist) < 2.2 && Math.abs(s.lateral - lat) < 1.5) {
+          s.vel.multiplyScalar(Math.max(0, 1 - 3.5 * (1 / 120)));
+          if (!this.moverCooldown.has(mi)) {
+            this.moverCooldown.add(mi);
+            this.audio.crash();
+            this.particles.wallSparks(s.pos.clone(), new THREE.Vector3(0, 1, 0));
+            this.input.rumble(0.9, 0.7, 200);
+            this.shake(0.8);
+            window.setTimeout(() => this.moverCooldown.delete(mi), 700);
+          }
+        }
+      }
     }
     for (const gate of this.meshes!.checkpointGates) {
       const passed = this.race!.nextCheckpoint > this.meshes!.checkpointGates.indexOf(gate);

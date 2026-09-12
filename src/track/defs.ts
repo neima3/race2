@@ -83,6 +83,7 @@ export interface TrackDef {
   boosts: BoostDef[];
   rings?: RingDef[];
   slicks?: { dist: number; lateral: number; w: number; l: number }[];
+  movers?: { dist: number; speed: number; range: number }[];
   medals: { author: number; gold: number; silver: number; bronze: number };
 }
 
@@ -304,6 +305,10 @@ const TRACK_6: TrackDef = {
   checkpoints: [{ dist: 220 }, { dist: 430 }],
   boosts: [{ dist: 500, lateral: 0, strength: 6 }],
   medals: { author: 21000, gold: 23500, silver: 27000, bronze: 34000 },
+  movers: [
+    { dist: 300, speed: 0.8, range: 26 },
+    { dist: 520, speed: 1.1, range: 26 },
+  ],
 };
 
 const TRACK_7: TrackDef = {
@@ -371,6 +376,10 @@ const TRACK_8: TrackDef = {
     { dist: 1080, lateral: 0, strength: 9 },
   ],
   medals: { author: 32000, gold: 35500, silver: 41000, bronze: 52000 },
+  movers: [
+    { dist: 500, speed: 0.9, range: 26 },
+    { dist: 900, speed: 1.2, range: 26 },
+  ],
 };
 
 const TRACK_9: TrackDef = {

@@ -54,6 +54,7 @@ export interface TrackMeshes {
   checkpointGates: { group: THREE.Group; dist: number; mat: THREE.MeshBasicMaterial }[];
   roadMat: THREE.MeshStandardMaterial;
   rings: { pos: THREE.Vector3; radius: number }[];
+  movers: { mesh: THREE.Mesh; dist: number; speed: number; range: number; phase: number }[];
 }
 
 export function buildTrackMeshes(curve: TrackCurve, def: TrackDef): TrackMeshes {
@@ -266,5 +267,26 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef): TrackMeshes 
   }
   if ((def.rings?.length ?? 0) > 0) group.add(ringGroup);
 
-  return { group, boostPads, checkpointGates, roadMat, rings };
+  const movers: TrackMeshes['movers'] = [];
+  const pillarCanvas = document.createElement('canvas');
+  pillarCanvas.width = 64;
+  pillarCanvas.height = 64;
+  const px2 = pillarCanvas.getContext('2d')!;
+  for (let i = 0; i < 8; i++) {
+    px2.fillStyle = i % 2 === 0 ? '#ff7a3d' : '#1c1f2a';
+    px2.fillRect(0, i * 8, 64, 8);
+  }
+  const moverMat = new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(pillarCanvas), roughness: 0.6 });
+  let mphase = 0;
+  for (const m of def.movers ?? []) {
+    const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
+    curve.frameAtDist(m.dist, f);
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.9, 4.6, 10), moverMat);
+    pillar.position.copy(f.pos).addScaledVector(f.normal, 2.3);
+    group.add(pillar);
+    movers.push({ mesh: pillar, dist: m.dist, speed: m.speed, range: m.range, phase: mphase });
+    mphase += 2.1;
+  }
+
+  return { group, boostPads, checkpointGates, roadMat, rings, movers };
 }
