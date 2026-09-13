@@ -209,3 +209,8 @@ Deviations:
 - Two headless-Chrome renderer crashes (~2-3 min into long WebGL sessions, tab → about:blank) and one agent-browser shell-escaping artifact during QA — same family as the v5 Phase-10 documented QA-tooling artifacts; no game code involved. Worked around with shorter sessions + in-page watchers (splash cloned into `document.body` so it outlives the 2.4s splash window and the finish panel's `clearCenter`).
 
 Notes for Phase 2+: `KNOCKOUT_LAPS` exported from rivals.ts; knockout config is two flags (`rivals.knockout` + 3 laps) — the Phase-3 Daily can reuse it by setting `menu.knockoutMode`-equivalent state + a seeded lineup. `Standing.eliminated` is optional so career/synthetic standings are untouched. The eliminated-row standings key pins OUT rows below alive cars — if Phase 3 needs KO positions in the share payload, `finish.knockout.position` + frozen standings already carry everything needed.
+
+## v6 final wrap (2026-09-13)
+- Phases 1-6 complete; 6 commits pushed (`baad2ab..ae6c743`), deployed via Coolify (deployment qgp6kwsyvcmsyxdyelglweuy, finished on ae6c743b), **v2.1.0 live**.
+- Live verification (muted ?mute=1 + ?alltracks, navigator.webdriver auto-mute): v2.1.0 string served; DAILY + STREAK on title; **service worker controlling page (sw:true)**; knockout race on new salt-flats track running with full standings (VESPER +0m, YOU +22m, ONYX +35m, ROOKIE +46m at lap 1/3); daily race boots and races. Evidence: `qa/v6-live/01-03` (not committed).
+- Gates at HEAD: typecheck ✅ build ✅ laps 11/14 ✅ rivals 20/20 ✅ career 119/119 ✅ share 34/34 ✅ knockout 50/50 ✅ daily 59/59 ✅ probe 24/24 ✅ allocs PASS ✅.
