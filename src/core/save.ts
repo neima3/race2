@@ -148,7 +148,9 @@ export class SaveManager {
       if (raw) {
         const parsed = JSON.parse(raw) as Stored<Partial<PlayerProfile>>;
         this.noteSchemaVersion(parsed.schemaVersion);
-        return { ...DEFAULT_PROFILE, ...parsed };
+        const profile: PlayerProfile = { ...DEFAULT_PROFILE, ...parsed };
+        if (profile.body !== 'standard' && profile.body !== 'aero' && profile.body !== 'tank') profile.body = 'standard';
+        return profile;
       }
     } catch {
       /* corrupted — defaults */

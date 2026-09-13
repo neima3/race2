@@ -1,6 +1,48 @@
 import * as THREE from 'three';
 import { buildCarVisual, type CarBodyStyle, type CarVisual } from '../render/car-model';
+import { BODY_TUNING, DEFAULT_TUNING } from '../physics/car';
 import type { SaveManager } from '../core/save';
+
+export const AERO_UNLOCK_STARS = 12;
+
+export interface BodyUnlockState {
+  unlocked: boolean;
+  req: string;
+}
+
+export type BodyUnlockMap = Record<CarBodyStyle, BodyUnlockState>;
+
+export function bodyUnlocks(totalStars: number, hasTrophy: boolean): BodyUnlockMap {
+  return {
+    standard: { unlocked: true, req: '' },
+    aero: { unlocked: totalStars >= AERO_UNLOCK_STARS, req: `${AERO_UNLOCK_STARS}\u2605` },
+    tank: { unlocked: hasTrophy, req: 'WIN ANY CUP TROPHY' },
+  };
+}
+
+export function hasCupTrophy(save: SaveManager): boolean {
+  for (const c of Object.values(save.allSaves.cups)) {
+    if (c.finishes.some((f) => f.trophy)) return true;
+  }
+  return false;
+}
+
+export interface BodyStatRatios {
+  speed: number;
+  grip: number;
+  drift: number;
+  accel: number;
+}
+
+export function bodyStatRatios(style: CarBodyStyle): BodyStatRatios {
+  const t = { ...DEFAULT_TUNING, ...BODY_TUNING[style] };
+  return {
+    speed: t.maxSpeed / DEFAULT_TUNING.maxSpeed,
+    grip: t.grip / DEFAULT_TUNING.grip,
+    drift: t.driftGrip / DEFAULT_TUNING.driftGrip,
+    accel: t.accel / DEFAULT_TUNING.accel,
+  };
+}
 
 export class GarageSystem {
   private renderer: THREE.WebGLRenderer | null = null;

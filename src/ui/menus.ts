@@ -5,6 +5,7 @@ import type { FinishResult } from '../game/race';
 import type { Standing } from '../game/rivals';
 import { CUPS, cupUnlock, cupTracks, cupStandings, startCupRun, type CupDef, type CareerPanelData } from '../game/career';
 import { PAINTS, type CarBodyStyle } from '../render/car-model';
+import { bodyUnlocks, bodyStatRatios, hasCupTrophy } from '../systems/garage';
 
 function cssHex(paint: number): string {
   return '#' + paint.toString(16).padStart(6, '0');
@@ -134,9 +135,13 @@ export class MenuManager {
     return screen;
   }
 
+  private totalStars(): number {
+    return this.tracks.reduce((sum, t) => sum + starsForTime(this.save.trackSave(t.id).bestTimeMs, t.medals), 0);
+  }
+
   private buildTracksScreen(): void {
     this.tracksScreen.replaceChildren();
-    const totalStars = this.tracks.reduce((sum, t) => sum + starsForTime(this.save.trackSave(t.id).bestTimeMs, t.medals), 0);
+    const totalStars = this.totalStars();
     const header = el('div', 'screen-header');
     header.append(el('h2', 'screen-title', 'SELECT TRACK'));
     const right = el('div', 'tracks-header-right');
@@ -384,17 +389,43 @@ export class MenuManager {
     }
     wrap.append(paints);
 
+    const unlocks = bodyUnlocks(this.totalStars(), hasCupTrophy(this.save));
     const bodies = el('div', 'body-grid');
     for (const b of ['standard', 'aero', 'tank'] as CarBodyStyle[]) {
-      const btn = el('button', 'menu-btn small body-btn', b.toUpperCase());
-      if (b === profile.body) btn.classList.add('selected');
-      btn.addEventListener('click', () => {
+      const unlock = unlocks[b];
+      const stats = bodyStatRatios(b);
+      const selected = b === profile.body && unlock.unlocked;
+      const card = el('button', 'body-card' + (selected ? ' selected' : '') + (unlock.unlocked ? '' : ' locked'));
+      const top = el('div', 'body-card-top');
+      top.append(el('span', 'body-name', b.toUpperCase()));
+      if (!unlock.unlocked) {
+        const lock = el('span', 'body-lock');
+        lock.innerHTML = `&#128274; ${unlock.req}`;
+        top.append(lock);
+      }
+      card.append(top);
+      const statRows = el('div', 'body-stats');
+      const bar = (label: string, ratio: number) => {
+        const row = el('div', 'stat-row');
+        row.append(el('span', 'stat-label', label));
+        const track = el('div', 'stat-track');
+        const fill = document.createElement('i');
+        fill.className = 'stat-fill';
+        fill.style.width = `${Math.max(10, Math.min(100, Math.round(ratio * 70)))}%`;
+        track.append(fill);
+        row.append(track);
+        return row;
+      };
+      statRows.append(bar('SPEED', stats.speed), bar('GRIP', stats.grip), bar('DRIFT', stats.drift), bar('ACCEL', stats.accel));
+      card.append(statRows);
+      card.addEventListener('click', () => {
+        if (!unlock.unlocked || b === this.save.profile.body) return;
         this.save.updateProfile({ body: b });
         for (const s of bodies.children) s.classList.remove('selected');
-        btn.classList.add('selected');
+        card.classList.add('selected');
         this.onGarageChange(this.save.profile.paint, b);
       });
-      bodies.append(btn);
+      bodies.append(card);
     }
     wrap.append(bodies);
 

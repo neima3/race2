@@ -14,6 +14,7 @@ export interface CarTuning {
   offroadDrag: number;
   offroadGrip: number;
   restHeight: number;
+  boostKick: number;
 }
 
 export const DEFAULT_TUNING: CarTuning = {
@@ -29,6 +30,15 @@ export const DEFAULT_TUNING: CarTuning = {
   offroadDrag: 2.6,
   offroadGrip: 3.2,
   restHeight: 0.55,
+  boostKick: 1,
+};
+
+export type CarBodyId = 'standard' | 'aero' | 'tank';
+
+export const BODY_TUNING: Record<CarBodyId, Partial<CarTuning>> = {
+  standard: {},
+  aero: { maxSpeed: 60.9, grip: 7.2 },
+  tank: { maxSpeed: 55.68, grip: 7.95, boostKick: 1.08 },
 };
 
 export interface CarState {
@@ -167,7 +177,7 @@ export class CarPhysics {
     this.state.boostTime = Math.max(this.state.boostTime, duration);
     const forward = this.tmpV1.set(0, 0, 1).applyQuaternion(this.state.quat);
     const fs = this.state.vel.dot(forward);
-    const target = Math.min(fs + strength, this.tuning.maxSpeed * 1.26);
+    const target = Math.min(fs + strength * this.tuning.boostKick, this.tuning.maxSpeed * 1.26);
     this.state.vel.addScaledVector(forward, Math.max(0, target - fs));
   }
 

@@ -10,7 +10,7 @@ function curveLen(def: TrackDef): number {
   return new TrackCurve(def.points, true, 6).length;
 }
 import { buildTrackMeshes, type TrackMeshes } from './track/builder';
-import { CarPhysics } from './physics/car';
+import { CarPhysics, BODY_TUNING } from './physics/car';
 import { buildCarVisual, type CarVisual } from './render/car-model';
 import { SkidMarks } from './render/skidmarks';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -57,6 +57,7 @@ class Game {
   private meshes: TrackMeshes | null = null;
   private curve: TrackCurve | null = null;
   private car: CarPhysics | null = null;
+  private sceneBody: 'standard' | 'aero' | 'tank' = 'standard';
   private carVisual: CarVisual | null = null;
   private ghostVisual: CarVisual | null = null;
   private race: RaceController | null = null;
@@ -415,8 +416,7 @@ class Game {
 
   private applyPlayerStyle(_paint: number, body: 'standard' | 'aero' | 'tank'): void {
     this.garage.applyTo(this.carVisual!, this.ghostVisual ?? null);
-    if (this.track && this.save.profile.body !== body) {
-      this.save.updateProfile({ body });
+    if (this.track && this.sceneBody !== body) {
       this.loadTrackIntoScene(this.track);
       if (this.state === 'menu') this.car!.placeAtFrame(0, 8);
     }
@@ -470,7 +470,8 @@ class Game {
       });
     }
 
-    this.car = new CarPhysics(curve);
+    this.car = new CarPhysics(curve, BODY_TUNING[this.save.profile.body]);
+    this.sceneBody = this.save.profile.body;
     this.car.placeAtFrame(0, 8);
     if (this.skidMarks) {
       this.scene.remove(this.skidMarks.mesh);
