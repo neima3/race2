@@ -2,7 +2,22 @@ import { el, formatTimePrecise } from './common';
 import type { SaveManager, Settings, QualityTier } from '../core/save';
 import type { TrackDef } from '../track/defs';
 import type { FinishResult } from '../game/race';
+import type { Standing } from '../game/rivals';
 import { PAINTS, type CarBodyStyle } from '../render/car-model';
+
+function cssHex(paint: number): string {
+  return '#' + paint.toString(16).padStart(6, '0');
+}
+
+function finishGap(s: Standing, leader: Standing): string {
+  if (s.finished && s.finishTimeMs != null) {
+    if (leader.finished && leader.finishTimeMs != null && s !== leader) {
+      return `+${((s.finishTimeMs - leader.finishTimeMs) / 1000).toFixed(1)}s`;
+    }
+    return formatTimePrecise(s.finishTimeMs);
+  }
+  return `DNF +${Math.round(s.gapMeters)}m`;
+}
 
 export type MenuScreen = 'title' | 'tracks' | 'settings' | 'garage' | 'achievements' | 'none';
 
@@ -455,45 +470,69 @@ export class MenuManager {
     this.pauseScreen.classList.add('hidden');
   }
 
-  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null): void {
+  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null): void {
     this.finishScreen.replaceChildren();
     const panel = el('div', 'panel finish-panel');
-    const medalHtml =
-      result.medal === 'none'
+    const rivalMode = standings != null && standings.length > 0;
+    const medalHtml = rivalMode
+      ? ''
+      : result.medal === 'none'
         ? '<div class="finish-medal none">NO MEDAL</div>'
         : `<div class="finish-medal banner-${result.medal}">${result.medal.toUpperCase()}</div>`;
-    const deltaRows = result.splitDetail
-      .map(
-        (s, i) =>
-          `<div class="delta-row"><span>CP ${i + 1}</span><span class="delta-split">${formatTimePrecise(s.splitMs)}</span><span class="${
-            s.deltaMs === null ? 'delta-none' : s.deltaMs <= 0 ? 'delta-ahead' : 'delta-behind'
-          }">${s.deltaMs === null ? '' : `${s.deltaMs <= 0 ? '−' : '+'}${(Math.abs(s.deltaMs) / 1000).toFixed(3)}`}</span></div>`,
-      )
-      .join('');
+    const deltaRows = rivalMode
+      ? ''
+      : result.splitDetail
+          .map(
+            (s, i) =>
+              `<div class="delta-row"><span>CP ${i + 1}</span><span class="delta-split">${formatTimePrecise(s.splitMs)}</span><span class="${
+                s.deltaMs === null ? 'delta-none' : s.deltaMs <= 0 ? 'delta-ahead' : 'delta-behind'
+              }">${s.deltaMs === null ? '' : `${s.deltaMs <= 0 ? '−' : '+'}${(Math.abs(s.deltaMs) / 1000).toFixed(3)}`}</span></div>`,
+          )
+          .join('');
     const driftHtml =
-      driftScore !== null
+      !rivalMode && driftScore !== null
         ? (() => {
             const best = this.save.trackSave(track.id).driftBest ?? 0;
             return `<div class="finish-drift">DRIFT SCORE <b>${Math.round(driftScore)}</b>${best > 0 && driftScore >= best ? ' &#127942; NEW BEST' : driftScore > 0 ? ` · BEST ${best}` : ''}</div>`;
           })()
         : '';
     const deltaTable = deltaRows ? `<div class="finish-deltas">${deltaRows}</div>` : '';
-    const history = this.save.trackSave(track.id).history.slice(0, 5);
+    const history = rivalMode ? [] : this.save.trackSave(track.id).history.slice(0, 5);
     const historyHtml =
       history.length > 1 && driftScore === null
         ? `<div class="finish-history"><div class="fh-title">TOP TIMES</div>${history
             .map((t, i) => `<div class="delta-row"><span>${i + 1}</span><span class="delta-split">${formatTimePrecise(t)}</span><span></span></div>`)
             .join('')}</div>`
         : '';
+    const bestHtml = rivalMode
+      ? ''
+      : `<div class="finish-best">${result.newBest ? '&#127942; NEW PERSONAL BEST' : `Best: ${formatTimePrecise(result.previousBest ?? result.timeMs)}`}</div>`;
     panel.innerHTML = `
       <h2 class="screen-title">${track.name}</h2>
       <div class="finish-time">${formatTimePrecise(result.timeMs)}</div>
       ${medalHtml}
       ${driftHtml}
-      <div class="finish-best">${result.newBest ? '&#127942; NEW PERSONAL BEST' : `Best: ${formatTimePrecise(result.previousBest ?? result.timeMs)}`}</div>
+      ${bestHtml}
       ${deltaTable}
       ${historyHtml}
     `;
+    if (rivalMode) {
+      const wrap = el('div', 'finish-positions');
+      wrap.style.setProperty('--player-accent', cssHex(this.save.profile.paint));
+      wrap.append(el('div', 'fh-title', 'RACE RESULT'));
+      const leader = standings![0];
+      standings!.forEach((s, i) => {
+        const row = el('div', 'fp-row' + (i < 3 ? ` podium-${i + 1}` : '') + (s.isPlayer ? ' you' : ''));
+        const pos = el('span', 'fp-pos', `P${i + 1}`);
+        const swatch = el('span', 'fp-swatch');
+        swatch.style.background = cssHex(s.paint);
+        const name = el('span', 'fp-name', s.name);
+        const gap = el('span', 'fp-gap', finishGap(s, leader));
+        row.append(pos, swatch, name, gap);
+        wrap.append(row);
+      });
+      panel.append(wrap);
+    }
     const retry = el('button', 'menu-btn primary', 'RETRY');
     retry.addEventListener('click', () => this.onRestart());
     const replay = el('button', 'menu-btn', '&#9654; WATCH REPLAY');
@@ -511,7 +550,9 @@ export class MenuManager {
       this.hideAll();
       this.show('tracks');
     });
-    panel.append(retry, replay, menu);
+    panel.append(retry);
+    if (!rivalMode) panel.append(replay);
+    panel.append(menu);
     this.finishScreen.append(panel);
     this.finishScreen.classList.remove('hidden');
   }

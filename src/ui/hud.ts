@@ -1,8 +1,16 @@
 import { el, formatTime, formatTimePrecise } from './common';
 import type { CheckpointEvent, FinishResult } from '../game/race';
+import type { Standing } from '../game/rivals';
+import type { TrackCurve } from '../track/curve';
+import { Minimap } from './minimap';
+
+function cssHex(paint: number): string {
+  return '#' + paint.toString(16).padStart(6, '0');
+}
 
 export class HUD {
   readonly root: HTMLElement;
+  readonly minimap: Minimap;
   private timerEl: HTMLElement;
   private speedEl: HTMLElement;
   private speedUnitEl: HTMLElement;
@@ -25,6 +33,13 @@ export class HUD {
   private progressPlayer: HTMLElement;
   private progressGhost: HTMLElement;
   private progressTicks: HTMLElement;
+  private posWrap: HTMLElement;
+  private posNumEl: HTMLElement;
+  private posTotalEl: HTMLElement;
+  private posFlashEl: HTMLElement;
+  private standingsEl: HTMLElement;
+  private standRows: { root: HTMLElement; pos: HTMLElement; dot: HTMLElement; name: HTMLElement; gap: HTMLElement }[] = [];
+  private lastRivalPos = 0;
 
   constructor() {
     this.root = el('div', 'hud hidden');
@@ -35,7 +50,14 @@ export class HUD {
     this.timerEl = el('div', 'hud-timer', '0:00.000');
     this.bestEl = el('div', 'hud-best');
     this.liveDeltaEl = el('div', 'hud-live-delta');
-    timerWrap.append(this.timerEl, this.bestEl, this.liveDeltaEl);
+    this.posWrap = el('div', 'hud-pos-wrap');
+    this.posFlashEl = el('div', 'hud-pos-flash');
+    const posLine = el('div', 'hud-pos');
+    this.posNumEl = el('span', 'hud-pos-num', '4');
+    this.posTotalEl = el('span', 'hud-pos-total', '/4');
+    posLine.append(this.posNumEl, this.posTotalEl);
+    this.posWrap.append(this.posFlashEl, posLine);
+    timerWrap.append(this.timerEl, this.bestEl, this.liveDeltaEl, this.posWrap);
     const cpWrap = el('div', 'hud-cp-wrap');
     this.cpEl = el('div', 'hud-cp');
     this.lapEl = el('div', 'hud-lap hidden');
@@ -62,7 +84,21 @@ export class HUD {
     this.splitToast = el('div', 'hud-split-toast');
     this.respawnHint = el('div', 'hud-respawn-hint', 'OFF TRACK &mdash; RESPAWN &#8634; / X');
 
-    this.root.append(topBar, bottomBar, this.progressTrack, this.centerEl, this.splitToast, this.respawnHint);
+    this.standingsEl = el('div', 'hud-standings');
+    for (let i = 0; i < 4; i++) {
+      const row = el('div', 'standing-row');
+      const pos = el('span', 'sr-pos');
+      const dot = el('span', 'sr-dot');
+      const name = el('span', 'sr-name');
+      const gap = el('span', 'sr-gap');
+      row.append(pos, dot, name, gap);
+      this.standingsEl.append(row);
+      this.standRows.push({ root: row, pos, dot, name, gap });
+    }
+
+    this.minimap = new Minimap();
+
+    this.root.append(topBar, bottomBar, this.progressTrack, this.centerEl, this.splitToast, this.respawnHint, this.standingsEl, this.minimap.root);
   }
 
   setDriftMode(on: boolean, best: number): void {
@@ -106,11 +142,56 @@ export class HUD {
     this.progressPlayer.style.left = '0%';
     this.progressGhost.style.left = '0%';
     this.progressGhost.style.display = 'none';
+    this.lastRivalPos = 0;
+    this.posNumEl.textContent = '–';
+    this.posFlashEl.classList.remove('show', 'up', 'down');
     this.root.classList.remove('hidden');
   }
 
   hide(): void {
     this.root.classList.add('hidden');
+  }
+
+  setPlayerPaint(paint: number): void {
+    this.standingsEl.style.setProperty('--player-accent', cssHex(paint));
+    this.minimap.setPlayerPaint(paint);
+  }
+
+  setMinimapTrack(curve: TrackCurve, accent: number): void {
+    this.minimap.setTrack(curve, accent);
+  }
+
+  showRivalHUD(): void {
+    this.root.classList.add('rivals');
+  }
+
+  hideRivalHUD(): void {
+    this.root.classList.remove('rivals');
+  }
+
+  updateRivals(order: Standing[], reducedMotion: boolean): void {
+    if (order.length === 0) return;
+    const pos = order.findIndex((s) => s.isPlayer) + 1;
+    this.posNumEl.textContent = String(pos > 0 ? pos : order.length);
+    this.posTotalEl.textContent = `/${order.length}`;
+    if (this.lastRivalPos > 0 && pos !== this.lastRivalPos && pos > 0 && !reducedMotion) {
+      const up = pos < this.lastRivalPos;
+      this.posFlashEl.textContent = `${up ? '\u25b2' : '\u25bc'} P${pos}`;
+      this.posFlashEl.classList.remove('show', 'up', 'down');
+      void this.posFlashEl.offsetWidth;
+      this.posFlashEl.classList.add(up ? 'up' : 'down', 'show');
+    }
+    this.lastRivalPos = pos;
+    for (let i = 0; i < order.length && i < this.standRows.length; i++) {
+      const s = order[i];
+      const row = this.standRows[i];
+      row.pos.textContent = String(i + 1);
+      row.name.textContent = s.name;
+      row.gap.textContent = i === 0 ? '' : `+${Math.round(s.gapMeters)}m`;
+      row.dot.style.background = cssHex(s.paint);
+      row.root.classList.toggle('you', s.isPlayer);
+      this.standingsEl.append(row.root);
+    }
   }
 
   update(elapsedMs: number, speedKmh: number, drift: boolean, cpDone: number, cpTotal: number, liveDelta: number | null): void {

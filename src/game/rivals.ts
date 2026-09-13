@@ -2,12 +2,58 @@ import * as THREE from 'three';
 import { CarPhysics, DEFAULT_TUNING } from '../physics/car';
 import type { TrackCurve } from '../track/curve';
 import type { TrackDef } from '../track/defs';
-import { buildCarVisual, type CarVisual } from '../render/car-model';
+import { buildCarVisual, type CarVisual, type CarBodyStyle } from '../render/car-model';
 import type { ParticleSystem } from '../render/particles';
 import { autopilotDrive, type AutoPilotState } from '../systems/autopilot';
 import { updateBoostPads, computeOnSlick, moverOverlap, applyMoverScrub, resetPads, type PadState } from './rules';
 
 export type RivalTier = 'easy' | 'mid' | 'pro';
+
+export interface RivalPreset {
+  name: string;
+  tier: RivalTier;
+  paint: number;
+  body: CarBodyStyle;
+}
+
+export const RIVAL_ROSTER: RivalPreset[] = [
+  { name: 'ROOKIE', tier: 'easy', paint: 0xff4d6d, body: 'standard' },
+  { name: 'HALCYON', tier: 'easy', paint: 0xe8f2ff, body: 'standard' },
+  { name: 'JUNO', tier: 'easy', paint: 0xffb52e, body: 'tank' },
+  { name: 'SABLE', tier: 'mid', paint: 0x7dff6e, body: 'standard' },
+  { name: 'MIRAGE', tier: 'mid', paint: 0xc8ff2e, body: 'aero' },
+  { name: 'ONYX', tier: 'mid', paint: 0xd78a4a, body: 'tank' },
+  { name: 'APEX', tier: 'pro', paint: 0xb44dff, body: 'standard' },
+  { name: 'VESPER', tier: 'pro', paint: 0x29e6ff, body: 'aero' },
+];
+
+function hashSeed(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function pickLineup(trackId: string, cupSlot = 0): RivalPreset[] {
+  const tiers: RivalTier[] = ['easy', 'mid', 'pro'];
+  return tiers.map((tier) => {
+    const pool = RIVAL_ROSTER.filter((r) => r.tier === tier);
+    const rng = mulberry32(hashSeed(trackId + ':' + cupSlot + ':' + tier));
+    return pool[Math.floor(rng() * pool.length) % pool.length];
+  });
+}
 
 export interface RivalSkill {
   name: string;
@@ -15,6 +61,8 @@ export interface RivalSkill {
   pace: number;
   lookaheadJitter: number;
   steerNoise: number;
+  paint: number;
+  body: CarBodyStyle;
 }
 
 const TIER_PARAMS: Record<RivalTier, { pace: number; lookaheadJitter: number; steerNoise: number }> = {
@@ -28,12 +76,6 @@ const TIER_TUNING: Record<RivalTier, { accel: number; maxSpeed: number }> = {
   mid: { accel: 0.97, maxSpeed: 0.985 },
   pro: { accel: 1.04, maxSpeed: 1.015 },
 };
-
-const RIVAL_PRESETS: { name: string; tier: RivalTier; paint: number }[] = [
-  { name: 'ROOKIE', tier: 'easy', paint: 0xff4d6d },
-  { name: 'SABLE', tier: 'mid', paint: 0x7dff6e },
-  { name: 'APEX', tier: 'pro', paint: 0xb44dff },
-];
 
 export const DEFAULT_RIVAL_LAPS = 2;
 export const PLAYER_NAME = 'YOU';
@@ -52,6 +94,7 @@ export type RivalMode = 'countdown' | 'racing' | 'idle';
 export interface RivalTelemetry {
   name: string;
   tier: RivalTier;
+  paint: number;
   finished: boolean;
   lapsDone: number;
   totalProgress: number;
@@ -66,6 +109,15 @@ export interface Standing {
   progress: number;
   isPlayer: boolean;
   gapMeters: number;
+  paint: number;
+  finished: boolean;
+  finishTimeMs: number | null;
+}
+
+export interface MinimapDot {
+  x: number;
+  z: number;
+  paint: number;
 }
 
 export interface MoverSnapshot {
@@ -88,6 +140,7 @@ interface Rival {
   stuckMs: number;
   finished: boolean;
   finishRank: number;
+  finishTimeMs: number | null;
   band: number;
 }
 
@@ -102,19 +155,24 @@ export class RivalManager {
   private def: TrackDef;
   private frozen: Standing[] | null = null;
   private finishCounter = 0;
+  private raceClockMs = 0;
+  private playerPaint = 0x29e6ff;
+  private playerFinished = false;
+  private playerFinishMs: number | null = null;
+  private dotBuf: MinimapDot[] = [];
 
-  constructor(curve: TrackCurve, def: TrackDef, parent: THREE.Group, shadows: boolean) {
+  constructor(curve: TrackCurve, def: TrackDef, parent: THREE.Group, shadows: boolean, lineup: RivalPreset[] = pickLineup(def.id)) {
     this.curve = curve;
     this.def = def;
-    for (const preset of RIVAL_PRESETS) {
-      const visual = buildCarVisual(preset.paint, false);
+    for (const preset of lineup) {
+      const visual = buildCarVisual(preset.paint, false, preset.body);
       visual.group.visible = false;
       visual.group.traverse((o) => {
         if (o instanceof THREE.Mesh) o.castShadow = shadows;
       });
       parent.add(visual.group);
       this.rivals.push({
-        skill: { name: preset.name, tier: preset.tier, ...TIER_PARAMS[preset.tier] },
+        skill: { name: preset.name, tier: preset.tier, ...TIER_PARAMS[preset.tier], paint: preset.paint, body: preset.body },
         car: new CarPhysics(curve, {
           accel: DEFAULT_TUNING.accel * TIER_TUNING[preset.tier].accel,
           maxSpeed: DEFAULT_TUNING.maxSpeed * TIER_TUNING[preset.tier].maxSpeed,
@@ -131,6 +189,7 @@ export class RivalManager {
         stuckMs: 0,
         finished: false,
         finishRank: 0,
+        finishTimeMs: null,
         band: 0,
       });
     }
@@ -146,6 +205,10 @@ export class RivalManager {
   placeOnGrid(): void {
     const len = this.curve.length;
     this.frozen = null;
+    this.finishCounter = 0;
+    this.raceClockMs = 0;
+    this.playerFinished = false;
+    this.playerFinishMs = null;
     for (let k = 0; k < this.rivals.length; k++) {
       const r = this.rivals[k];
       const slot = this.gridSlot(k);
@@ -159,6 +222,7 @@ export class RivalManager {
       r.stuckMs = 0;
       r.finished = false;
       r.finishRank = 0;
+      r.finishTimeMs = null;
       r.band = 0;
       r.ap.smooth = 0;
       resetPads(r.pads);
@@ -171,6 +235,7 @@ export class RivalManager {
 
   update(dtMs: number, mode: RivalMode, playerProgress: number, movers: MoverSnapshot[] | null = null): void {
     const dt = dtMs / 1000;
+    if (mode === 'racing') this.raceClockMs += dtMs;
     for (const r of this.rivals) {
       const car = r.car;
       if (mode === 'countdown') {
@@ -250,6 +315,7 @@ export class RivalManager {
           if (r.lapOffset + r.lapsDone >= this.totalLaps) {
             r.finished = true;
             r.finishRank = ++this.finishCounter;
+            r.finishTimeMs = this.raceClockMs;
           }
         }
       }
@@ -262,6 +328,26 @@ export class RivalManager {
     return this.rivals.every((r) => r.finished);
   }
 
+  setPlayerPaint(paint: number): void {
+    this.playerPaint = paint;
+  }
+
+  dotPositions(): MinimapDot[] {
+    for (let i = 0; i < this.rivals.length; i++) {
+      const r = this.rivals[i];
+      const d = this.dotBuf[i];
+      if (d) {
+        d.x = r.car.state.pos.x;
+        d.z = r.car.state.pos.z;
+        d.paint = r.skill.paint;
+      } else {
+        this.dotBuf[i] = { x: r.car.state.pos.x, z: r.car.state.pos.z, paint: r.skill.paint };
+      }
+    }
+    this.dotBuf.length = this.rivals.length;
+    return this.dotBuf;
+  }
+
   standings(playerProgress: number): Standing[] {
     if (this.frozen) return this.frozen;
     const finishDatum = this.totalLaps * this.curve.length;
@@ -270,10 +356,26 @@ export class RivalManager {
     for (const r of this.rivals) {
       const finished = r.finished && r.finishRank > 0;
       keys.push(finished ? Number.MAX_SAFE_INTEGER - r.finishRank : r.totalProgress);
-      list.push({ name: r.skill.name, progress: finished ? finishDatum : r.totalProgress, isPlayer: false, gapMeters: 0 });
+      list.push({
+        name: r.skill.name,
+        progress: finished ? finishDatum : r.totalProgress,
+        isPlayer: false,
+        gapMeters: 0,
+        paint: r.skill.paint,
+        finished: r.finished,
+        finishTimeMs: r.finishTimeMs,
+      });
     }
     keys.push(playerProgress);
-    list.push({ name: PLAYER_NAME, progress: playerProgress, isPlayer: true, gapMeters: 0 });
+    list.push({
+      name: PLAYER_NAME,
+      progress: playerProgress,
+      isPlayer: true,
+      gapMeters: 0,
+      paint: this.playerPaint,
+      finished: this.playerFinished,
+      finishTimeMs: this.playerFinishMs,
+    });
     const order = keys.map((k, i) => [k, i] as const).sort((a, b) => b[0] - a[0]);
     const ordered = order.map(([, i]) => list[i]);
     const leaderProgress = ordered.length > 0 ? ordered[0].progress : 0;
@@ -281,8 +383,12 @@ export class RivalManager {
     return ordered;
   }
 
-  freeze(playerProgress: number): Standing[] {
-    if (!this.frozen) this.frozen = this.standings(playerProgress);
+  freeze(playerProgress: number, playerFinishMs: number | null = null): Standing[] {
+    if (!this.frozen) {
+      this.playerFinished = true;
+      this.playerFinishMs = playerFinishMs;
+      this.frozen = this.standings(playerProgress);
+    }
     return this.frozen;
   }
 
@@ -290,6 +396,7 @@ export class RivalManager {
     return this.rivals.map((r) => ({
       name: r.skill.name,
       tier: r.skill.tier,
+      paint: r.skill.paint,
       finished: r.finished,
       lapsDone: r.lapsDone,
       totalProgress: Math.round(r.totalProgress),

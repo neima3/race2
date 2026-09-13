@@ -3,7 +3,7 @@ import { TrackCurve } from '../src/track/curve';
 import { TRACKS } from '../src/track/defs';
 import { CarPhysics } from '../src/physics/car';
 import { RaceController } from '../src/game/race';
-import { RivalManager, type Standing } from '../src/game/rivals';
+import { RivalManager, pickLineup, type Standing } from '../src/game/rivals';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
 
@@ -98,15 +98,16 @@ interface RaceResult {
 
 const results: RaceResult[] = [];
 const RACE_TRACKS = [TRACKS[0], TRACKS[4]];
-const EASY_MID = ['ROOKIE', 'SABLE'];
 
 for (const def of RACE_TRACKS) {
+  const lineup = pickLineup(def.id);
+  const easyMidNames = lineup.filter((r) => r.tier !== 'pro').map((r) => r.name);
   const curve = new TrackCurve(def.points, true);
   const car = new CarPhysics(curve);
   const save = new SaveManager();
   const events: string[] = [];
   const race = new RaceController(car, curve, def, save, (ev) => events.push(ev), { laps: 2, writesRecords: false });
-  const rivals = new RivalManager(curve, def, new THREE.Group(), false);
+  const rivals = new RivalManager(curve, def, new THREE.Group(), false, lineup);
   const playerSlot = rivals.gridSlot(3);
   car.placeAt(playerSlot.dist, playerSlot.lateral);
   rivals.placeOnGrid();
@@ -176,7 +177,7 @@ for (const def of RACE_TRACKS) {
         finishWallMs = wall;
         finishOrder = rivals.freeze(race.totalProgress);
         playerPos = (finishOrder.findIndex((s) => s.isPlayer) + 1) || -1;
-        const easyMidIdx = finishOrder.filter((s) => EASY_MID.includes(s.name)).map((s) => finishOrder!.indexOf(s));
+        const easyMidIdx = finishOrder.filter((s) => easyMidNames.includes(s.name)).map((s) => finishOrder!.indexOf(s));
         beatsEasyMid = easyMidIdx.every((i) => i > (playerPos - 1));
       }
       if (rivals.allFinished() || wall - finishWallMs > 20000) break;
@@ -190,8 +191,9 @@ for (const def of RACE_TRACKS) {
   const ok = race.phase === 'finished' && allFinished && finishOrder !== null;
   results.push({ track: def.id, finished: race.phase === 'finished', allFinished, playerPos, beatsEasyMid, maxGap, cpHits, cpTotal: def.checkpoints.length, completedLaps: race.completedLaps, pbWritten });
   const order = finishOrder ? finishOrder.map((s, i) => `P${i + 1} ${s.name}`).join(' ') : 'n/a';
+  const lineupStr = lineup.map((r) => `${r.name}(${r.tier[0]})`).join(' ');
   console.log(
-    `${ok ? 'PASS' : 'FAIL'} ${def.id}: player ${race.phase === 'finished' ? 'finished 2 laps' : 'DID NOT FINISH'} | all4=${allFinished} | order: ${order} | maxGap=${maxGap.toFixed(1)}m | cpHits=${cpHits}/${def.checkpoints.length * 2} | lapsDone=${race.lapsDone} | pbWritten=${pbWritten}`,
+    `${ok ? 'PASS' : 'FAIL'} ${def.id}: player ${race.phase === 'finished' ? 'finished 2 laps' : 'DID NOT FINISH'} | all4=${allFinished} | lineup: ${lineupStr} | order: ${order} | maxGap=${maxGap.toFixed(1)}m | cpHits=${cpHits}/${def.checkpoints.length * 2} | lapsDone=${race.lapsDone} | pbWritten=${pbWritten}`,
   );
 }
 

@@ -24,7 +24,7 @@ import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem } from './render/particles';
 import { CameraRig } from './render/camera';
 import { RaceController, type RaceEvents } from './game/race';
-import { RivalManager, DEFAULT_RIVAL_LAPS, type RivalMode } from './game/rivals';
+import { RivalManager, DEFAULT_RIVAL_LAPS, type RivalMode, type Standing } from './game/rivals';
 import { computeOnSlick, moverOverlap, applyMoverScrub } from './game/rules';
 import { HUD } from './ui/hud';
 import { MenuManager } from './ui/menus';
@@ -33,6 +33,7 @@ import { TouchControls } from './ui/touch';
 type AppState = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished' | 'replay' | 'photo';
 
 const kmh = 3.6;
+const EMPTY_DOTS: { x: number; z: number; paint: number }[] = [];
 
 class Game {
   private renderer: THREE.WebGLRenderer;
@@ -59,6 +60,8 @@ class Game {
   private race: RaceController | null = null;
   private rivals: RivalManager | null = null;
   private rivalMode = false;
+  private hudAcc = 0;
+  private mapAcc = 0;
   private moverSnap: { dist: number; lat: number }[] = [];
   private track: TrackDef = TRACKS[0];
 
@@ -477,18 +480,25 @@ class Game {
 
   private startTrack(def: TrackDef): void {
     this.rivalMode = this.menu.rivalsMode;
+    this.hudAcc = 0;
+    this.mapAcc = 0;
     if (def.id !== this.track.id) {
       this.loadTrackIntoScene(def);
     }
+    this.hud.setMinimapTrack(this.curve!, def.accent);
+    this.hud.setPlayerPaint(this.save.profile.paint);
     if (this.rivalMode && this.rivals) {
       const slot = this.rivals.gridSlot(3);
       this.car!.placeAt(slot.dist, slot.lateral);
       this.rivals.totalLaps = DEFAULT_RIVAL_LAPS;
+      this.rivals.setPlayerPaint(this.save.profile.paint);
       this.rivals.placeOnGrid();
       this.rivals.setVisible(true);
+      this.hud.showRivalHUD();
     } else {
       this.car!.placeAtFrame(0, 8);
       this.rivals?.setVisible(false);
+      this.hud.hideRivalHUD();
     }
     this.rig.snapBehind(this.car!.state);
     this.state = 'countdown';
@@ -614,9 +624,10 @@ class Game {
       this.audio.finish(r.medal);
       this.input.rumble(0.5, 0.9, 500);
       this.hud.showFinish(r);
+      let rivalStandings: Standing[] | null = null;
       if (this.rivalMode && this.rivals) {
-        const st = this.rivals.freeze(this.race!.totalProgress);
-        console.log('[rivals] finish order: ' + st.map((s, i) => `P${i + 1} ${s.name}${s.gapMeters > 0 ? ` +${Math.round(s.gapMeters)}m` : ''}`).join(' | '));
+        rivalStandings = this.rivals.freeze(this.race!.totalProgress, r.timeMs);
+        console.log('[rivals] finish order: ' + rivalStandings.map((s, i) => `P${i + 1} ${s.name}${s.gapMeters > 0 ? ` +${Math.round(s.gapMeters)}m` : ''}`).join(' | '));
       }
       const tierBase = r.medal === 'author' ? 0x29e6ff : r.medal === 'gold' ? 0xffcf3f : r.medal === 'silver' ? 0xd7dee8 : r.medal === 'bronze' ? 0xe08d4f : 0x29e6ff;
       const tierColors = [new THREE.Color(tierBase), new THREE.Color(tierBase).lerp(new THREE.Color(0xffffff), 0.6), new THREE.Color(tierBase).lerp(new THREE.Color(0x000000), 0.25)];
@@ -649,7 +660,7 @@ class Game {
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
         const hasNext = idx < TRACKS.length - 1;
         this.lastFinish = { result: r, hasNext };
-        this.menu.showFinish(this.track, r, hasNext, this.driftMode ? Math.round(this.driftScore) : null);
+        this.menu.showFinish(this.track, r, hasNext, this.driftMode ? Math.round(this.driftScore) : null, rivalStandings);
         this.touch.hide();
         this.audio.stopEngine();
       }, 1400);
@@ -998,6 +1009,28 @@ class Game {
       this.hud.updateProgress(s.trackDist / this.curve!.length, this.race!.ghostDistAt(this.race!.elapsedMs) === null ? null : (this.race!.ghostDistAt(this.race!.elapsedMs) as number) / this.curve!.length);
       this.audio.updateEngine(Math.min(1, Math.abs(s.forwardSpeed) / 58), input.throttle, !s.grounded);
       this.audio.setSpeedIntensity(Math.min(1, Math.abs(s.forwardSpeed) / 58), s.boostTime > 0);
+    }
+
+    if (this.rivalMode && this.rivals && (this.state === 'racing' || this.state === 'countdown')) {
+      this.hudAcc += dt;
+      if (this.hudAcc >= 0.2) {
+        this.hudAcc = 0;
+        this.hud.updateRivals(this.rivals.standings(this.race!.totalProgress), this.save.settings.reducedMotion);
+      }
+    }
+
+    if (this.state === 'racing' || this.state === 'countdown') {
+      this.mapAcc += dt;
+      if (this.mapAcc >= 1 / 30) {
+        this.mapAcc = 0;
+        const gh =
+          this.race!.ghostActive && this.save.settings.showGhost ? this.race!.ghostSampleAt(this.race!.elapsedMs) : null;
+        this.hud.minimap.update(
+          this.car!.state.pos,
+          this.rivalMode && this.rivals ? this.rivals.dotPositions() : EMPTY_DOTS,
+          gh ? gh.pos : null,
+        );
+      }
     }
 
     if (this.state === 'finished') {
