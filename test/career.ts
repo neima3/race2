@@ -3,9 +3,10 @@ import { TrackCurve } from '../src/track/curve';
 import { TRACKS } from '../src/track/defs';
 import { CarPhysics } from '../src/physics/car';
 import { RaceController } from '../src/game/race';
-import { RivalManager, pickLineup, type Standing } from '../src/game/rivals';
+import { RivalManager, pickLineup, RIVAL_ROSTER, type Standing } from '../src/game/rivals';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
+import { rivalAchievementState, achievementPops } from '../src/game/achievements';
 import {
   CUPS,
   CUP_POINTS,
@@ -93,9 +94,19 @@ const PLAYER_PAINT = 0x29e6ff;
   const gauntlet = cupById('gauntlet-cup')!;
   const l0 = cupLineup(street, 0);
   expect(JSON.stringify(l0) === JSON.stringify(cupLineup(street, 0)), 'cup lineup deterministic for (track, slot)');
-  expect(l0.every((r) => r.tier === 'mid'), 'street cup grid is all-mid');
-  expect(new Set(cupLineup(sprint, 0).map((r) => r.tier)).toString() === new Set(['easy', 'mid']).toString(), 'sprint cup grid is easy+mid mix');
+  expect(l0.every((r) => r.tier !== 'easy') && l0.some((r) => r.tier === 'pro'), 'street cup grid is mid+pro mix (medium)');
+  expect(new Set(cupLineup(sprint, 0).map((r) => r.tier)).toString() === new Set(['easy', 'mid']).toString(), 'sprint cup grid is easy+mid mix (forgiving)');
   expect(cupLineup(gauntlet, 2).some((r) => r.tier === 'pro'), 'gauntlet cup grid includes pro');
+  expect(cupLineup(gauntlet, 0).every((r) => r.tier !== 'easy'), 'gauntlet cup grid has no easy slots (spicy)');
+  // a tier may not claim more grid slots than the roster has members for it —
+  // overflow re-picks from the full pool and duplicates a rival name in one race
+  for (const cup of [sprint, street, gauntlet]) {
+    const need = new Map<string, number>();
+    for (const t of cup.tiers) need.set(t, (need.get(t) ?? 0) + 1);
+    for (const [tier, n] of need) {
+      expect(n <= RIVAL_ROSTER.filter((r) => r.tier === tier).length, `${cup.name}: ${tier} slots (${n}) within roster capacity`);
+    }
+  }
   const names = new Set(l0.map((r) => r.name));
   expect(names.size === 3, `no duplicate rivals in one lineup (${[...names].join('/')})`);
   const allRaces = [0, 1, 2, 3].map((i) => cupLineup(street, i).map((r) => r.name).join('/'));
@@ -304,10 +315,13 @@ function runCupRace(raceIndex: number, cupId: string, save: SaveManager): { stan
   }
 
   expect(cupComplete(run), 'cup run complete after 4 races');
+  expect(positions.every((p) => p >= 1 && p <= 3), `street cup: never P4 — autopilot finishes mid-pack or better (${positions.join(',')})`);
+  expect(positions.filter((p) => p !== 1).length >= 2, `street cup: medium tier — player does not run the table (${positions.join(',')})`);
   const trophy = cupTrophy(run);
   const playerRank = cupStandings(run).findIndex((e) => e.isPlayer) + 1;
   const expectedTrophy = playerRank === 1 ? 'gold' : playerRank === 2 ? 'silver' : playerRank === 3 ? 'bronze' : null;
   expect(trophy === expectedTrophy, `trophy consistent with final rank (P${playerRank} → ${trophy})`);
+  expect(trophy === 'silver', `street cup: medium tier lands silver, not gold (got ${trophy})`);
   const playerEntry = run.entries.find((e) => e.isPlayer)!;
   save.recordCupFinish(cup.id, { positions: [...run.positions], points: playerEntry.points, trophy, dateMs: Date.now() });
   save.setCupRun(null);
@@ -332,6 +346,51 @@ function runCupRace(raceIndex: number, cupId: string, save: SaveManager): { stan
   expect(s.tracks['sunrise-sprint'].bestTimeMs === 17500, 'time-trial PB still written');
   expect(CUPS.length === 3 && CUPS.every((c) => c.trackIds.length === 4), '3 cups × 4 races defined');
   expect(CUPS.every((c) => c.trackIds.every((id) => TRACKS.some((t) => t.id === id))), 'all cup track ids exist in TRACKS');
+}
+
+// ---------- 9. Rival-era lifetime stats: round-trip + pre-v5 migration ----------
+{
+  store.clear();
+  const save = new SaveManager();
+  expect(save.stats.rivalWins === 0 && save.stats.friendGhostRaces === 0 && save.stats.rivalsBeaten.length === 0, 'fresh profile: rival-era stats default to zero/empty');
+  save.addStats({ rivalWins: 1, friendGhostRaces: 1, rivalsBeaten: ['APEX', 'SABLE'] });
+  save.addStats({ rivalsBeaten: ['APEX', 'VESPER'] });
+  const reloaded = new SaveManager();
+  expect(reloaded.stats.rivalWins === 1 && reloaded.stats.friendGhostRaces === 1, 'rivalWins + friendGhostRaces persist across simulated reload');
+  expect(JSON.stringify(reloaded.stats.rivalsBeaten) === JSON.stringify(['APEX', 'SABLE', 'VESPER']), 'rivalsBeaten merges as a set (no dupes) and persists');
+  // pre-v5 profile object (no cleanLaps/rival-era fields) loads with zero data loss
+  store.set('race2.stats.v1', JSON.stringify({ laps: 41, totalDrift: 1234.5, totalAir: 7.25, wallHits: 99, cleanLaps: 3 }));
+  const old = new SaveManager();
+  expect(old.stats.laps === 41 && old.stats.wallHits === 99 && old.stats.cleanLaps === 3 && old.stats.totalDrift === 1234.5, 'pre-rival-era stats object loads with all legacy fields intact');
+  expect(old.stats.rivalWins === 0 && old.stats.friendGhostRaces === 0 && old.stats.rivalsBeaten.length === 0, 'pre-rival-era stats get additive zero-value defaults');
+  // corrupt rival-era fields sanitize without touching legacy data
+  store.set('race2.stats.v1', JSON.stringify({ laps: 5, rivalsBeaten: 'garbage', rivalWins: -3, friendGhostRaces: null, cleanLaps: 'x' }));
+  const bad = new SaveManager();
+  expect(bad.stats.rivalsBeaten.length === 0 && bad.stats.rivalWins === 0 && bad.stats.friendGhostRaces === 0 && bad.stats.laps === 5, 'corrupt rival-era stat fields sanitized, legacy fields kept');
+  bad.addStats({ laps: 1 });
+  const after = new SaveManager();
+  expect(after.stats.laps === 6 && after.stats.cleanLaps === 0, 'post-migration write persists the merged object');
+}
+
+// ---------- 10. Rival-era achievement state derivation ----------
+{
+  store.clear();
+  const save = new SaveManager();
+  let st = rivalAchievementState(save);
+  expect(st.rivalWins === 0 && st.cupsWithTrophy === 0 && st.rivalsBeaten === 0 && st.friendGhostRaces === 0, 'achievement state all-zero on fresh profile');
+  save.recordCupFinish('sprint-cup', { positions: [1, 2, 3, 4], points: 88, trophy: 'gold', dateMs: 1 });
+  save.recordCupFinish('street-cup', { positions: [2, 1, 3, 4], points: 70, trophy: 'silver', dateMs: 2 });
+  save.recordCupFinish('street-cup', { positions: [4, 3, 2, 1], points: 48, trophy: null, dateMs: 3 });
+  st = rivalAchievementState(save);
+  expect(st.cupsWithTrophy === 2, `cupsWithTrophy counts distinct cups with any trophy, ignoring trophy-less finishes (${st.cupsWithTrophy})`);
+  const pops = achievementPops(
+    { rivalWins: 0, cupsWithTrophy: 1, rivalsBeaten: 7, friendGhostRaces: 0 },
+    { rivalWins: 1, cupsWithTrophy: 2, rivalsBeaten: 8, friendGhostRaces: 1 },
+  ).map((p) => p.name).join(',');
+  expect(pops === 'FIRST BLOOD,SOCIAL CLIMBER,FULL HOUSE', `achievementPops reports exactly the newly-satisfied achievements (${pops})`);
+  const crown = achievementPops({ rivalWins: 1, cupsWithTrophy: 2, rivalsBeaten: 8, friendGhostRaces: 1 }, { rivalWins: 1, cupsWithTrophy: 3, rivalsBeaten: 8, friendGhostRaces: 1 }).map((p) => p.name).join(',');
+  expect(crown === 'TRIPLE CROWN', `TRIPLE CROWN pops only when the third cup trophy lands (${crown})`);
+  expect(achievementPops(st, st).length === 0, 'no pops when nothing newly satisfied');
 }
 
 console.log(`\ncareer test: ${checks - failures}/${checks} checks passed`);

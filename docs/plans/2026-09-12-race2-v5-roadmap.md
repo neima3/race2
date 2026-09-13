@@ -10,7 +10,7 @@
 - [x] Phase 7: Ghost sharing — share/import PB ghosts via URL codes
 - [ ] Phase 8: Race feel & podium — overtake/final-lap moments, podium ceremony
 - [ ] Phase 9: Performance & soak — 4-car + weather budget, memory, 10-min soak
-- [ ] Phase 10: Balance + release QA + deploy v2.0
+- [x] Phase 10: Balance + release QA + deploy v2.0 *(code+QA done; Coolify deploy + live-verify is the human-run post-phase step)*
 
 **Goal statement (full ambition):** Turn RACE2 from a time-trial sim into a complete arcade racing game: line up on a grid against 3 named AI rivals with real position racing, fight through a 3-cup career with points and podiums, unlock and choose between cars that actually drive differently, race in rain and at night, share your ghosts with friends, and feel every overtake — all while the headless harness stays green, perf budgets hold, and v2.0 ships live to race2.neima.me.
 

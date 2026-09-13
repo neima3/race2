@@ -76,9 +76,29 @@ export interface LifetimeStats {
   totalAir: number;
   wallHits: number;
   cleanLaps: number;
+  rivalWins: number;
+  friendGhostRaces: number;
+  rivalsBeaten: string[];
 }
 
-const DEFAULT_STATS: LifetimeStats = { laps: 0, totalDrift: 0, totalAir: 0, wallHits: 0, cleanLaps: 0 };
+const DEFAULT_STATS: LifetimeStats = { laps: 0, totalDrift: 0, totalAir: 0, wallHits: 0, cleanLaps: 0, rivalWins: 0, friendGhostRaces: 0, rivalsBeaten: [] };
+
+function sanitizeStats(v: Stored<Partial<LifetimeStats>>): LifetimeStats {
+  const beaten = Array.isArray(v.rivalsBeaten)
+    ? Array.from(new Set(v.rivalsBeaten.filter((n): n is string => typeof n === 'string' && n.length > 0 && n.length <= 24))).slice(0, 32)
+    : [];
+  const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : 0);
+  return {
+    laps: num(v.laps),
+    totalDrift: num(v.totalDrift),
+    totalAir: num(v.totalAir),
+    wallHits: num(v.wallHits),
+    cleanLaps: num(v.cleanLaps),
+    rivalWins: num(v.rivalWins),
+    friendGhostRaces: num(v.friendGhostRaces),
+    rivalsBeaten: beaten,
+  };
+}
 
 const DEFAULT_PROFILE: PlayerProfile = { paint: 0x29e6ff, body: 'standard' };
 
@@ -156,12 +176,12 @@ export class SaveManager {
       if (raw) {
         const parsed = JSON.parse(raw) as Stored<Partial<LifetimeStats>>;
         this.noteSchemaVersion(parsed.schemaVersion);
-        return { ...DEFAULT_STATS, ...parsed };
+        return sanitizeStats({ ...DEFAULT_STATS, ...parsed });
       }
     } catch {
       /* blocked */
     }
-    return { ...DEFAULT_STATS };
+    return { ...DEFAULT_STATS, rivalsBeaten: [] };
   }
 
   private loadProfile(): PlayerProfile {
@@ -185,12 +205,17 @@ export class SaveManager {
   }
 
   addStats(delta: Partial<LifetimeStats>): void {
+    const beaten = new Set(this._stats.rivalsBeaten);
+    for (const n of delta.rivalsBeaten ?? []) beaten.add(n);
     this._stats = {
       laps: this._stats.laps + (delta.laps ?? 0),
       totalDrift: this._stats.totalDrift + (delta.totalDrift ?? 0),
       totalAir: this._stats.totalAir + (delta.totalAir ?? 0),
       wallHits: this._stats.wallHits + (delta.wallHits ?? 0),
       cleanLaps: this._stats.cleanLaps + (delta.cleanLaps ?? 0),
+      rivalWins: this._stats.rivalWins + (delta.rivalWins ?? 0),
+      friendGhostRaces: this._stats.friendGhostRaces + (delta.friendGhostRaces ?? 0),
+      rivalsBeaten: Array.from(beaten).slice(0, 32),
     };
     try {
       localStorage.setItem(STATS_KEY, JSON.stringify({ ...this._stats, schemaVersion: SCHEMA_VERSION }));

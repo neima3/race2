@@ -28,6 +28,7 @@ import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, Share
 import { RivalManager, DEFAULT_RIVAL_LAPS, type RivalMode, type Standing, type RivalPreset } from './game/rivals';
 import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
 import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
+import { achievementPops, rivalAchievementState, type RivalAchievementState } from './game/achievements';
 import type { TrophyKind } from './core/save';
 import { HUD } from './ui/hud';
 import { MenuManager } from './ui/menus';
@@ -136,6 +137,7 @@ class Game {
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
   private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean } | null = null;
   private friendGhost: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
+  private friendRaceActive = false;
   private shareBusy = false;
   private canvasEl: HTMLCanvasElement = canvas;
   private get canvas(): HTMLCanvasElement { return this.canvasEl; }
@@ -687,6 +689,7 @@ class Game {
     this.race!.writesRecords = !this.rivalMode;
     const friendActive = !this.rivalMode && !!this.friendGhost && this.friendGhost.trackId === def.id;
     this.race!.useExternalGhost(friendActive ? this.friendGhost!.samples : null);
+    this.friendRaceActive = friendActive;
     this.hud.setGhostTag(friendActive ? 'FRIEND' : null);
     this.race!.start();
     this.hud.setLapCounter(this.rivalMode ? `LAP ${this.race!.lapNumber}/${this.race!.totalLaps}` : null);
@@ -791,6 +794,7 @@ class Game {
       }
     } else if (ev === 'finish') {
       const r = payload as RaceEvents['finish'];
+      const achvBefore: RivalAchievementState = rivalAchievementState(this.save);
       this.audio.finish(r.medal);
       this.input.rumble(0.5, 0.9, 500);
       this.hud.showFinish(r);
@@ -828,10 +832,19 @@ class Game {
           }
         }
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
+        if (this.rivalMode && rivalStandings) {
+          const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
+          const beaten = rivalStandings.slice(Math.max(0, pos)).filter((s) => !s.isPlayer).map((s) => s.name);
+          this.save.addStats({ rivalWins: pos === 1 ? 1 : 0, rivalsBeaten: beaten });
+        } else if (!this.rivalMode && this.friendRaceActive) {
+          this.save.addStats({ friendGhostRaces: 1 });
+        }
+        this.friendRaceActive = false;
         let careerPanel: CareerPanelData | null = null;
         if (this.careerRace && rivalStandings) {
           careerPanel = this.applyCareerResult(rivalStandings);
         }
+        this.announceAchievementPops(achvBefore);
         const hasNext = !careerPanel && idx < TRACKS.length - 1;
         const playerPosInRace = rivalStandings ? rivalStandings.findIndex((s) => s.isPlayer) + 1 : -1;
         const podiumEligible =
@@ -845,6 +858,12 @@ class Game {
         this.touch.hide();
         this.audio.stopEngine();
       }, 1400);
+    }
+  }
+
+  private announceAchievementPops(before: RivalAchievementState): void {
+    for (const pop of achievementPops(before, rivalAchievementState(this.save))) {
+      this.menu.showToast(`ACHIEVEMENT UNLOCKED — ${pop.name}`);
     }
   }
 

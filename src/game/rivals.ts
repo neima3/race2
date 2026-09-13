@@ -71,33 +71,33 @@ export interface RivalSkill {
   pace: number;
   lookaheadJitter: number;
   steerNoise: number;
+  lookaheadScale: number;
   paint: number;
   body: CarBodyStyle;
 }
 
-const TIER_PARAMS: Record<RivalTier, { pace: number; lookaheadJitter: number; steerNoise: number }> = {
-  easy: { pace: 0.93, lookaheadJitter: -0.12, steerNoise: 0.05 },
-  mid: { pace: 0.955, lookaheadJitter: 0.04, steerNoise: 0.03 },
-  pro: { pace: 1.0, lookaheadJitter: 0, steerNoise: 0 },
+const TIER_PARAMS: Record<RivalTier, { pace: number; lookaheadJitter: number; steerNoise: number; lookaheadScale: number }> = {
+  easy: { pace: 0.94, lookaheadJitter: -0.12, steerNoise: 0.05, lookaheadScale: 1.3 },
+  mid: { pace: 0.955, lookaheadJitter: 0.04, steerNoise: 0.03, lookaheadScale: 1.3 },
+  pro: { pace: 1.0, lookaheadJitter: 0, steerNoise: 0, lookaheadScale: 1.15 },
 };
 
 const TIER_TUNING: Record<RivalTier, { accel: number; maxSpeed: number }> = {
   easy: { accel: 0.94, maxSpeed: 0.975 },
   mid: { accel: 0.97, maxSpeed: 0.985 },
-  pro: { accel: 1.04, maxSpeed: 1.015 },
+  pro: { accel: 1.05, maxSpeed: 1.025 },
 };
 
 export const DEFAULT_RIVAL_LAPS = 2;
 export const PLAYER_NAME = 'YOU';
 
-const RUBBER_BAND = 0.06;
-const RUBBER_BAND_DEADZONE = 15;
-const RUBBER_BAND_RAMP = 60;
+const RUBBER_BAND = 0.08;
+const RUBBER_BAND_DEADZONE = 10;
+const RUBBER_BAND_RAMP = 45;
 const STUCK_SPEED = 2;
 const STUCK_TIME_MS = 4000;
 const STALL_TIME_MS = 6000;
 const STALL_MARGIN_M = 2;
-const RIVAL_SCAN_SCALE = 1.3;
 const RIVAL_RESPAWN_SPEED = 8;
 const GRID_START_DIST = 8;
 const GRID_GAP = 6;
@@ -276,7 +276,7 @@ export class RivalManager {
         pace: r.skill.pace + r.band,
         lookaheadJitter: r.skill.lookaheadJitter,
         steerNoise: r.skill.steerNoise,
-        lookaheadScale: RIVAL_SCAN_SCALE,
+        lookaheadScale: r.skill.lookaheadScale,
       });
       if (res.respawn && car.state.speed < RIVAL_RESPAWN_SPEED) {
         this.respawnRival(r);

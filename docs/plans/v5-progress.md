@@ -1,5 +1,57 @@
 # RACE2 v5 — Progress Log
 
+## Phase 10 — Balance + release QA + v2.0.0 (2026-09-13) ✅ (deploy = human-run post-phase step)
+
+Shipped:
+
+- **Difficulty-curve final pass** (rivals.ts tiers + career.ts cup mixes; physics untouched, medal times untouched, solo baselines byte-identical — T1 17.47 / sky-loop 24.72 / dune 23.52 / volt 27.90):
+  | knob | v1 (Phase 4) | v2.0 final |
+  |---|---|---|
+  | easy tier | pace .93, tuning accel .94/maxSpeed .975, lookaheadScale 1.3 | pace **.94**, tuning unchanged, lookaheadScale 1.3 |
+  | mid tier | pace .955, accel .97/maxSpeed .985, ls 1.3 | unchanged |
+  | pro tier | pace 1.0, accel 1.04/maxSpeed 1.015, ls 1.3 | pace 1.0, accel **1.05**/maxSpeed **1.025**, lookaheadScale **1.15** (tier-keyed skill knob, new) |
+  | rubber band | ±6%, dead zone 15m, ramp 60m | **±8%, dead zone 10m, ramp 45m** (trailing rivals now actually converge: easy at full band = .94+.08 = 1.02 effective > player 1.0, so far-behind deficits stop growing and close) |
+  | SPRINT CUP | easy+easy+mid | unchanged — **forgiving** (autopilot P1 comfortably, +14m/+40m margins) |
+  | STREET CUP | mid+mid+mid ("MID GRID") | **mid+pro+pro ("MID + PRO GRID") — medium**: headless cup sim = P3/P2/P3/P1 → **silver, 73 pts** (wins the finale, loses the cup) |
+  | GAUNTLET CUP | mid+mid+pro ("MID + PRO GRID") | **pro+pro+mid ("PRO + MID GRID") — spicy**: P3/P1/P3/P3 (pros on pole, autopilot never gifted a win; only neon-vertical stays winnable) |
+  - Why pace>1.0 stays forbidden: √(38/curv) target overshoots the lateral-g budget → understeer scrub (Phase 2 finding); pro's edge comes from tuning + later-braking lookahead (1.15 vs 1.3) instead.
+  - Roster-capacity rule discovered the hard way: a (pro,pro,pro) grid duplicates APEX (pro roster = 2; pickLineup falls back to the full pool when the dedup filter empties) — gauntlet keeps a mid; career gate now pins every cup's tier mix against roster capacity.
+  - Rivals gate (sunrise + dune, default e/m/p lineups): player P2 on both (APEX legitimately wins both), player still beats easy+mid, maxGap **41.4m / 103.5m** (was 119.1m — the dune nit is fixed: easy pace .94 + band .08 stops the far-trailing deficit from growing).
+- **Rival-era achievements** (new `src/game/achievements.ts`; additive — existing achievements untouched except the old medal "First Blood" renamed to "First Medal" to avoid a duplicate display name; no ids existed, order preserved):
+  | id | name | trigger | progress counter |
+  |---|---|---|---|
+  | first-blood | FIRST BLOOD | win any rival race | wins `x/1` |
+  | cup-cadet | CUP CADET | first cup trophy — any (gold/silver/bronze, any cup) | cups-with-trophy `x/1` |
+  | triple-crown | TRIPLE CROWN | trophy in all 3 cups | `x/3` |
+  | social-climber | SOCIAL CLIMBER | import a friend ghost and finish racing it | `x/1` |
+  | full-house | FULL HOUSE | beat all 8 roster rivals across races | distinct names beaten `x/8` |
+  - New additive lifetime stats: `rivalWins`, `friendGhostRaces`, `rivalsBeaten: string[]` (set-merge, sanitized, schemaVersion stays 2). Triggers wired at the existing event flows: rival-race finish (beaten = names behind the player in the frozen standings), friend-ghost finish (new `friendRaceActive` flag), cup record (derived, no new write). Unlock pop = `ACHIEVEMENT UNLOCKED — <NAME>` toast on the state transition (achievementPops before/after diff). Panel shows the counters (menus.ts).
+  - Persistence round-trip + pre-v5 migration + corrupt-field sanitization covered by career test §9/§10 (87 → **109 checks**).
+- **Version 2.0.0**: title screen credits (`menus.ts`), `package.json` + lockfile (index.html/manifest carry no version — left as-is).
+
+Verified (all browser testing `?mute=1`, headless Chrome, evidence in `qa/v5-phase10/`):
+- **Gates: typecheck ✅, build ✅ (953.69 kB / 350.33 kB gzip, +2.6 kB), laps 9/12 (same 3 STRICT-exempt, baselines byte-identical) ✅, rivals 20/20 ✅, career 109/109 ✅, share 34/34 ✅, allocs PASS (+0.000MB/30s) ✅.**
+- Desktop cup flow (01-16): fresh profile → title (v2.0.0 string) → career shows all 3 cups locked with correct medal-chain reasons → `?alltracks` → Sprint Cup ENTER → race 1 full autopilot run = P1 + **FIRST BLOOD toast** (`ACHIEVEMENT UNLOCKED — FIRST BLOOD`, rivalWins 1, rivalsBeaten 3) → SAVE & QUIT mid-cup → hub shows RESUME · RACE 2/4 with R1 result → resume → races 2-4 (STRICT tracks via checkpoint-patch + `finishLine()` hook — browser-autopilot wedge is known/accepted) → GOLD TROPHY 77 pts (positions 1,3,4,1) → podium ceremony → hub shows GOLD + BEST 77 PTS.
+- Free-play rivals (17-20): race → forced-P1 via finish() hook → podium CTA → **VIEW PODIUM button path verified** (ceremony, confetti, WINNER strip) → FIRST BLOOD pops.
+- Touch `?touch=1` (21-22): portrait 390×844 — standings strip, P4 readout, minimap above steer buttons, no occlusion; landscape 667×375 — minimap hidden, strip/readout clean, steer/pedals reachable; **drivability proven via synthetic pointer events** (respawn button works; holding RIGHT+GAS accelerates 12.8→27 m/s with steering).
+- Reduced motion (23-25): forced overtake → `slowmo:false, timeScale:1`; speedlines opacity 0; podium opens with **static camera (angle identical over 4s) and no confetti**; strip/hint intact.
+- Shared-ghost round-trip (26-28): share (clipboard-fallback toast GHOST LINK COPIED, 2389-char URL) → fresh profile opens link → FRIEND GHOST CHALLENGE card (time 17.567s, hash cleared) → RACE → ghost renders with gold FRIEND tag + live delta (+0.21) → finish → **SOCIAL CLIMBER toast**, friendGhostRaces 1, solo PB rules applied (laps 1, cleanLaps 1).
+- Headless: old pre-v5 stats profile `{laps, totalDrift, totalAir, wallHits, cleanLaps}` loads with zero loss + additive defaults (career §9); corrupt rival-era fields sanitized; fresh profile → 3 locked cups w/ reasons (02); `?alltracks` gauntlet cup R1 (grand-gauntlet, pro-heavy grid) completes in the headless sim via force-finish (P3; autopilot wedge = known STRICT behavior).
+- Perf spot-check (29): rain rival race, Medium tier — avg **16.67ms** / med 16.7 / p95 16.8 (vsync-locked 60), **182 draw calls ≤ 220 budget**, 35.7k tris, resScale stayed 1.
+- Achievements panel (30): all 5 new rows with live progress counters.
+
+Deviations:
+- Old "First Blood" (medal) achievement display-renamed to "First Medal" — the spec's new FIRST BLOOD (rival win) would otherwise duplicate the name verbatim. No ids/progress were renumbered (achievements are derived, not stored).
+- TRIPLE CROWN reads "trophy in all 3 cups" (any trophy kind, consistent with CUP CADET's "any").
+- Dune maxGap nit fixed by tier/band tuning alone; the Phase-3 stuck-respawn teleport spike does NOT occur under release-tier racing (gate races recorded zero respawns) — standings-gap smoothing was considered and skipped per the minimal-risk instruction.
+- neon-vertical (gauntlet R2) shows a transient 126m mid-race gap (mid rival trailing in the one gauntlet race the autopilot player wins); the <120m assert is a rivals-gate constraint (both gate tracks ≤103.5m) and holds.
+- Browser QA had to block a headless-Chrome artifact: a flood of trusted `keydown code:"Minus"` events instantly dismissed the podium (any-key skip). Edge-triggered pause is immune (constant repeat = one edge). In-test capture-phase blocker; **not a game bug, no game code changed**.
+- Session-A CTA click anomaly root-caused to the same artifact (podium skipped before the screenshot); the VIEW PODIUM button path was re-verified clean in session B.
+- Rivals-mode race 3 (dune) in the browser cup run ended P4 due to the browser-autopilot wedge/recover loop (headless-ts autopilot and the career gate both win dune) — cup still reached GOLD via the finale.
+- volt-alley cup races wedge for BOTH player and rivals in the headless-browser harness (force-finish needed); in the real career gate (no force-finish) all four cars finish — gate evidence, not vibes.
+
+Notes for release: deploy is the human-run step (Coolify → race2.neima.me); live-verify with `?mute=1` + autopilot + one rival race + steering-direction check. qa/v5-phase10/ census scripts from Phase 9 can be re-run against the deployed build.
+
 ## Phase 9 — Performance & soak (2026-09-13) ✅
 Shipped:
 - **Leak fixes (the headline):** `buildEnvironment` had been adding `sunLight`+`hemiLight` directly to the scene and `clearTrackScene` only removed the environment group — every track switch orphaned 2 lights (each new sun casts its own shadow map → double shadow passes → +140-166 draw calls after one switch, GPU memory +978% geometries / +1225% textures / +718% programs over 20 switches; v4 had the same bug). New `Environment.dispose()` (environment.ts): traverses the group disposing geometries/materials/maps (sky, ground grid CanvasTexture, mesas, rocks, clouds, water, fireflies, birds all leaked before), removes the 3 light objects, and `sunLight.shadow.dispose()` (frees the shadow map + mapPass render targets — exactly the +2 textures/switch). Wired into `clearTrackScene` (main.ts).

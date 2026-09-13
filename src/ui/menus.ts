@@ -4,6 +4,7 @@ import type { TrackDef } from '../track/defs';
 import type { FinishResult } from '../game/race';
 import type { Standing } from '../game/rivals';
 import { CUPS, cupUnlock, cupTracks, cupStandings, startCupRun, type CupDef, type CareerPanelData } from '../game/career';
+import { rivalAchievementState } from '../game/achievements';
 import { PAINTS, type CarBodyStyle } from '../render/car-model';
 import { bodyUnlocks, bodyStatRatios, hasCupTrophy } from '../systems/garage';
 
@@ -137,7 +138,7 @@ export class MenuManager {
     });
     buttons.append(play, career, garage, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
-    const credits = el('div', 'title-credits', `v1.2.0 — built with Three.js · © 2026 neima.me`);
+    const credits = el('div', 'title-credits', `v2.0.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
     return screen;
   }
@@ -465,8 +466,9 @@ export class MenuManager {
     const golds = stats.filter((s) => s.stars >= 3).length;
     const authors = stats.filter((s) => s.stars >= 4).length;
     const st = this.save.stats;
+    const ra = rivalAchievementState(this.save);
     const defs: { name: string; desc: string; done: boolean; progress?: string }[] = [
-      { name: 'First Blood', desc: 'Earn any medal', done: medaled > 0 },
+      { name: 'First Medal', desc: 'Earn any medal', done: medaled > 0 },
       { name: 'Regular', desc: 'Medal 5 tracks', done: medaled >= 5, progress: `${medaled}/12` },
       { name: 'Collector', desc: 'Medal all 12 tracks', done: medaled >= 12, progress: `${medaled}/12` },
       { name: 'Golden Touch', desc: '3 gold medals', done: golds >= 3, progress: `${golds}/3` },
@@ -484,6 +486,11 @@ export class MenuManager {
       { name: 'Wallflower', desc: '50 wall hits — try the middle', done: st.wallHits >= 50, progress: `${Math.min(st.wallHits, 50)}/50` },
       { name: 'Marathoner', desc: 'Complete 25 laps', done: st.laps >= 25, progress: `${Math.min(st.laps, 25)}/25` },
       { name: 'Untouchable', desc: '3 laps with no wall hits', done: st.cleanLaps >= 3, progress: `${Math.min(st.cleanLaps, 3)}/3` },
+      { name: 'First Blood', desc: 'Win any rival race', done: ra.rivalWins >= 1, progress: `${Math.min(ra.rivalWins, 1)}/1` },
+      { name: 'Cup Cadet', desc: 'Win your first cup trophy — any', done: ra.cupsWithTrophy >= 1, progress: `${Math.min(ra.cupsWithTrophy, 1)}/1` },
+      { name: 'Triple Crown', desc: 'Trophy in all 3 cups', done: ra.cupsWithTrophy >= 3, progress: `${ra.cupsWithTrophy}/3` },
+      { name: 'Social Climber', desc: 'Import a friend ghost and race it', done: ra.friendGhostRaces >= 1, progress: `${Math.min(ra.friendGhostRaces, 1)}/1` },
+      { name: 'Full House', desc: 'Beat all 8 roster rivals across races', done: ra.rivalsBeaten >= 8, progress: `${ra.rivalsBeaten}/8` },
     ];
     const list = el('div', 'achv-list');
     for (const a of defs) {
