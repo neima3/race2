@@ -9,11 +9,12 @@
 - `npx tsx test/rivals.ts` — headless rival-race gate (20 checks: steering sign, lateral sign, 2-lap races on sunrise-sprint + dune-rush, slow-mo accumulator integrity, rubber-band gap <120m)
 - `npx tsx test/career.ts` — career gate (109 checks incl. difficulty-curve pins: street cup = autopilot silver, never P4; roster-capacity guard on cup tier mixes; rival-era stats migration)
 - `npx tsx test/share.ts` — ghost-share codec gate (34 checks)
+- `npx tsx --expose-gc test/allocs.ts` — headless allocation probe (must PASS; catches per-frame churn)
 
 ## Architecture (src/)
 - `core/` — loop, input (keyboard/gamepad/touch + test hooks), save (localStorage), audio (all procedural WebAudio), events
 - `track/curve.ts` — Catmull-Rom centerline → parallel-transport frames w/ banking; `surfaceQuery` is the physics ground truth
-- `track/defs.ts` — the 4 tracks (control points, widths, banks, checkpoints, boosts, medal times)
+- `track/defs.ts` — the 12 tracks (control points, widths, banks, checkpoints, boosts, slicks, movers, medal times) + 4 themes
 - `track/builder.ts` — road/skirt/stripe/gate/pad mesh generation
 - `physics/car.ts` — arcade car: yaw-rate steering capped by lateral-g budget (38 m/s²), grip/drift, boost, wall scrub, align-to-frame (loops/banks work because the car snaps to the road frame); `placeAt(dist, lateral)` = grid/respawn placement via road frame
 - `game/race.ts` — countdown/timer/checkpoints/finish/ghost record+serialize; finish requires real progress (>92% track) per lap; multi-lap via `opts {laps, writesRecords}` (time-trial = defaults); wrap-safe progress `totalProgress = (lapOffset + lapsDone) * len + dist` (lapOffset = −1 when starting past 50% of track)
@@ -22,6 +23,9 @@
 - `game/career.ts` — 3 cups: SPRINT (easy+easy+mid, forgiving), STREET (mid+pro+pro, medium — autopilot lands silver), GAUNTLET (pro+pro+mid, spicy); cup tier mixes are roster-capacity-guarded (pro roster = 2, a third pro slot would duplicate APEX)
 - `game/achievements.ts` — rival-era achievement state + pop detection (FIRST BLOOD, CUP CADET, TRIPLE CROWN, SOCIAL CLIMBER, FULL HOUSE); stats live in lifetime `rivalWins`/`friendGhostRaces`/`rivalsBeaten` (additive save fields)
 - `systems/autopilot.ts` — pure-pursuit + curvature lookahead; optional `skill` param for rivals (identical behavior when omitted)
+- `game/share.ts` — compact ghost codec (15Hz, 16-bit bbox-relative pos, smallest-three quat, transposed planes + deflate) → `#g=v1.<track>.<time>.<code>` URL share/import
+- Car bodies: standard/aero/tank = real `CarTuning` deltas (aero +5% top −4% grip; tank +6% grip −4% top +8% boostKick); aero unlock 12★, tank unlock any cup trophy; single car-agnostic PB ledger
+- Weather variants (`dusk|night|rain`) via uniform swaps + `rules.ts` grip plumbing (`RAIN_GRIP_MULT 0.82`, floor 0.32× combined); cups assign variants, free-play stays day; `?variant=` dev override
 - `render/` — environment (sky shader, mesas), car model, particles, camera rig
 - `ui/` — HUD, menus, touch controls; DOM only, no framework
 
@@ -38,4 +42,4 @@
 Track laps: T1 ≈ 17.5s, T2 ≈ 30.8s, T3 ≈ 21.7s, T4 ≈ 28.4s. Medal times in defs.ts are calibrated to these.
 
 ## Deploy
-Static build in Docker (nginx) → Coolify `cool.neima.me` → race2.neima.me. Verify live with `?mute=1` + autopilot.
+Static build in Docker (nginx) → Coolify `cool.neima.me` → race2.neima.me. App UUID `qgpdmafn677kx6aoiahrlfyy`; deploy = POST `https://cool.neima.me/api/v1/deploy?uuid=<uuid>` (token in 1Password "cool.neima.me coolify api" — do NOT `source` it, `|` breaks shell). Builds from git main, so push first. Verify live with `?mute=1` + autopilot + a rival race (`standings()`).

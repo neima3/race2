@@ -256,3 +256,9 @@ Deviations:
 - Observation for Phase 4/10 (pre-existing Phase 2 mechanics, not touched here): a rival that wall-scrubs into a stuck-respawn teleports back to its checkpoint, spiking its standing gap (~+400m seen under artificial brake-torture test conditions); harness gap asserts still pass under normal racing. Also: brake input at standstill acts as reverse-creep — phantom lap guarded by the cps-validity rule (verified no double-count).
 
 Notes for Phase 4: `pickLineup(trackId, cupSlot)` is career-ready (cupSlot varies the lineup, verified); finish panel expects `standings` param — career results screen can reuse it; standings strip + minimap will need cup standings awareness (points) in Phase 4.
+
+## v5 final wrap (2026-09-13)
+- Phases 1-10 all complete; 10 commits pushed (`53341c9..4529932`), deployed via Coolify (deployment 6qwz15h6my0ocraeremkee97, finished on 4529932).
+- Live verification (muted ?mute=1 + navigator.webdriver): v2.0.0 bundle strings served (RIVALS / FRIEND GHOST / GAUNTLET CUP), muted autopilot rival race on prod — standings strip + minimap + LAP 1/2 live in `qa/v5-live/04-live-clean-race.png`; standings: APEX +0m, SABLE +23m, HALCYON +29m, YOU +29m mid-pack on lap 1.
+- Gates at HEAD: typecheck ✅ build ✅ laps 9/12 ✅ rivals 20/20 ✅ career 109/109 ✅ share 34/34 ✅ allocs PASS ✅.
+- Grok roadmap review (pre-execution) incorporated into phases 1/2/4/5/6/7/8/10 amendments. Grok post-diff code review attempted 3× — CLI timed out (15 min) each time; replaced by lead self-review of wrap-safety (race.ts/rivals.ts lapOffset math), rubber-band direction/clamps, and share envelope parsing — no issues found beyond gate-covered behavior.
