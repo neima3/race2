@@ -92,15 +92,18 @@ const PLAYER_PAINT = 0x29e6ff;
   const street = cupById('street-cup')!;
   const sprint = cupById('sprint-cup')!;
   const gauntlet = cupById('gauntlet-cup')!;
+  const tour = cupById('grand-tour')!;
   const l0 = cupLineup(street, 0);
   expect(JSON.stringify(l0) === JSON.stringify(cupLineup(street, 0)), 'cup lineup deterministic for (track, slot)');
   expect(l0.every((r) => r.tier !== 'easy') && l0.some((r) => r.tier === 'pro'), 'street cup grid is mid+pro mix (medium)');
   expect(new Set(cupLineup(sprint, 0).map((r) => r.tier)).toString() === new Set(['easy', 'mid']).toString(), 'sprint cup grid is easy+mid mix (forgiving)');
   expect(cupLineup(gauntlet, 2).some((r) => r.tier === 'pro'), 'gauntlet cup grid includes pro');
   expect(cupLineup(gauntlet, 0).every((r) => r.tier !== 'easy'), 'gauntlet cup grid has no easy slots (spicy)');
+  const tourTiers = tour.tiers;
+  expect(tourTiers.filter((t) => t === 'easy').length === 1 && tourTiers.filter((t) => t === 'mid').length >= 1 && tourTiers.filter((t) => t === 'pro').length >= 1, `grand tour grid is a mixed easy/mid/pro field (${tourTiers.join('+')})`);
   // a tier may not claim more grid slots than the roster has members for it —
   // overflow re-picks from the full pool and duplicates a rival name in one race
-  for (const cup of [sprint, street, gauntlet]) {
+  for (const cup of [sprint, street, gauntlet, tour]) {
     const need = new Map<string, number>();
     for (const t of cup.tiers) need.set(t, (need.get(t) ?? 0) + 1);
     for (const [tier, n] of need) {
@@ -122,7 +125,8 @@ const PLAYER_PAINT = 0x29e6ff;
   const sprint = cupById('sprint-cup')!;
   const street = cupById('street-cup')!;
   const gauntlet = cupById('gauntlet-cup')!;
-  for (const c of [sprint, street, gauntlet]) {
+  const tour = cupById('grand-tour')!;
+  for (const c of [sprint, street, gauntlet, tour]) {
     const u = cupUnlock(c, TRACKS, save, false);
     expect(!u.unlocked && !!u.reason, `fresh profile: ${c.name} locked (${u.reason})`);
   }
@@ -137,6 +141,11 @@ const PLAYER_PAINT = 0x29e6ff;
   expect(!cupUnlock(street, TRACKS, save, false).unlocked, `street cup locked until T11 medaled (${cupUnlock(street, TRACKS, save, false).reason})`);
   save.submitTime(TRACKS[10].id, TRACKS[10].medals.bronze - 1000, null);
   expect(cupUnlock(street, TRACKS, save, false).unlocked, 'street cup unlocked after medals on all prior tracks');
+  // Grand tour members: salt-flats (needs volt-alley), harbor-nine (needs salt-flats), ring-runner + serpents-tail (already medaled)
+  save.submitTime(TRACKS[11].id, TRACKS[11].medals.bronze - 1000, null);
+  expect(!cupUnlock(tour, TRACKS, save, false).unlocked, `grand tour locked until salt-flats medaled (${cupUnlock(tour, TRACKS, save, false).reason})`);
+  save.submitTime(TRACKS[12].id, TRACKS[12].medals.bronze - 1000, null);
+  expect(cupUnlock(tour, TRACKS, save, false).unlocked, 'grand tour unlocked after medals through salt-flats');
 }
 
 // ---------- 5. Mid-cup quit + resume (persisted through simulated reload) ----------
@@ -344,7 +353,7 @@ function runCupRace(raceIndex: number, cupId: string, save: SaveManager): { stan
   expect(Object.keys(s.cups).length === 0, 'time-trial writes create no cup state');
   expect(s.careerRun === null, 'time-trial writes create no career run');
   expect(s.tracks['sunrise-sprint'].bestTimeMs === 17500, 'time-trial PB still written');
-  expect(CUPS.length === 3 && CUPS.every((c) => c.trackIds.length === 4), '3 cups × 4 races defined');
+  expect(CUPS.length === 4 && CUPS.every((c) => c.trackIds.length === 4), '4 cups × 4 races defined');
   expect(CUPS.every((c) => c.trackIds.every((id) => TRACKS.some((t) => t.id === id))), 'all cup track ids exist in TRACKS');
 }
 
@@ -377,19 +386,25 @@ function runCupRace(raceIndex: number, cupId: string, save: SaveManager): { stan
   store.clear();
   const save = new SaveManager();
   let st = rivalAchievementState(save);
-  expect(st.rivalWins === 0 && st.cupsWithTrophy === 0 && st.rivalsBeaten === 0 && st.friendGhostRaces === 0, 'achievement state all-zero on fresh profile');
+  expect(st.rivalWins === 0 && st.cupsWithTrophy === 0 && st.rivalsBeaten === 0 && st.friendGhostRaces === 0 && st.tourist === 0, 'achievement state all-zero on fresh profile');
   save.recordCupFinish('sprint-cup', { positions: [1, 2, 3, 4], points: 88, trophy: 'gold', dateMs: 1 });
   save.recordCupFinish('street-cup', { positions: [2, 1, 3, 4], points: 70, trophy: 'silver', dateMs: 2 });
   save.recordCupFinish('street-cup', { positions: [4, 3, 2, 1], points: 48, trophy: null, dateMs: 3 });
   st = rivalAchievementState(save);
   expect(st.cupsWithTrophy === 2, `cupsWithTrophy counts distinct cups with any trophy, ignoring trophy-less finishes (${st.cupsWithTrophy})`);
+  expect(st.tourist === 0, 'tourist stays zero while the grand tour has no trophy finish');
+  save.recordCupFinish('grand-tour', { positions: [1, 2, 3, 4], points: 92, trophy: 'gold', dateMs: 4 });
+  st = rivalAchievementState(save);
+  expect(st.tourist === 1 && st.cupsWithTrophy === 3, `grand tour trophy wires tourist state + cupsWithTrophy (${st.tourist}, ${st.cupsWithTrophy})`);
   const pops = achievementPops(
-    { rivalWins: 0, cupsWithTrophy: 1, rivalsBeaten: 7, friendGhostRaces: 0 },
-    { rivalWins: 1, cupsWithTrophy: 2, rivalsBeaten: 8, friendGhostRaces: 1 },
+    { rivalWins: 0, cupsWithTrophy: 1, rivalsBeaten: 7, friendGhostRaces: 0, tourist: 0 },
+    { rivalWins: 1, cupsWithTrophy: 2, rivalsBeaten: 8, friendGhostRaces: 1, tourist: 0 },
   ).map((p) => p.name).join(',');
   expect(pops === 'FIRST BLOOD,SOCIAL CLIMBER,FULL HOUSE', `achievementPops reports exactly the newly-satisfied achievements (${pops})`);
-  const crown = achievementPops({ rivalWins: 1, cupsWithTrophy: 2, rivalsBeaten: 8, friendGhostRaces: 1 }, { rivalWins: 1, cupsWithTrophy: 3, rivalsBeaten: 8, friendGhostRaces: 1 }).map((p) => p.name).join(',');
+  const crown = achievementPops({ rivalWins: 1, cupsWithTrophy: 2, rivalsBeaten: 8, friendGhostRaces: 1, tourist: 0 }, { rivalWins: 1, cupsWithTrophy: 3, rivalsBeaten: 8, friendGhostRaces: 1, tourist: 0 }).map((p) => p.name).join(',');
   expect(crown === 'TRIPLE CROWN', `TRIPLE CROWN pops only when the third cup trophy lands (${crown})`);
+  const tourist = achievementPops({ rivalWins: 1, cupsWithTrophy: 3, rivalsBeaten: 8, friendGhostRaces: 1, tourist: 0 }, { rivalWins: 1, cupsWithTrophy: 4, rivalsBeaten: 8, friendGhostRaces: 1, tourist: 1 }).map((p) => p.name).join(',');
+  expect(tourist === 'TOURIST', `TOURIST pops when the grand tour trophy lands (${tourist})`);
   expect(achievementPops(st, st).length === 0, 'no pops when nothing newly satisfied');
 }
 

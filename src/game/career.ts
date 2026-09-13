@@ -51,6 +51,17 @@ export const CUPS: CupDef[] = [
     trackIds: ['grand-gauntlet', 'neon-vertical', 'neon-circuit', 'ring-runner'],
     variants: ['dusk', 'night', 'rain', 'day'],
   },
+  {
+    id: 'grand-tour',
+    name: 'GRAND TOUR',
+    subtitle: 'Salt to neon, the long way round',
+    gridLabel: 'EASY + MID + PRO GRID',
+    accent: 0x7dd8ff,
+    accentName: '#7dd8ff',
+    tiers: ['easy', 'mid', 'pro'],
+    trackIds: ['salt-flats', 'harbor-nine', 'ring-runner', 'serpents-tail'],
+    variants: ['day', 'night', 'dusk', 'rain'],
+  },
 ];
 
 export function cupById(id: string): CupDef | null {

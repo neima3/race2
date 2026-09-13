@@ -179,7 +179,7 @@ export class MenuManager {
       this.buildTracksScreen();
     });
     right.append(driftChip, rivalsChip, knockoutChip);
-    right.append(el('div', 'star-total', `&#11088; ${totalStars}/48`));
+    right.append(el('div', 'star-total', `&#11088; ${totalStars}/${this.tracks.length * 4}`));
     const back = el('button', 'menu-btn small', '&#8592; BACK');
     back.addEventListener('click', () => this.show('title'));
     right.append(back);
@@ -491,8 +491,8 @@ export class MenuManager {
       { name: 'Neima Standard', desc: 'Author on all 12 tracks', done: authors >= 12, progress: `${authors}/12` },
       { name: 'Star Struck', desc: '10 stars', done: total >= 10, progress: `${total}/10` },
       { name: 'Constellation', desc: '24 stars', done: total >= 24, progress: `${total}/24` },
-      { name: 'Galaxy Brain', desc: '40+ stars', done: total >= 40, progress: `${total}/48` },
-      { name: 'Completionist', desc: '48 stars — everything', done: total >= 48, progress: `${total}/48` },
+      { name: 'Galaxy Brain', desc: '40+ stars', done: total >= 40, progress: `${total}/${this.tracks.length * 4}` },
+      { name: '48★ CLUB', desc: '48 stars', done: total >= 48, progress: `${total}/48` },
       { name: 'Lane Hopper', desc: 'Complete 5 laps', done: st.laps >= 5, progress: `${Math.min(st.laps, 5)}/5` },
       { name: 'Sideways Society', desc: '10,000 drift points (lifetime)', done: st.totalDrift >= 10000, progress: `${Math.min(Math.round(st.totalDrift), 10000)}/10000` },
       { name: 'Frequent Flyer', desc: '60s of total air time', done: st.totalAir >= 60, progress: `${Math.min(Math.round(st.totalAir), 60)}/60s` },
@@ -504,6 +504,7 @@ export class MenuManager {
       { name: 'Triple Crown', desc: 'Trophy in all 3 cups', done: ra.cupsWithTrophy >= 3, progress: `${ra.cupsWithTrophy}/3` },
       { name: 'Social Climber', desc: 'Import a friend ghost and race it', done: ra.friendGhostRaces >= 1, progress: `${Math.min(ra.friendGhostRaces, 1)}/1` },
       { name: 'Full House', desc: 'Beat all 8 roster rivals across races', done: ra.rivalsBeaten >= 8, progress: `${ra.rivalsBeaten}/8` },
+      { name: 'Tourist', desc: 'Trophy in the Grand Tour', done: ra.tourist >= 1, progress: `${Math.min(ra.tourist, 1)}/1` },
     ];
     const list = el('div', 'achv-list');
     for (const a of defs) {

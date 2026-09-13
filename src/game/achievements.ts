@@ -6,7 +6,10 @@ export interface RivalAchievementState {
   cupsWithTrophy: number;
   rivalsBeaten: number;
   friendGhostRaces: number;
+  tourist: number;
 }
+
+const GRAND_TOUR_CUP = 'grand-tour';
 
 export function rivalAchievementState(save: SaveManager): RivalAchievementState {
   const cupsWithTrophy = CUPS.filter((c) => save.cupSave(c.id).finishes.some((f) => f.trophy)).length;
@@ -15,6 +18,7 @@ export function rivalAchievementState(save: SaveManager): RivalAchievementState 
     cupsWithTrophy,
     rivalsBeaten: save.stats.rivalsBeaten.length,
     friendGhostRaces: save.stats.friendGhostRaces,
+    tourist: save.cupSave(GRAND_TOUR_CUP).finishes.filter((f) => f.trophy).length,
   };
 }
 
@@ -29,6 +33,7 @@ const RIVAL_ACHIEVEMENTS: { id: string; name: string; done: (s: RivalAchievement
   { id: 'triple-crown', name: 'TRIPLE CROWN', done: (s) => s.cupsWithTrophy >= 3 },
   { id: 'social-climber', name: 'SOCIAL CLIMBER', done: (s) => s.friendGhostRaces >= 1 },
   { id: 'full-house', name: 'FULL HOUSE', done: (s) => s.rivalsBeaten >= 8 },
+  { id: 'tourist', name: 'TOURIST', done: (s) => s.tourist >= 1 },
 ];
 
 export function achievementPops(before: RivalAchievementState, after: RivalAchievementState): AchievementPop[] {

@@ -1,5 +1,35 @@
 # RACE2 v6 — Progress Log
 
+## Phase 2 — 2 new tracks + GRAND TOUR cup (2026-09-13) ✅
+
+Shipped:
+
+- **`salt-flats` (T13, mesa)** — high-speed speed-palace: 976 m loop of long sweepers (min centerline radius ~31 m only at the start-line wrap, house-style kink shared with dune-rush; everything else ≥ 60 m), 11.5-12 m wide road, gentle 0-4 m elevation, banks ≤ 7° (positive — the loop runs counterclockwise/left), 2 checkpoints, 3 boost pads on the straights (str 11/9/12), no slicks/movers/rings. Authored via a polar star-shaped layout probe (test/tmp, scratch) that guaranteed loop closure + ≥ 36 m non-adjacent road clearance (actual 56 m).
+- **`harbor-nine` (T14, neon)** — technical 9-turn street circuit: 954 m, 8.5-9 m narrow road, 0-7 m harbor-terrace elevation, 3 checkpoints, 2 boosts on the two short straights (str 8/7), 1 slick zone mid-lap (d555, 4×24 m), no movers/rings. Nine distinct corners; the eastern-tip hairpin softened from r≈15 m to r≈19 m after a rival-race insurance probe. Banks −20/−14 on the two sweeper arcs (negative = right turns; the loop runs clockwise).
+- **Baselines (headless autopilot, laps harness)**: salt-flats **22.18 s** (avg 44 m/s, peak 63.9 m/s on pads), harbor-nine **24.23 s**. Medals calibrated from these: salt 23.5/26.5/31/40 s, harbor 25.5/29/34/43.5 s (×1.05/1.2/1.4/1.8, nearest 500 ms).
+- **laps gate → 11/14** (STRICT-exempt set unchanged: canyon-twist, grand-gauntlet, gauntlet-ii). New tracks are NOT exempt — both finish headless with 0 respawns.
+- **Dev ghosts**: `--emit-ghosts` regenerated with both new tracks. `test/laps.ts` emit block now carries forward existing ghosts for tracks the current bot can't finish headless (regen = additions/updates only, never deletions) — canyon-twist + grand-gauntlet ghosts preserved byte-identical; the junk `'0'/'1'` keys (artifacts of the old emit line's `r.id ?? r.track` fallback) are gone and can't recur.
+- **GRAND TOUR cup** (4th): `salt-flats → harbor-nine (night) → ring-runner (dusk) → serpents-tail (rain)` — all 4 variants in play across cups. Tiers `['easy','mid','pro']`, accent `#7dd8ff`, gridLabel "EASY + MID + PRO GRID". Unlocks when all member tracks unlock (gates on volt-alley + salt-flats medals = the last cup to open, correct for the finale).
+- **`tourist` achievement** (additive id, appended last): TOURIST pops on any grand-tour trophy finish. `RivalAchievementState` gained `tourist: number` (count of trophy finishes on `grand-tour`); TRIPLE CROWN untouched at 3 cups (cupsWithTrophy now reaches 4 — pops at 3 as before). Display row added to the achievements screen.
+- **Star counter → dynamic**: track-select header shows `★ x/${TRACKS.length * 4}` = 56; Galaxy Brain's progress denominator now dynamic too (0/56). Completionist relabeled **"48★ CLUB"** (display-only def in menus.ts; threshold stays `total >= 48`, progress stays /48). No saved ids touched.
+- **`test/career.ts` updated additively**: cup-count check 3→4, grand-tour joined to the roster-capacity + fresh-profile-locked loops, tier-mix check (1 easy + mid + pro), unlock-progression checks (locked until salt-flats medaled), tourist state + TOURIST pop checks, all achievement-state literals gained the `tourist` field. 109 → **119 checks**.
+
+Verified:
+
+- Gates: typecheck ✅, build ✅ (985.44 kB / 370.81 kB gzip, +28 kB: 2 tracks + 2 dev ghosts), `test/laps.ts` **11/14** ✅ (baselines unchanged: sunrise 17.47, dune-rush 23.52, volt-alley 27.90), `test/rivals.ts` **20/20** ✅, `test/career.ts` **119/119** ✅, `test/share.ts` **34/34** ✅, `test/allocs.ts` **PASS** ✅, `test/knockout.ts` **50/50** ✅.
+- Headless rival-race insurance on both new tracks (default lineup, 2 laps, autopilot player): all 4 cars finish — salt order P1 APEX / P2 SABLE / P3 JUNO, harbor P1 VESPER / P2 SABLE / P3 ROOKIE; no DNF, no wedge.
+- Browser (?mute=1, headless Chrome, evidence `qa/v6-phase2/`, not committed): track grid 14 cards + `★ 0/56` (cards 13/14 with correct accents/subtitles); salt-flats day — wide road, 143 km/h, minimap loop, CP 0/2, boost gates; harbor-nine night (via `?variant=night`) — pink edge reflectors + headlight pools readable, minimap loop, CP 0/3, live split deltas vs the new dev ghost (−0.133 at CP2); slick zone hit confirmed in-page (onSlick replica fired at d=544, lateral 0.4, patch visible on the road); career hub GRAND TOUR card + interstitial "RACE 1/4 · SALT FLATS · 2 LAPS"; grand-tour grid = ROOKIE/ONYX/APEX/YOU (easy/mid/pro, distinct roster members); full rival race on salt-flats finished P1 VESPER / **P2 YOU** / P3 ONYX / P4 ROOKIE. Achievements DOM: `48★ CLUB | 48 stars | 0/48`, `Galaxy Brain … 0/56`, `Tourist … 0/1`. 14.4 s race footage `05-grand-tour-race.webm`.
+- Browser autopilot lap on salt-flats: 22.25 s vs 22.18 s headless (deterministic sim confirmed in-browser).
+
+Deviations:
+
+- **Task text's grand-tour tier mix "1 easy + 2 mid + 1 pro" sums to 4 rival slots** — the cup grid is 3 rivals + player (main.ts hardcodes `gridSlot(3)`, CUP_POINTS has 4 entries, knockout/classification all assume 4 cars); a 5-car cup would be a cross-cutting change far beyond Phase 2's data-only scope. Implemented the roadmap's "mid/pro (roster-capacity-guarded like existing cups)" as `['easy','mid','pro']` — a mixed easy/mid/pro tour field, all within roster capacity (3/3/2).
+- `--emit-ghosts` previously wrote junk `'0'/'1'` keys (old `r.id ?? r.track` fallback hit array index props); the rewritten emit block keys by `r.track` and carries forward ghosts of unfinished tracks. Net devghosts diff vs HEAD: +salt-flats, +harbor-nine, −2 junk keys; the 9 previously-live ghosts byte-identical, canyon-twist/grand-gauntlet preserved.
+- Menus medal-count achievements still say "/12" (Regular/Collector/Midas Fleet/Neima Standard, thresholds 12) — not star totals, so out of Phase 2's enumerated scope (roadmap scopes the pass to hardcoded 48s); flagged for the Phase 6 balance pass.
+- One headless-Chrome renderer crash mid-QA (tab reload to title during a recording, ~2 min into a long session) — same documented QA-tooling family from v5/v6-phase1; race re-verified fine in a fresh session, save intact.
+
+Notes for Phase 3+: grand-tour cup id `grand-tour` (save-layer cupSave works for any id — no schema change needed). `RivalAchievementState.tourist` is the pattern to copy if later achievements need cup-specific state. The knockout mode works on the new tracks unchanged (lap-boundary logic is track-agnostic). Daily (Phase 3) can seed from all 14 TRACKS — unlock flow derives from array order, new tracks appended last.
+
 ## Phase 1 — Knockout mode (2026-09-13) ✅
 
 Shipped:

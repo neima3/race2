@@ -588,4 +588,64 @@ const TRACK_12: TrackDef = {
   medals: { author: 28500, gold: 32000, silver: 37000, bronze: 46000 },
 };
 
-export const TRACKS: TrackDef[] = [TRACK_1, TRACK_2, TRACK_3, TRACK_4, TRACK_5, TRACK_6, TRACK_7, TRACK_8, TRACK_9, TRACK_10, TRACK_11, TRACK_12];
+const TRACK_13: TrackDef = {
+  id: 'salt-flats',
+  name: 'Salt Flats',
+  subtitle: 'High-speed sweepers · flat out',
+  accent: 0x7dd8ff,
+  accentName: '#7dd8ff',
+  theme: 'mesa',
+  points: [
+    cp(0, 0, 0, 12),
+    cp(8, 0, -94, 12),
+    cp(-4, 1, -186, 12),
+    cp(-48, 3, -256, 11.5, 6),
+    cp(-120, 4, -296, 11.5, 7),
+    cp(-200, 4, -280, 11.5, 6),
+    cp(-256, 2, -214, 11.5, 5),
+    cp(-272, 0, -128, 12, 4),
+    cp(-244, 0, -44, 12, 2),
+    cp(-168, 0, 10, 12),
+    cp(-84, 0, 26, 12, 3),
+  ],
+  checkpoints: [{ dist: 300 }, { dist: 650 }],
+  boosts: [
+    { dist: 50, lateral: 0, strength: 11 },
+    { dist: 560, lateral: 0, strength: 9 },
+    { dist: 760, lateral: 0, strength: 12 },
+  ],
+  medals: { author: 23500, gold: 26500, silver: 31000, bronze: 40000 },
+};
+
+const TRACK_14: TrackDef = {
+  id: 'harbor-nine',
+  name: 'Harbor Nine',
+  subtitle: 'Nine turns on the neon waterfront',
+  accent: 0xff5c8a,
+  accentName: '#ff5c8a',
+  theme: 'neon',
+  points: [
+    cp(0, 0, -168, 9),
+    cp(44, 2, -136, 9),
+    cp(94, 4, -108, 8.5),
+    cp(134, 6, -62, 8.5),
+    cp(170, 7, -16, 8.5),
+    cp(138, 5, 36, 8.5),
+    cp(98, 3, 88, 8.5),
+    cp(32, 1, 150, 9, -20),
+    cp(-38, 0, 128, 9),
+    cp(-80, 0, 82, 8.5),
+    cp(-138, 2, 22, 8.5, -14),
+    cp(-148, 1, -52, 8.5),
+    cp(-94, 0, -136, 9),
+  ],
+  checkpoints: [{ dist: 265 }, { dist: 500 }, { dist: 780 }],
+  boosts: [
+    { dist: 60, lateral: 0, strength: 8 },
+    { dist: 610, lateral: 0, strength: 7 },
+  ],
+  slicks: [{ dist: 555, lateral: 0, w: 4, l: 24 }],
+  medals: { author: 25500, gold: 29000, silver: 34000, bronze: 43500 },
+};
+
+export const TRACKS: TrackDef[] = [TRACK_1, TRACK_2, TRACK_3, TRACK_4, TRACK_5, TRACK_6, TRACK_7, TRACK_8, TRACK_9, TRACK_10, TRACK_11, TRACK_12, TRACK_13, TRACK_14];
