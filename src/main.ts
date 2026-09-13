@@ -24,8 +24,10 @@ import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem } from './render/particles';
 import { CameraRig } from './render/camera';
 import { RaceController, type RaceEvents } from './game/race';
-import { RivalManager, DEFAULT_RIVAL_LAPS, type RivalMode, type Standing } from './game/rivals';
+import { RivalManager, DEFAULT_RIVAL_LAPS, type RivalMode, type Standing, type RivalPreset } from './game/rivals';
 import { computeOnSlick, moverOverlap, applyMoverScrub } from './game/rules';
+import { cupRaceTrack, cupLineup, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
+import type { TrophyKind } from './core/save';
 import { HUD } from './ui/hud';
 import { MenuManager } from './ui/menus';
 import { TouchControls } from './ui/touch';
@@ -60,6 +62,9 @@ class Game {
   private race: RaceController | null = null;
   private rivals: RivalManager | null = null;
   private rivalMode = false;
+  private rivalLineup: RivalPreset[] | null = null;
+  private rivalsBuiltWith: string | null = null;
+  private careerRace: { cup: CupDef; raceIndex: number } | null = null;
   private hudAcc = 0;
   private mapAcc = 0;
   private moverSnap: { dist: number; lat: number }[] = [];
@@ -136,7 +141,24 @@ class Game {
 
     this.menu.onPlayTrack = (t) => {
       this.driftMode = this.menu.driftAttack;
+      this.careerRace = null;
+      this.rivalLineup = null;
       this.startTrack(t);
+    };
+    this.menu.onCareerStartRace = (cup, raceIndex) => {
+      this.careerRace = { cup, raceIndex };
+      this.rivalLineup = cupLineup(cup, raceIndex);
+      this.startTrack(cupRaceTrack(cup, raceIndex));
+    };
+    this.menu.onCareerNextRace = () => {
+      const run = this.save.getCupRun();
+      if (!this.careerRace || !run) return;
+      this.menu.showCareerInterstitial(this.careerRace.cup, run.nextRace);
+    };
+    this.menu.onCareerHubReturn = () => {
+      this.careerRace = null;
+      this.rivalLineup = null;
+      this.quitToMenu('career');
     };
     this.menu.onResume = () => this.resume();
     this.menu.onPractice = () => {
@@ -145,7 +167,7 @@ class Game {
       this.resume();
     };
     this.menu.onRestart = () => this.startTrack(this.track);
-    this.menu.onQuitToMenu = () => this.quitToMenu();
+    this.menu.onQuitToMenu = () => this.quitToMenu(this.careerRace ? 'career' : 'tracks');
     this.menu.onTiltRequest = () => void this.input.requestTiltPermission();
     this.menu.onGarageChange = (paint, body) => {
       this.applyPlayerStyle(paint, body);
@@ -472,17 +494,20 @@ class Game {
       payload?: RaceEvents[K]
     ) => this.onRaceEvent(ev, payload));
 
-    this.rivals = new RivalManager(curve, def, this.trackGroup, this.quality !== 'low');
+    this.rivals = new RivalManager(curve, def, this.trackGroup, this.quality !== 'low', this.rivalLineup ?? undefined);
+    this.rivalsBuiltWith = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
 
     this.rig.snapBehind(this.car.state);
     this.menuOrbitAngle = 0;
   }
 
   private startTrack(def: TrackDef): void {
-    this.rivalMode = this.menu.rivalsMode;
+    this.rivalMode = this.menu.rivalsMode || this.careerRace !== null;
+    if (!this.rivalMode) this.rivalLineup = null;
     this.hudAcc = 0;
     this.mapAcc = 0;
-    if (def.id !== this.track.id) {
+    const lineupSig = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
+    if (def.id !== this.track.id || (this.rivalMode && lineupSig !== this.rivalsBuiltWith)) {
       this.loadTrackIntoScene(def);
     }
     this.hud.setMinimapTrack(this.curve!, def.accent);
@@ -553,10 +578,11 @@ class Game {
     this.lastT = performance.now();
   }
 
-  private quitToMenu(): void {
+  private quitToMenu(dest: 'tracks' | 'career' = 'tracks'): void {
     this.state = 'menu';
     this.menu.hidePause();
-    this.menu.show('tracks');
+    this.menu.hideFinish();
+    this.menu.show(dest);
     this.hud.hide();
     this.hud.showRespawnHint(false);
     this.touch.hide();
@@ -658,13 +684,46 @@ class Game {
           }
         }
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
-        const hasNext = idx < TRACKS.length - 1;
+        let careerPanel: CareerPanelData | null = null;
+        if (this.careerRace && rivalStandings) {
+          careerPanel = this.applyCareerResult(rivalStandings);
+        }
+        const hasNext = !careerPanel && idx < TRACKS.length - 1;
         this.lastFinish = { result: r, hasNext };
-        this.menu.showFinish(this.track, r, hasNext, this.driftMode ? Math.round(this.driftScore) : null, rivalStandings);
+        this.menu.showFinish(this.track, r, hasNext, this.driftMode ? Math.round(this.driftScore) : null, rivalStandings, careerPanel);
         this.touch.hide();
         this.audio.stopEngine();
       }, 1400);
     }
+  }
+
+  private applyCareerResult(standings: Standing[]): CareerPanelData {
+    const { cup, raceIndex } = this.careerRace!;
+    const run = this.save.getCupRun()?.cupId === cup.id ? this.save.getCupRun()! : startCupRun(cup.id);
+    const res = applyRaceResult(run, standings, this.save.profile.paint);
+    const totalRaces = cup.trackIds.length;
+    const isFinal = cupComplete(run);
+    let trophy: TrophyKind = null;
+    if (isFinal) {
+      const playerEntry = run.entries.find((e) => e.isPlayer);
+      const totalPoints = playerEntry ? playerEntry.points : 0;
+      trophy = cupTrophy(run);
+      this.save.recordCupFinish(cup.id, { positions: [...run.positions], points: totalPoints, trophy, dateMs: Date.now() });
+      this.save.setCupRun(null);
+    } else {
+      this.save.setCupRun(run);
+    }
+    return {
+      cupName: cup.name,
+      cupId: cup.id,
+      raceNumber: raceIndex + 1,
+      totalRaces,
+      playerPos: res.playerPos,
+      racePoints: res.playerPoints,
+      standings: cupStandings(run),
+      isFinal,
+      trophy,
+    };
   }
 
   private startReplay(): void {
@@ -1100,6 +1159,7 @@ declare global {
       finishLine: () => void;
       rivals: () => object;
       standings: () => object;
+      career: () => object;
     };
   }
 }
@@ -1201,6 +1261,15 @@ window.__race2 = {
     }
   },
   rivals: () => game['rivals']?.telemetry() ?? [],
+  career: () => {
+    const save = game['save'];
+    return {
+      run: save.getCupRun(),
+      cup: game['careerRace'] ? { id: game['careerRace'].cup.id, raceIndex: game['careerRace'].raceIndex } : null,
+      cups: save.allSaves.cups,
+      schemaVersion: save.schemaVersion,
+    };
+  },
   standings: () => {
     const race = game['race'];
     const rivals = game['rivals'];

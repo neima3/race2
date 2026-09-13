@@ -13,6 +13,8 @@ export interface AutoPilotSkill {
   pace?: number;
   lookaheadJitter?: number;
   steerNoise?: number;
+  /** Extra fine curvature scan (0-1 window extension) so fast drivers brake for hairpins earlier. */
+  lookaheadScale?: number;
 }
 
 const scratchFrame = {
@@ -86,6 +88,15 @@ export function autopilotDrive(
     if (prevSet) maxCurv = Math.max(maxCurv, vPrevTangent.angleTo(tmpF.tangent) / 10);
     vPrevTangent.copy(tmpF.tangent);
     prevSet = true;
+  }
+  const scanScale = skill.lookaheadScale ?? 1;
+  if (scanScale > 1) {
+    const maxOff = CURVATURE_LOOKAHEADS[CURVATURE_LOOKAHEADS.length - 1] * scanScale;
+    for (let off = CURVATURE_LOOKAHEADS[CURVATURE_LOOKAHEADS.length - 2] + 10; off <= maxOff; off += 10) {
+      curve.frameAtDist(s.trackDist + off, tmpF);
+      maxCurv = Math.max(maxCurv, vPrevTangent.angleTo(tmpF.tangent) / 10);
+      vPrevTangent.copy(tmpF.tangent);
+    }
   }
   const paceHugging = skill.pace !== undefined;
   const targetSpeed = Math.min(58, Math.max(14, Math.sqrt(38 / Math.max(maxCurv, 1e-4)))) * (skill.pace ?? 1);

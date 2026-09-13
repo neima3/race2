@@ -1196,3 +1196,146 @@ button {
   font-size: 13px;
   color: var(--muted);
 }
+
+/* ---------- Career ---------- */
+
+.cup-list {
+  width: min(760px, 94vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-left: 3px solid var(--accent, var(--accent-2));
+  backdrop-filter: blur(8px);
+}
+
+.cup-card.locked { opacity: 0.55; filter: saturate(0.4); }
+.cup-card:not(.locked):hover { border-color: var(--accent, var(--accent-2)); box-shadow: 0 10px 40px rgba(41, 230, 255, 0.1); }
+
+.cup-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+
+.cup-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: 0.06em;
+  color: var(--accent, var(--ink));
+}
+
+.cup-sub { font-size: 13px; color: var(--muted); letter-spacing: 0.06em; margin-top: 2px; }
+
+.cup-trophy { display: flex; align-items: center; gap: 8px; flex: none; }
+
+.cup-trophy-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.cup-trophy-label.t-gold { color: var(--gold); }
+.cup-trophy-label.t-silver { color: var(--silver); }
+.cup-trophy-label.t-bronze { color: var(--bronze); }
+
+.cup-medal {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  flex: none;
+}
+
+.cup-medal.gold { background: var(--gold); border-color: var(--gold); box-shadow: 0 0 12px var(--gold); }
+.cup-medal.silver { background: var(--silver); border-color: var(--silver); }
+.cup-medal.bronze { background: var(--bronze); border-color: var(--bronze); }
+
+.cup-tracks { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.cup-track-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--panel-border);
+  background: rgba(10, 14, 26, 0.5);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.cup-track-chip.next { border-color: var(--accent, var(--accent-2)); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent, var(--accent-2)); }
+
+.cup-chip-num { color: var(--accent, var(--accent-2)); }
+
+.cup-chip-name { color: inherit; }
+
+.cup-track-chip .mini-medal { width: 10px; height: 10px; border-width: 1.5px; }
+
+.cup-chip-pos { color: var(--accent, var(--accent-2)); font-variant-numeric: tabular-nums; }
+
+.cup-card-bottom { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 36px; }
+
+.cup-best {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.cup-lock-reason {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-align: right;
+}
+
+.cup-enter { flex: none; }
+
+.career-panel { width: min(460px, 92vw); align-items: stretch; }
+
+.cup-race-track {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--panel-border);
+  padding-top: 12px;
+}
+
+.cup-race-history { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.cup-race-pill {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.cup-race-pill b { color: var(--ink); }
+
+.career-standings { margin-top: 4px; }

@@ -26,9 +26,38 @@ const SETTINGS_KEY = 'race2.settings.v1';
 const PLAYER_KEY = 'race2.player.v1';
 const STATS_KEY = 'race2.stats.v1';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 type Stored<T> = T & { schemaVersion?: number };
+
+export type TrophyKind = 'gold' | 'silver' | 'bronze' | null;
+
+export interface CupFinishRecord {
+  positions: number[];
+  points: number;
+  trophy: TrophyKind;
+  dateMs: number;
+}
+
+export interface CupSave {
+  bestPoints: number;
+  finishes: CupFinishRecord[];
+}
+
+export interface CupRunEntry {
+  name: string;
+  isPlayer: boolean;
+  paint: number;
+  points: number;
+  wins: number;
+}
+
+export interface CupRun {
+  cupId: string;
+  nextRace: number;
+  entries: CupRunEntry[];
+  positions: number[];
+}
 
 export interface PlayerProfile {
   paint: number;
@@ -66,6 +95,19 @@ function emptyTrackSave(): TrackSave {
 
 export interface AllSaves {
   tracks: Record<string, TrackSave>;
+  cups: Record<string, CupSave>;
+  careerRun: CupRun | null;
+}
+
+function emptyCupSave(): CupSave {
+  return { bestPoints: 0, finishes: [] };
+}
+
+function sanitizeCupRun(v: unknown): CupRun | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = v as Partial<CupRun>;
+  if (typeof r.cupId !== 'string' || typeof r.nextRace !== 'number' || !Array.isArray(r.entries) || !Array.isArray(r.positions)) return null;
+  return { cupId: r.cupId, nextRace: r.nextRace, entries: r.entries, positions: r.positions };
 }
 
 export class SaveManager {
@@ -154,16 +196,20 @@ export class SaveManager {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as Stored<AllSaves>;
+        const parsed = JSON.parse(raw) as Stored<Partial<AllSaves>>;
         if (parsed && typeof parsed.tracks === 'object') {
           this.noteSchemaVersion(parsed.schemaVersion);
-          return parsed;
+          return {
+            tracks: parsed.tracks,
+            cups: parsed.cups ?? {},
+            careerRun: sanitizeCupRun(parsed.careerRun),
+          };
         }
       }
     } catch {
       /* corrupted — start fresh */
     }
-    return { tracks: {} };
+    return { tracks: {}, cups: {}, careerRun: null };
   }
 
   private loadSettings(): Settings {
@@ -221,6 +267,32 @@ export class SaveManager {
 
   clearTrack(trackId: string): void {
     this.saves.tracks[trackId] = emptyTrackSave();
+    this.persistSaves();
+  }
+
+  cupSave(id: string): CupSave {
+    let c = this.saves.cups[id];
+    if (!c) {
+      c = emptyCupSave();
+      this.saves.cups[id] = c;
+    }
+    return c;
+  }
+
+  recordCupFinish(id: string, result: CupFinishRecord): void {
+    const c = this.cupSave(id);
+    c.finishes.push(result);
+    if (c.finishes.length > 10) c.finishes = c.finishes.slice(-10);
+    if (result.points > c.bestPoints) c.bestPoints = result.points;
+    this.persistSaves();
+  }
+
+  getCupRun(): CupRun | null {
+    return this.saves.careerRun;
+  }
+
+  setCupRun(run: CupRun | null): void {
+    this.saves.careerRun = run;
     this.persistSaves();
   }
 

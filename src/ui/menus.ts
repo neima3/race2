@@ -1,12 +1,17 @@
 import { el, formatTimePrecise } from './common';
-import type { SaveManager, Settings, QualityTier } from '../core/save';
+import type { SaveManager, Settings, QualityTier, CupRunEntry, TrophyKind } from '../core/save';
 import type { TrackDef } from '../track/defs';
 import type { FinishResult } from '../game/race';
 import type { Standing } from '../game/rivals';
+import { CUPS, cupUnlock, cupTracks, cupStandings, startCupRun, type CupDef, type CareerPanelData } from '../game/career';
 import { PAINTS, type CarBodyStyle } from '../render/car-model';
 
 function cssHex(paint: number): string {
   return '#' + paint.toString(16).padStart(6, '0');
+}
+
+function trophyLabel(t: TrophyKind): string {
+  return t ? `${t.toUpperCase()} TROPHY` : '';
 }
 
 function finishGap(s: Standing, leader: Standing): string {
@@ -19,7 +24,7 @@ function finishGap(s: Standing, leader: Standing): string {
   return `DNF +${Math.round(s.gapMeters)}m`;
 }
 
-export type MenuScreen = 'title' | 'tracks' | 'settings' | 'garage' | 'achievements' | 'none';
+export type MenuScreen = 'title' | 'tracks' | 'settings' | 'garage' | 'achievements' | 'career' | 'none';
 
 interface MedalState {
   author: boolean;
@@ -60,6 +65,9 @@ export class MenuManager {
   onTiltRequest: () => void = () => {};
 
   onWatchReplay: () => void = () => {};
+  onCareerStartRace: (cup: CupDef, raceIndex: number) => void = () => {};
+  onCareerNextRace: () => void = () => {};
+  onCareerHubReturn: () => void = () => {};
 
   private titleScreen: HTMLElement;
   private tracksScreen: HTMLElement;
@@ -68,6 +76,8 @@ export class MenuManager {
   private finishScreen: HTMLElement;
   private garageScreen: HTMLElement;
   private achievementsScreen: HTMLElement;
+  private careerScreen: HTMLElement;
+  careerCup: CupDef | null = null;
   garageCanvas: HTMLCanvasElement | null = null;
   isGarageOpen = false;
   onGarageChange: (paint: number, body: CarBodyStyle) => void = () => {};
@@ -83,8 +93,9 @@ export class MenuManager {
     this.finishScreen = el('div', 'screen hidden');
     this.garageScreen = el('div', 'screen hidden');
     this.achievementsScreen = el('div', 'screen hidden');
+    this.careerScreen = el('div', 'screen hidden');
 
-    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.pauseScreen, this.finishScreen);
+    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen);
     this.buildTracksScreen();
   }
 
@@ -98,6 +109,8 @@ export class MenuManager {
     const buttons = el('div', 'menu-buttons');
     const play = el('button', 'menu-btn primary', 'PLAY');
     play.addEventListener('click', () => this.show('tracks'));
+    const career = el('button', 'menu-btn', 'CAREER');
+    career.addEventListener('click', () => this.show('career'));
     const garage = el('button', 'menu-btn', 'GARAGE');
     garage.addEventListener('click', () => {
       this.buildGarage();
@@ -114,7 +127,7 @@ export class MenuManager {
       this.buildAchievements();
       this.show('achievements');
     });
-    buttons.append(play, garage, achievements, settings);
+    buttons.append(play, career, garage, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
     const credits = el('div', 'title-credits', `v1.2.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
@@ -432,6 +445,131 @@ export class MenuManager {
     screen.append(header, list);
   }
 
+  private careerStandingsTable(entries: CupRunEntry[], title: string): HTMLElement {
+    const wrap = el('div', 'finish-positions career-standings');
+    wrap.append(el('div', 'fh-title', title));
+    entries.forEach((e, i) => {
+      const row = el('div', 'fp-row' + (i < 3 ? ` podium-${i + 1}` : '') + (e.isPlayer ? ' you' : ''));
+      row.append(el('span', 'fp-pos', `P${i + 1}`));
+      const swatch = el('span', 'fp-swatch');
+      swatch.style.background = e.isPlayer ? cssHex(this.save.profile.paint) : cssHex(e.paint);
+      row.append(swatch, el('span', 'fp-name', e.name), el('span', 'fp-gap', `${e.points} PTS`));
+      wrap.append(row);
+    });
+    return wrap;
+  }
+
+  private buildCareerHub(): void {
+    const screen = this.careerScreen;
+    screen.replaceChildren();
+    const forceAll = new URLSearchParams(window.location.search).has('alltracks');
+    const run = this.save.getCupRun();
+    const header = el('div', 'screen-header');
+    header.append(el('h2', 'screen-title', 'CAREER'));
+    const back = el('button', 'menu-btn small', '&#8592; BACK');
+    back.addEventListener('click', () => this.show('title'));
+    header.append(back);
+
+    const list = el('div', 'cup-list');
+    for (const cup of CUPS) {
+      const unlock = cupUnlock(cup, this.tracks, this.save, forceAll);
+      const cs = this.save.cupSave(cup.id);
+      const activeRun = run && run.cupId === cup.id ? run : null;
+      const tracks = cupTracks(cup);
+      const card = el('div', 'cup-card' + (unlock.unlocked ? '' : ' locked'));
+      card.style.setProperty('--accent', cup.accentName);
+
+      const top = el('div', 'cup-card-top');
+      const idBlock = el('div');
+      idBlock.append(el('div', 'cup-name', cup.name), el('div', 'cup-sub', `${cup.subtitle} · ${cup.gridLabel}`));
+      top.append(idBlock);
+      const best = cs.finishes[cs.finishes.length - 1];
+      const trophy = el('div', 'cup-trophy');
+      if (best) {
+        const dot = el('span', 'cup-medal' + (best.trophy ? ` ${best.trophy}` : ''));
+        trophy.append(dot, el('span', 'cup-trophy-label' + (best.trophy ? ` t-${best.trophy}` : ''), best.trophy ? trophyLabel(best.trophy) : 'NO TROPHY'));
+      }
+      top.append(trophy);
+      card.append(top);
+
+      const chipRow = el('div', 'cup-tracks');
+      tracks.forEach((t, i) => {
+        const ts = this.save.trackSave(t.id);
+        const bestMs = ts.bestTimeMs;
+        const m = bestMs != null
+          ? bestMs <= t.medals.author ? 'author' : bestMs <= t.medals.gold ? 'gold' : bestMs <= t.medals.silver ? 'silver' : bestMs <= t.medals.bronze ? 'bronze' : null
+          : null;
+        const chip = el('span', 'cup-track-chip');
+        chip.style.setProperty('--accent', t.accentName);
+        chip.append(el('span', 'cup-chip-num', String(i + 1)));
+        chip.append(el('span', 'cup-chip-name', t.name.toUpperCase()));
+        chip.append(el('span', 'mini-medal' + (m ? ` earned mm-${m}` : '')));
+        const done = activeRun && activeRun.positions[i] !== undefined;
+        if (done) chip.append(el('span', 'cup-chip-pos', `P${activeRun!.positions[i]}`));
+        else if (activeRun && i === activeRun.nextRace) chip.classList.add('next');
+        chipRow.append(chip);
+      });
+      card.append(chipRow);
+
+      const bottom = el('div', 'cup-card-bottom');
+      const bestLabel = activeRun
+        ? `RACE ${activeRun.nextRace + 1}/${cup.trackIds.length} · ${activeRun.entries.find((e) => e.isPlayer)?.points ?? 0} PTS`
+        : cs.bestPoints > 0 ? `BEST ${cs.bestPoints} PTS` : 'NOT ENTERED';
+      const bestEl = el('div', 'cup-best', bestLabel);
+      bottom.append(bestEl);
+      if (unlock.unlocked) {
+        const resume = !!activeRun;
+        const btn = el('button', 'menu-btn small cup-enter' + (resume ? ' primary' : ''), resume ? `RESUME · RACE ${activeRun!.nextRace + 1}/${cup.trackIds.length}` : 'ENTER');
+        btn.addEventListener('click', () => {
+          if (!this.save.getCupRun() || this.save.getCupRun()!.cupId !== cup.id) {
+            this.save.setCupRun(startCupRun(cup.id));
+          }
+          this.showCareerInterstitial(cup, this.save.getCupRun()!.nextRace);
+        });
+        bottom.append(btn);
+      } else {
+        bottom.append(el('div', 'cup-lock-reason', `LOCKED — ${unlock.reason}`));
+      }
+      card.append(bottom);
+      list.append(card);
+    }
+    screen.append(header, list);
+  }
+
+  showCareerInterstitial(cup: CupDef, raceIndex: number): void {
+    this.careerCup = cup;
+    const screen = this.careerScreen;
+    screen.replaceChildren();
+    const run = this.save.getCupRun();
+    const trackIdx = Math.max(0, Math.min(cup.trackIds.length - 1, raceIndex));
+    const panel = el('div', 'panel career-panel');
+    panel.style.setProperty('--accent', cup.accentName);
+    panel.append(el('div', 'fh-title', cup.name));
+    panel.append(el('h2', 'screen-title', `RACE ${raceIndex + 1}/${cup.trackIds.length}`));
+    const track = cupTracks(cup)[trackIdx];
+    const sub = el('div', 'cup-race-track');
+    sub.innerHTML = `<span class="cup-chip-num">${trackIdx + 1}</span> ${track.name.toUpperCase()} · 2 LAPS`;
+    panel.append(sub);
+    if (run && run.cupId === cup.id) {
+      if (run.positions.length > 0) panel.append(this.careerStandingsTable(cupStandings(run), 'STANDINGS'));
+      const done = el('div', 'cup-race-history');
+      run.positions.forEach((p, i) => {
+        done.append(el('span', 'cup-race-pill', `R${i + 1} <b>P${p}</b>`));
+      });
+      if (done.children.length > 0) panel.append(done);
+    } else {
+      panel.append(this.careerStandingsTable(run ? cupStandings(run) : [], 'STANDINGS'));
+    }
+    const start = el('button', 'menu-btn primary', 'START RACE');
+    start.addEventListener('click', () => this.onCareerStartRace(cup, raceIndex));
+    const leave = el('button', 'menu-btn', 'LEAVE CUP');
+    leave.addEventListener('click', () => this.show('career'));
+    panel.append(start, leave);
+    screen.append(panel);
+    this.hideAll();
+    screen.classList.remove('hidden');
+  }
+
   private buildPause(): HTMLElement {
     const screen = el('div', 'screen overlay-screen hidden');
     const panel = el('div', 'panel');
@@ -470,10 +608,18 @@ export class MenuManager {
     this.pauseScreen.classList.add('hidden');
   }
 
-  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null): void {
+  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null): void {
     this.finishScreen.replaceChildren();
     const panel = el('div', 'panel finish-panel');
     const rivalMode = standings != null && standings.length > 0;
+    const careerFinal = career?.isFinal === true;
+    const titleText = careerFinal ? career!.cupName : track.name;
+    let trophyHtml = '';
+    if (careerFinal) {
+      trophyHtml = career!.trophy
+        ? `<div class="finish-medal banner-${career!.trophy}">${trophyLabel(career!.trophy)}</div>`
+        : '<div class="finish-medal none">P4 — NO TROPHY</div>';
+    }
     const medalHtml = rivalMode
       ? ''
       : result.medal === 'none'
@@ -508,8 +654,9 @@ export class MenuManager {
       ? ''
       : `<div class="finish-best">${result.newBest ? '&#127942; NEW PERSONAL BEST' : `Best: ${formatTimePrecise(result.previousBest ?? result.timeMs)}`}</div>`;
     panel.innerHTML = `
-      <h2 class="screen-title">${track.name}</h2>
+      <h2 class="screen-title">${titleText}</h2>
       <div class="finish-time">${formatTimePrecise(result.timeMs)}</div>
+      ${trophyHtml}
       ${medalHtml}
       ${driftHtml}
       ${bestHtml}
@@ -519,7 +666,7 @@ export class MenuManager {
     if (rivalMode) {
       const wrap = el('div', 'finish-positions');
       wrap.style.setProperty('--player-accent', cssHex(this.save.profile.paint));
-      wrap.append(el('div', 'fh-title', 'RACE RESULT'));
+      wrap.append(el('div', 'fh-title', career ? `RACE ${career.raceNumber}/${career.totalRaces} RESULT` : 'RACE RESULT'));
       const leader = standings![0];
       standings!.forEach((s, i) => {
         const row = el('div', 'fp-row' + (i < 3 ? ` podium-${i + 1}` : '') + (s.isPlayer ? ' you' : ''));
@@ -532,6 +679,27 @@ export class MenuManager {
         wrap.append(row);
       });
       panel.append(wrap);
+      if (career) {
+        const table = this.careerStandingsTable(career.standings, careerFinal ? 'FINAL STANDINGS' : 'CUP STANDINGS');
+        table.style.setProperty('--player-accent', cssHex(this.save.profile.paint));
+        panel.append(table);
+      }
+    }
+    if (career) {
+      if (careerFinal) {
+        const hub = el('button', 'menu-btn primary', 'CAREER HUB');
+        hub.addEventListener('click', () => this.onCareerHubReturn());
+        panel.append(hub);
+      } else {
+        const next = el('button', 'menu-btn primary', 'NEXT RACE &#8594;');
+        next.addEventListener('click', () => this.onCareerNextRace());
+        const quit = el('button', 'menu-btn', 'SAVE &amp; QUIT');
+        quit.addEventListener('click', () => this.onCareerHubReturn());
+        panel.append(next, quit);
+      }
+      this.finishScreen.append(panel);
+      this.finishScreen.classList.remove('hidden');
+      return;
     }
     const retry = el('button', 'menu-btn primary', 'RETRY');
     retry.addEventListener('click', () => this.onRestart());
@@ -563,7 +731,7 @@ export class MenuManager {
 
   hideAll(): void {
     this.isGarageOpen = false;
-    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.pauseScreen, this.finishScreen]) {
+    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen]) {
       s.classList.add('hidden');
     }
   }
@@ -580,6 +748,11 @@ export class MenuManager {
       this.garageScreen.classList.remove('hidden');
     }
     else if (screen === 'achievements') this.achievementsScreen.classList.remove('hidden');
+    else if (screen === 'career') {
+      this.careerCup = null;
+      this.buildCareerHub();
+      this.careerScreen.classList.remove('hidden');
+    }
   }
 
   private patchSettings(patch: Partial<Settings>): void {

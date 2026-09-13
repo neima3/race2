@@ -46,12 +46,22 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-export function pickLineup(trackId: string, cupSlot = 0): RivalPreset[] {
-  const tiers: RivalTier[] = ['easy', 'mid', 'pro'];
+export function pickLineup(trackId: string, cupSlot = 0, tiers: RivalTier[] = ['easy', 'mid', 'pro']): RivalPreset[] {
+  const picked: RivalPreset[] = [];
+  const tierSeen = new Map<RivalTier, number>();
   return tiers.map((tier) => {
-    const pool = RIVAL_ROSTER.filter((r) => r.tier === tier);
-    const rng = mulberry32(hashSeed(trackId + ':' + cupSlot + ':' + tier));
-    return pool[Math.floor(rng() * pool.length) % pool.length];
+    const n = (tierSeen.get(tier) ?? 0) + 1;
+    tierSeen.set(tier, n);
+    const key = n === 1 ? tier : `${tier}:${n}`;
+    let pool = RIVAL_ROSTER.filter((r) => r.tier === tier);
+    if (n > 1) {
+      const remaining = pool.filter((p) => !picked.some((q) => q.name === p.name));
+      if (remaining.length > 0) pool = remaining;
+    }
+    const rng = mulberry32(hashSeed(trackId + ':' + cupSlot + ':' + key));
+    const pick = pool[Math.floor(rng() * pool.length) % pool.length];
+    picked.push(pick);
+    return pick;
   });
 }
 
@@ -85,6 +95,10 @@ const RUBBER_BAND_DEADZONE = 15;
 const RUBBER_BAND_RAMP = 60;
 const STUCK_SPEED = 2;
 const STUCK_TIME_MS = 4000;
+const STALL_TIME_MS = 6000;
+const STALL_MARGIN_M = 2;
+const RIVAL_SCAN_SCALE = 1.3;
+const RIVAL_RESPAWN_SPEED = 8;
 const GRID_START_DIST = 8;
 const GRID_GAP = 6;
 const GRID_LATERAL = 2.5;
@@ -138,6 +152,8 @@ interface Rival {
   maxProgress: number;
   totalProgress: number;
   stuckMs: number;
+  stallMs: number;
+  stallMark: number;
   finished: boolean;
   finishRank: number;
   finishTimeMs: number | null;
@@ -187,6 +203,8 @@ export class RivalManager {
         maxProgress: 0,
         totalProgress: 0,
         stuckMs: 0,
+        stallMs: 0,
+        stallMark: 0,
         finished: false,
         finishRank: 0,
         finishTimeMs: null,
@@ -220,6 +238,8 @@ export class RivalManager {
       r.maxProgress = slot.dist;
       r.totalProgress = r.lapOffset * len + slot.dist;
       r.stuckMs = 0;
+      r.stallMs = 0;
+      r.stallMark = r.totalProgress;
       r.finished = false;
       r.finishRank = 0;
       r.finishTimeMs = null;
@@ -254,8 +274,9 @@ export class RivalManager {
         pace: r.skill.pace + r.band,
         lookaheadJitter: r.skill.lookaheadJitter,
         steerNoise: r.skill.steerNoise,
+        lookaheadScale: RIVAL_SCAN_SCALE,
       });
-      if (res.respawn) {
+      if (res.respawn && car.state.speed < RIVAL_RESPAWN_SPEED) {
         this.respawnRival(r);
         continue;
       }
@@ -274,6 +295,17 @@ export class RivalManager {
         }
       }
       this.trackProgress(r);
+      if (r.totalProgress > r.stallMark + STALL_MARGIN_M) {
+        r.stallMark = r.totalProgress;
+        r.stallMs = 0;
+      } else {
+        r.stallMs += dtMs;
+        if (r.stallMs > STALL_TIME_MS) {
+          this.respawnRival(r);
+          r.stallMark = r.totalProgress;
+          r.stallMs = 0;
+        }
+      }
     }
   }
 
