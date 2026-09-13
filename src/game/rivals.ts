@@ -27,7 +27,7 @@ export const RIVAL_ROSTER: RivalPreset[] = [
   { name: 'VESPER', tier: 'pro', paint: 0x29e6ff, body: 'aero' },
 ];
 
-function hashSeed(s: string): number {
+export function hashSeed(s: string): number {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);

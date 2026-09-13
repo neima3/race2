@@ -592,6 +592,52 @@ button {
 }
 .friend-pb { font-size: 13px; letter-spacing: 0.1em; color: var(--muted); }
 
+.menu-btn:disabled { opacity: 0.45; pointer-events: none; }
+
+.daily-streak {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.daily-streak.hidden { display: none; }
+
+.daily-panel { align-items: center; text-align: center; }
+.daily-date {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.daily-lineup { display: flex; flex-direction: column; gap: 6px; align-items: center; margin: 4px 0; }
+.daily-lineup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.daily-lineup-name { font-weight: 700; color: var(--ink); }
+.daily-lineup-tier { font-size: 11px; opacity: 0.75; }
+.daily-meta { font-size: 12px; letter-spacing: 0.14em; color: var(--muted); }
+.daily-result { font-size: 14px; font-weight: 700; letter-spacing: 0.12em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.daily-streak-line {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  color: var(--accent);
+}
+.finish-daily {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+}
+
 .mini-medal {
   width: 14px;
   height: 14px;

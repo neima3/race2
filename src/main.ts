@@ -25,6 +25,7 @@ import { ParticleSystem, RainSystem } from './render/particles';
 import { CameraRig } from './render/camera';
 import { RaceController, deserializeGhost, type GhostSample, type RaceEvents } from './game/race';
 import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, ShareError } from './game/share';
+import { buildDailyLink, dailyFor, parseDailyLink, todayKey, DAILY_LAPS, type DailyShareLink } from './game/daily';
 import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
 import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
 import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
@@ -136,10 +137,11 @@ class Game {
   private driftMode = false;
   private replayCar: CarVisual | null = null;
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
-  private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean } | null = null;
+  private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean; daily: { dateKey: string; position: number; streak: number } | null } | null = null;
   private friendGhost: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
   private friendRaceActive = false;
   private shareBusy = false;
+  private dailyRace: { dateKey: string } | null = null;
   private canvasEl: HTMLCanvasElement = canvas;
   private get canvas(): HTMLCanvasElement { return this.canvasEl; }
   private photoCleanup: (() => void) | null = null;
@@ -170,11 +172,13 @@ class Game {
       this.driftMode = this.menu.driftAttack;
       this.careerRace = null;
       this.rivalLineup = null;
+      this.dailyRace = null;
       this.startTrack(t);
     };
     this.menu.onCareerStartRace = (cup, raceIndex) => {
       this.careerRace = { cup, raceIndex };
       this.rivalLineup = cupLineup(cup, raceIndex);
+      this.dailyRace = null;
       this.startTrack(cupRaceTrack(cup, raceIndex));
     };
     this.menu.onCareerNextRace = () => {
@@ -203,6 +207,8 @@ class Game {
     this.menu.onViewPodium = () => this.enterPodium(this.lastPodiumOrder);
     this.menu.onShareGhost = (track) => this.shareGhost(track);
     this.menu.onFriendRace = (track) => this.raceFriendGhost(track);
+    this.menu.onStartDaily = () => this.startDaily();
+    this.menu.onShareDaily = () => this.shareDailyResult();
     this.garage = new GarageSystem(this.save);
     this.menu.onSettingsChanged = (s) => {
       this.audio.setMusicEnabled(this.runtimeMuted ? false : s.music);
@@ -279,11 +285,58 @@ class Game {
     this.driftMode = false;
     this.careerRace = null;
     this.rivalLineup = null;
+    this.dailyRace = null;
     this.startTrack(track);
+  }
+
+  private startDaily(): void {
+    const dateKey = todayKey();
+    const def = dailyFor(dateKey);
+    this.dailyRace = { dateKey };
+    this.careerRace = null;
+    this.rivalLineup = def.lineup;
+    this.menu.driftAttack = false;
+    this.menu.rivalsMode = false;
+    this.menu.knockoutMode = false;
+    this.driftMode = false;
+    this.startTrack(def.track);
+  }
+
+  private async shareDailyResult(): Promise<void> {
+    if (this.shareBusy || !this.lastFinish?.daily) return;
+    const d = this.lastFinish.daily;
+    this.shareBusy = true;
+    try {
+      const url = window.location.origin + window.location.pathname + buildDailyLink(d.dateKey, d.position, this.lastFinish.result.timeMs);
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({ title: 'RACE2 daily challenge', text: `Race2 daily ${d.dateKey}: I finished P${d.position} in ${(this.lastFinish.result.timeMs / 1000).toFixed(2)}s — beat my time`, url });
+          return;
+        } catch (e) {
+          if (e && typeof e === 'object' && (e as { name?: string }).name === 'AbortError') return;
+        }
+      }
+      await navigator.clipboard.writeText(url);
+      this.menu.showToast('DAILY LINK COPIED');
+    } catch {
+      this.menu.showToast('SHARE FAILED');
+    } finally {
+      this.shareBusy = false;
+    }
   }
 
   private async checkShareHash(): Promise<void> {
     const hash = window.location.hash;
+    if (hash.startsWith('#d=')) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      const link: DailyShareLink | null = parseDailyLink(hash);
+      if (!link) {
+        this.menu.showToast('INVALID DAILY LINK');
+        return;
+      }
+      this.menu.showDailyImport(link);
+      return;
+    }
     if (!hash.startsWith('#g=')) return;
     history.replaceState(null, '', window.location.pathname + window.location.search);
     const link = parseShareLink(hash);
@@ -529,6 +582,7 @@ class Game {
 
   private resolveVariant(def: TrackDef): TrackVariant {
     if (this.urlVariant) return this.urlVariant;
+    if (this.dailyRace) return 'day';
     if (this.careerRace) return cupRaceVariant(this.careerRace.cup, this.careerRace.raceIndex);
     return def.variant ?? 'day';
   }
@@ -633,8 +687,8 @@ class Game {
   }
 
   private startTrack(def: TrackDef): void {
-    this.knockoutMode = this.menu.knockoutMode && this.careerRace === null;
-    this.rivalMode = this.menu.rivalsMode || this.knockoutMode || this.careerRace !== null;
+    this.knockoutMode = this.menu.knockoutMode && this.careerRace === null && this.dailyRace === null;
+    this.rivalMode = this.menu.rivalsMode || this.knockoutMode || this.careerRace !== null || this.dailyRace !== null;
     if (!this.rivalMode) this.rivalLineup = null;
     if (this.knockoutMode) this.menu.driftAttack = false;
     this.hudAcc = 0;
@@ -652,7 +706,7 @@ class Game {
     if (this.rivalMode && this.rivals) {
       const slot = this.rivals.gridSlot(3);
       this.car!.placeAt(slot.dist, slot.lateral);
-      this.rivals.totalLaps = this.knockoutMode ? KNOCKOUT_LAPS : DEFAULT_RIVAL_LAPS;
+      this.rivals.totalLaps = this.knockoutMode ? KNOCKOUT_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS;
       this.rivals.knockout = this.knockoutMode;
       this.rivals.setPlayerPaint(this.save.profile.paint);
       this.rivals.placeOnGrid();
@@ -691,7 +745,7 @@ class Game {
     this.audio.startEngine();
     this.audio.startMusic(def.theme);
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
-    this.race!.totalLaps = this.rivalMode ? (this.knockoutMode ? KNOCKOUT_LAPS : DEFAULT_RIVAL_LAPS) : 1;
+    this.race!.totalLaps = this.rivalMode ? (this.knockoutMode ? KNOCKOUT_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS) : 1;
     this.race!.writesRecords = !this.rivalMode;
     const friendActive = !this.rivalMode && !!this.friendGhost && this.friendGhost.trackId === def.id;
     this.race!.useExternalGhost(friendActive ? this.friendGhost!.samples : null);
@@ -722,6 +776,7 @@ class Game {
 
   private quitToMenu(dest: 'tracks' | 'career' = 'tracks'): void {
     this.state = 'menu';
+    this.dailyRace = null;
     this.menu.hidePause();
     this.menu.hideFinish();
     this.menu.show(dest);
@@ -847,8 +902,14 @@ class Game {
           }
         }
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
+        let dailyPanel: { dateKey: string; position: number; streak: number } | null = null;
         if (this.knockoutMode) {
           // knockout is a standalone mode — never writes PB/ghost/rival/lifetime stats
+        } else if (this.dailyRace && rivalStandings && !r.knockout) {
+          // daily is a seeded rival race — records only into the daily ledger, never PB/ghost/lifetime stats
+          const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
+          const res = this.save.recordDailyFinish(this.dailyRace.dateKey, pos, r.timeMs);
+          dailyPanel = { dateKey: this.dailyRace.dateKey, position: pos, streak: res.streak };
         } else if (this.rivalMode && rivalStandings) {
           const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
           const beaten = rivalStandings.slice(Math.max(0, pos)).filter((s) => !s.isPlayer).map((s) => s.name);
@@ -862,16 +923,17 @@ class Game {
           careerPanel = this.applyCareerResult(rivalStandings);
         }
         this.announceAchievementPops(achvBefore);
-        const hasNext = !careerPanel && !r.knockout && idx < TRACKS.length - 1;
+        const hasNext = !careerPanel && !r.knockout && !this.dailyRace && idx < TRACKS.length - 1;
         const playerPosInRace = rivalStandings ? rivalStandings.findIndex((s) => s.isPlayer) + 1 : -1;
         const podiumEligible =
           !!rivalStandings &&
+          !this.dailyRace &&
           ((careerPanel !== null && careerPanel.isFinal && playerPosInRace >= 1 && playerPosInRace <= 3) ||
             (!this.careerRace && playerPosInRace === 1));
         this.lastPodiumOrder = podiumEligible ? rivalStandings : null;
         const driftArg = this.driftMode ? Math.round(this.driftScore) : null;
-        this.lastFinish = { result: r, hasNext, drift: driftArg, standings: rivalStandings, career: careerPanel, podium: podiumEligible };
-        this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible);
+        this.lastFinish = { result: r, hasNext, drift: driftArg, standings: rivalStandings, career: careerPanel, podium: podiumEligible, daily: dailyPanel };
+        this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible, dailyPanel);
         this.touch.hide();
         this.audio.stopEngine();
       }, 1400);
@@ -1088,7 +1150,7 @@ class Game {
     this.podiumUi = null;
     this.hud.root.classList.remove('hidden');
     const lf = this.lastFinish;
-    if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium);
+    if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily);
   }
 
   private startReplay(): void {
@@ -1112,7 +1174,7 @@ class Game {
     this.replay = null;
     this.state = 'finished';
     const lf = this.lastFinish;
-    if (lf) this.menu.showFinish(this.track, lf.result as RaceEvents['finish'], lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium);
+    if (lf) this.menu.showFinish(this.track, lf.result as RaceEvents['finish'], lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily);
   }
 
   private updateReplay(dt: number): void {
@@ -1554,6 +1616,8 @@ declare global {
       friend: () => object | null;
       overtake: () => string;
       podium: () => boolean;
+      startDaily: () => object;
+      daily: () => object;
     };
   }
 }
@@ -1643,6 +1707,7 @@ window.__race2 = {
         slowmo: performance.now() < game['slowmoUntil'],
         podium: !!game['podium'],
         knockout: game['knockoutMode'],
+        daily: !!game['dailyRace'],
         autoDbg: game['autoDbg'],
     };
   },
@@ -1699,6 +1764,15 @@ window.__race2 = {
     }
     game['enterPodium'](order);
     return !!game['podium'];
+  },
+  startDaily: () => {
+    game['menu'].onStartDaily();
+    const save = game['save'];
+    return { today: todayKey(), save: save.daily, lastFinish: game['lastFinish']?.daily ?? null };
+  },
+  daily: () => {
+    const save = game['save'];
+    return { today: todayKey(), save: save.daily, lastFinish: game['lastFinish']?.daily ?? null };
   },
 };
 

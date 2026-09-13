@@ -4,6 +4,7 @@ import type { TrackDef } from '../track/defs';
 import type { FinishResult } from '../game/race';
 import type { Standing } from '../game/rivals';
 import { CUPS, cupUnlock, cupTracks, cupStandings, startCupRun, type CupDef, type CareerPanelData } from '../game/career';
+import { dailyFor, dailyIsLive, todayKey, type DailyShareLink } from '../game/daily';
 import { rivalAchievementState } from '../game/achievements';
 import { PAINTS, type CarBodyStyle } from '../render/car-model';
 import { bodyUnlocks, bodyStatRatios, hasCupTrophy } from '../systems/garage';
@@ -75,6 +76,8 @@ export class MenuManager {
   onCareerHubReturn: () => void = () => {};
   onShareGhost: (track: TrackDef) => Promise<void> = async () => {};
   onFriendRace: (track: TrackDef) => void = () => {};
+  onStartDaily: () => void = () => {};
+  onShareDaily: () => Promise<void> = async () => {};
 
   private titleScreen: HTMLElement;
   private tracksScreen: HTMLElement;
@@ -85,6 +88,8 @@ export class MenuManager {
   private achievementsScreen: HTMLElement;
   private careerScreen: HTMLElement;
   private friendScreen: HTMLElement;
+  private dailyScreen: HTMLElement;
+  private dailyStreakEl: HTMLElement | null = null;
   private toastEl: HTMLElement | null = null;
   private toastTimer: number | null = null;
   careerCup: CupDef | null = null;
@@ -105,8 +110,9 @@ export class MenuManager {
     this.achievementsScreen = el('div', 'screen hidden');
     this.careerScreen = el('div', 'screen hidden');
     this.friendScreen = el('div', 'screen overlay-screen hidden');
+    this.dailyScreen = el('div', 'screen overlay-screen hidden');
 
-    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen);
+    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen);
     this.buildTracksScreen();
   }
 
@@ -120,6 +126,11 @@ export class MenuManager {
     const buttons = el('div', 'menu-buttons');
     const play = el('button', 'menu-btn primary', 'PLAY');
     play.addEventListener('click', () => this.show('tracks'));
+    const daily = el('button', 'menu-btn', 'DAILY');
+    const dailyStreak = el('span', 'daily-streak hidden');
+    daily.append(dailyStreak);
+    this.dailyStreakEl = dailyStreak;
+    daily.addEventListener('click', () => this.showDailyCard());
     const career = el('button', 'menu-btn', 'CAREER');
     career.addEventListener('click', () => this.show('career'));
     const garage = el('button', 'menu-btn', 'GARAGE');
@@ -138,7 +149,7 @@ export class MenuManager {
       this.buildAchievements();
       this.show('achievements');
     });
-    buttons.append(play, career, garage, achievements, settings);
+    buttons.append(play, daily, career, garage, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
     const credits = el('div', 'title-credits', `v2.0.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
@@ -660,6 +671,80 @@ export class MenuManager {
     this.friendScreen.classList.remove('hidden');
   }
 
+  private refreshDailyStreak(): void {
+    if (!this.dailyStreakEl) return;
+    const streak = this.save.daily.streak;
+    this.dailyStreakEl.textContent = streak > 0 ? `STREAK ${streak}` : '';
+    this.dailyStreakEl.classList.toggle('hidden', streak <= 0);
+  }
+
+  private dailyLineupRows(lineup: { name: string; tier: string; paint: number }[]): HTMLElement {
+    const wrap = el('div', 'daily-lineup');
+    for (const r of lineup) {
+      const row = el('div', 'daily-lineup-row');
+      const swatch = el('span', 'fp-swatch');
+      swatch.style.background = cssHex(r.paint);
+      row.append(swatch, el('span', 'daily-lineup-name', r.name), el('span', 'daily-lineup-tier', r.tier.toUpperCase()));
+      wrap.append(row);
+    }
+    return wrap;
+  }
+
+  showDailyCard(): void {
+    this.dailyScreen.replaceChildren();
+    const dateKey = todayKey();
+    const def = dailyFor(dateKey);
+    const d = this.save.daily;
+    const panel = el('div', 'panel friend-panel daily-panel');
+    panel.style.setProperty('--accent', def.track.accentName);
+    panel.append(el('div', 'fh-title', 'DAILY CHALLENGE'));
+    panel.append(el('div', 'daily-date', `${dateKey.slice(0, 4)}-${dateKey.slice(4, 6)}-${dateKey.slice(6, 8)}`));
+    panel.append(el('div', 'friend-track', def.track.name.toUpperCase()));
+    panel.append(this.dailyLineupRows(def.lineup));
+    panel.append(el('div', 'daily-meta', `${def.laps} LAPS · 1 EASY + 2 PRO RIVALS`));
+    const res = d.results[dateKey];
+    if (res) {
+      panel.append(el('div', 'daily-result', `TODAY: P${res.position} · ${formatTimePrecise(res.timeMs)}`));
+    }
+    if (d.streak > 0) {
+      panel.append(el('div', 'daily-streak-line', `STREAK ${d.streak}`));
+    }
+    const race = el('button', 'menu-btn primary', res ? 'RETRY TODAY&#8217;S CHALLENGE' : 'RACE TODAY&#8217;S CHALLENGE');
+    race.addEventListener('click', () => this.onStartDaily());
+    const back = el('button', 'menu-btn', 'BACK');
+    back.addEventListener('click', () => this.show('title'));
+    panel.append(race, back);
+    this.dailyScreen.append(panel);
+    this.hideAll();
+    this.dailyScreen.classList.remove('hidden');
+  }
+
+  showDailyImport(link: DailyShareLink): void {
+    this.dailyScreen.replaceChildren();
+    const live = dailyIsLive(link.dateKey);
+    const def = dailyFor(link.dateKey);
+    const panel = el('div', 'panel friend-panel daily-panel');
+    panel.style.setProperty('--accent', def.track.accentName);
+    panel.append(el('div', 'fh-title', 'DAILY CHALLENGE'));
+    panel.append(el('h2', 'screen-title', 'BEAT MY TIME'));
+    panel.append(el('div', 'daily-date', `${link.dateKey.slice(0, 4)}-${link.dateKey.slice(4, 6)}-${link.dateKey.slice(6, 8)}`));
+    panel.append(el('div', 'friend-track', def.track.name.toUpperCase()));
+    panel.append(el('div', 'daily-result', `THEIR RESULT: P${link.position} · ${formatTimePrecise(link.timeMs)}`));
+    panel.append(el('div', 'daily-meta', live ? 'TODAY&#8217;S CHALLENGE' : 'THAT DAY&#8217;S CHALLENGE — DAILIES ARE ONLY PLAYABLE SAME-DAY'));
+    const race = el('button', 'menu-btn primary', 'RACE TODAY&#8217;S CHALLENGE') as HTMLButtonElement;
+    race.disabled = !live;
+    race.addEventListener('click', () => {
+      if (race.disabled) return;
+      this.onStartDaily();
+    });
+    const dismiss = el('button', 'menu-btn', 'DISMISS');
+    dismiss.addEventListener('click', () => this.show('title'));
+    panel.append(race, dismiss);
+    this.dailyScreen.append(panel);
+    this.hideAll();
+    this.dailyScreen.classList.remove('hidden');
+  }
+
   showToast(text: string): void {
     if (!this.toastEl) {
       this.toastEl = el('div', 'menu-toast');
@@ -711,7 +796,7 @@ export class MenuManager {
     this.pauseScreen.classList.add('hidden');
   }
 
-  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null, podium = false): void {
+  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null, podium = false, daily: { dateKey: string; position: number; streak: number } | null = null): void {
     this.finishScreen.replaceChildren();
     const panel = el('div', 'panel finish-panel');
     const rivalMode = standings != null && standings.length > 0;
@@ -758,11 +843,15 @@ export class MenuManager {
     const bestHtml = rivalMode
       ? ''
       : `<div class="finish-best">${result.newBest ? '&#127942; NEW PERSONAL BEST' : `Best: ${formatTimePrecise(result.previousBest ?? result.timeMs)}`}</div>`;
+    const dailyHtml = daily
+      ? `<div class="finish-daily">DAILY: P${daily.position} · STREAK ${daily.streak}</div>`
+      : '';
     panel.innerHTML = `
       <h2 class="screen-title">${titleText}</h2>
       <div class="finish-time">${formatTimePrecise(result.timeMs)}</div>
       ${trophyHtml}
       ${medalHtml}
+      ${dailyHtml}
       ${driftHtml}
       ${bestHtml}
       ${deltaTable}
@@ -828,10 +917,21 @@ export class MenuManager {
       });
       panel.append(next);
     }
-    const menu = el('button', 'menu-btn', 'TRACK SELECT');
+    if (daily) {
+      const shareDaily = el('button', 'menu-btn', 'SHARE RESULT');
+      shareDaily.addEventListener('click', () => {
+        if (shareDaily.textContent !== 'SHARE RESULT') return;
+        shareDaily.textContent = 'SHARING…';
+        void this.onShareDaily().finally(() => {
+          shareDaily.textContent = 'SHARE RESULT';
+        });
+      });
+      panel.append(shareDaily);
+    }
+    const menu = el('button', 'menu-btn', daily ? 'BACK TO TITLE' : 'TRACK SELECT');
     menu.addEventListener('click', () => {
       this.hideAll();
-      this.show('tracks');
+      this.show(daily ? 'title' : 'tracks');
     });
     panel.append(retry);
     if (!rivalMode) panel.append(replay);
@@ -859,14 +959,17 @@ export class MenuManager {
 
   hideAll(): void {
     this.isGarageOpen = false;
-    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen]) {
+    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen]) {
       s.classList.add('hidden');
     }
   }
 
   show(screen: MenuScreen): void {
     this.hideAll();
-    if (screen === 'title') this.titleScreen.classList.remove('hidden');
+    if (screen === 'title') {
+      this.refreshDailyStreak();
+      this.titleScreen.classList.remove('hidden');
+    }
     else if (screen === 'tracks') {
       this.buildTracksScreen();
       this.tracksScreen.classList.remove('hidden');

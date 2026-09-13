@@ -1,3 +1,5 @@
+import { prevDateKey } from '../game/daily';
+
 export type QualityTier = 'low' | 'medium' | 'high';
 export type TouchSteerMode = 'buttons' | 'tilt';
 
@@ -65,6 +67,17 @@ export interface FriendGhostEntry {
   dateMs: number;
 }
 
+export interface DailyResult {
+  position: number;
+  timeMs: number;
+}
+
+export interface DailySave {
+  lastFinishDate: string | null;
+  streak: number;
+  results: Record<string, DailyResult>;
+}
+
 export interface PlayerProfile {
   paint: number;
   body: 'standard' | 'aero' | 'tank';
@@ -124,6 +137,7 @@ export interface AllSaves {
   cups: Record<string, CupSave>;
   careerRun: CupRun | null;
   friendGhosts: Record<string, FriendGhostEntry>;
+  daily: DailySave;
 }
 
 function emptyCupSave(): CupSave {
@@ -150,6 +164,31 @@ function sanitizeFriendGhosts(v: unknown): Record<string, FriendGhostEntry> {
     out[key] = { code: e.code, timeMs: e.timeMs, dateMs: e.dateMs };
   }
   return out;
+}
+
+const DEFAULT_DAILY: DailySave = { lastFinishDate: null, streak: 0, results: {} };
+
+function sanitizeDaily(v: unknown): DailySave {
+  if (!v || typeof v !== 'object') return { lastFinishDate: null, streak: 0, results: {} };
+  const r = v as Partial<DailySave>;
+  const results: Record<string, DailyResult> = {};
+  const src = (r.results && typeof r.results === 'object' ? r.results : {}) as Record<string, unknown>;
+  for (const key of Object.keys(src)) {
+    if (!/^\d{8}$/.test(key)) continue;
+    const e = src[key] as Partial<DailyResult> | null;
+    if (!e || typeof e !== 'object') continue;
+    const pos = e.position;
+    const t = e.timeMs;
+    if (typeof pos !== 'number' || !Number.isFinite(pos) || pos < 1 || pos > 99) continue;
+    if (typeof t !== 'number' || !Number.isFinite(t) || t <= 0 || t > 3600000) continue;
+    results[key] = { position: Math.round(pos), timeMs: Math.round(t) };
+  }
+  const streak =
+    typeof r.streak === 'number' && Number.isFinite(r.streak) && r.streak >= 0
+      ? Math.min(9999, Math.round(r.streak))
+      : 0;
+  const lastFinishDate = typeof r.lastFinishDate === 'string' && /^\d{8}$/.test(r.lastFinishDate) ? r.lastFinishDate : null;
+  return { lastFinishDate, streak, results };
 }
 
 export class SaveManager {
@@ -253,13 +292,14 @@ export class SaveManager {
             cups: parsed.cups ?? {},
             careerRun: sanitizeCupRun(parsed.careerRun),
             friendGhosts: sanitizeFriendGhosts(parsed.friendGhosts),
+            daily: sanitizeDaily(parsed.daily),
           };
         }
       }
     } catch {
       /* corrupted — start fresh */
     }
-    return { tracks: {}, cups: {}, careerRun: null, friendGhosts: {} };
+    return { tracks: {}, cups: {}, careerRun: null, friendGhosts: {}, daily: { ...DEFAULT_DAILY, results: {} } };
   }
 
   private loadSettings(): Settings {
@@ -353,6 +393,28 @@ export class SaveManager {
   setFriendGhost(trackId: string, entry: FriendGhostEntry): void {
     this.saves.friendGhosts[trackId] = entry;
     this.persistSaves();
+  }
+
+  get daily(): DailySave {
+    return this.saves.daily;
+  }
+
+  /**
+   * Record a daily-challenge finish. Best result per date is kept (lowest position,
+   * then lowest time); same-day retries never move the streak. Streak: +1 when the
+   * previous finished day was exactly yesterday (UTC), reset to 1 after any gap.
+   */
+  recordDailyFinish(dateKey: string, position: number, timeMs: number): { streak: number; improved: boolean } {
+    const d = this.saves.daily;
+    const prev = d.results[dateKey];
+    const improved = !prev || position < prev.position || (position === prev.position && timeMs < prev.timeMs);
+    if (improved) d.results[dateKey] = { position, timeMs };
+    if (d.lastFinishDate !== dateKey) {
+      d.streak = d.lastFinishDate !== null && d.lastFinishDate === prevDateKey(dateKey) ? d.streak + 1 : 1;
+      d.lastFinishDate = dateKey;
+    }
+    this.persistSaves();
+    return { streak: d.streak, improved };
   }
 
   get settings(): Settings {

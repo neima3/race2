@@ -9,6 +9,8 @@
 - `npx tsx test/rivals.ts` — headless rival-race gate (20 checks: steering sign, lateral sign, 2-lap races on sunrise-sprint + dune-rush, slow-mo accumulator integrity, rubber-band gap <120m)
 - `npx tsx test/career.ts` — career gate (109 checks incl. difficulty-curve pins: street cup = autopilot silver, never P4; roster-capacity guard on cup tier mixes; rival-era stats migration)
 - `npx tsx test/share.ts` — ghost-share codec gate (34 checks)
+- `npx tsx test/knockout.ts` — knockout gate (50 checks: eliminations at lap boundaries, frozen sim, win + player-KO paths)
+- `npx tsx test/daily.ts` — daily-challenge gate (59 checks: seed determinism + 30-day rotation, streak matrix, save sanitize/round-trip, `#d=` link round-trip)
 - `npx tsx --expose-gc test/allocs.ts` — headless allocation probe (must PASS; catches per-frame churn)
 
 ## Architecture (src/)
@@ -21,6 +23,7 @@
 - `game/rules.ts` — shared per-car surface rules (boost pads, slick zones, mover overlap) used by both player and rivals
 - `game/rivals.ts` — `RivalManager`: 3 AI rivals (easy/mid/pro tiers = CarPhysics tuning deltas + autopilot skill {pace, lookaheadJitter, steerNoise, lookaheadScale}), grid start (player P4), rubber band (±8%, 10m dead zone), stuck respawn, per-car boost/slick/mover rules, standings with finish-rank classification. Tier params (v2.0 balance): easy pace .94/ls 1.3, mid .955/ls 1.3, pro 1.0/ls 1.15 + pro tuning {accel 1.05, maxSpeed 1.025}
 - `game/career.ts` — 3 cups: SPRINT (easy+easy+mid, forgiving), STREET (mid+pro+pro, medium — autopilot lands silver), GAUNTLET (pro+pro+mid, spicy); cup tier mixes are roster-capacity-guarded (pro roster = 2, a third pro slot would duplicate APEX)
+- `game/daily.ts` — Daily Challenge: seed = FNV-1a('race2-daily:' + UTC YYYYMMDD) → track (no consecutive-day repeats), lineup 1 easy + 2 pro, 2 laps, day variant; `dailyFor(dateKey)` deterministic; `recordDailyFinish` in save.ts keeps best result per day (position, then time) and computes streaks (yesterday→+1, same-day→keep, gap→1); share/import via `#d=<dateKey>.<pos>.<timeMs>` hash; daily never writes PB/ghost/cup/lifetime stats
 - `game/achievements.ts` — rival-era achievement state + pop detection (FIRST BLOOD, CUP CADET, TRIPLE CROWN, SOCIAL CLIMBER, FULL HOUSE); stats live in lifetime `rivalWins`/`friendGhostRaces`/`rivalsBeaten` (additive save fields)
 - `systems/autopilot.ts` — pure-pursuit + curvature lookahead; optional `skill` param for rivals (identical behavior when omitted)
 - `game/share.ts` — compact ghost codec (15Hz, 16-bit bbox-relative pos, smallest-three quat, transposed planes + deflate) → `#g=v1.<track>.<time>.<code>` URL share/import

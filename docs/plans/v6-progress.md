@@ -1,5 +1,38 @@
 # RACE2 v6 — Progress Log
 
+## Phase 3 — Daily Challenge (2026-09-13) ✅
+
+Shipped:
+
+- **`src/game/daily.ts`** (new) — seeded daily definition. Seed = FNV-1a (`hashSeed`, now exported from rivals.ts) over `'race2-daily:' + dateKey` (UTC `YYYYMMDD`). Track pick = `h % TRACKS.length` with a deterministic +1 shift when it collides with the *previous* day's pick (no consecutive-day repeats). Lineup = `pickLineup(trackId, h % 100000, ['easy','pro','pro'])` — spicy but roster-capacity-guarded (pickLineup re-picks from the remaining pro pool, no duplicates). Laps 2, variant forced `'day'` (`resolveVariant` short-circuits when a daily race is active). API: `dailyFor(dateKey)` (byte-identical per date), `todayKey()` (UTC), `prevDateKey`, `isValidDateKey` (real-calendar validation incl. leap years), `dailyIsLive` (only today playable), `buildDailyLink`/`parseDailyLink` (`#d=<dateKey>.<pos>.<timeMs>`). Rotation sample (Sep 2026): salt-flats → gauntlet-ii → sky-loop → volt-alley → neon-vertical → canyon-twist → ring-runner → canyon-twist → ring-runner → dune-rush; 30 days cover **14/14 distinct** tracks, 0 immediate repeats.
+- **Save (additive, schemaVersion stays 2)**: `AllSaves.daily: { lastFinishDate: string|null, streak: number, results: {[dateKey]: {position, timeMs}} }` — all dates kept (tiny ledger), `sanitizeDaily` drops malformed keys/entries. `recordDailyFinish(dateKey, position, timeMs)` implements the streak semantics: same-day retry keeps streak and only overwrites the stored result when better (**lowest position first, then lowest time**); otherwise `lastFinishDate === prevDateKey(dateKey)` → streak+1, any gap → streak = 1. Verified invariants: retry never double-counts, position beats a faster time, round-trips the Map-backed storage mock.
+- **UI**: title gains a DAILY button (PLAY→DAILY→CAREER order) with a `STREAK N` sub-line when streak > 0 (refreshed on every `show('title')`); daily card screen (date, track, lineup paint+tier rows, "2 LAPS · 1 EASY + 2 PRO RIVALS", today's result + streak when present, RACE/RETRY TODAY'S CHALLENGE + BACK); `#d=` import card ("BEAT MY TIME", their P + time, today's track when live — RACE enabled; old dates show "THAT DAY'S CHALLENGE — DAILIES ARE ONLY PLAYABLE SAME-DAY" with RACE disabled; DISMISS always). Finish panel gains the accent `DAILY: P3 · STREAK 1` line + SHARE RESULT button + BACK TO TITLE (replaces TRACK SELECT for dailies; RETRY replays the same seeded daily and keeps best).
+- **Share**: SHARE RESULT builds `origin+path+#d=20260913.3.41150` via `navigator.share` else clipboard + `DAILY LINK COPIED` toast (same envelope as ghost share). Import: `checkShareHash` handles `#d=` before `#g=`, clears the hash via `history.replaceState` immediately, `INVALID DAILY LINK` toast on parse failure.
+- **Guard rails**: daily is a rival-race internally but writes only to the daily ledger — the finish handler gained a dedicated `else if (this.dailyRace …)` branch *before* the `rivalWins/rivalsBeaten` branch; `writesRecords` stays false (no PB/ghost), `friendRaceActive`/career/cup/knockout all unreachable. Verified in browser: after a full daily finish `race2.stats.v1` is never created and `tracks['serpents-tail']` stays `{bestTimeMs: null, ghost: null}`. `dailyRace` is cleared by onPlayTrack/onCareerStartRace/raceFriendGhost/quitToMenu; RETRY intentionally preserves it.
+- **`test/daily.ts`** (new permanent gate, 59 checks): byte-identical defs, 30-day rotation (≥8 distinct — actual 14, 0 repeats, all lineups valid), UTC key math (midnight rollover, month/year boundaries, leap years), full streak matrix (+1 / retry-no-double / gap-reset / position-then-time best-keeping), save round-trip + sanitizer (negative streak, malformed dates, junk result keys), `#d=` round-trip + 10 rejection cases, old/future/invalid-date liveness. Exit 1 on failure.
+- **QA hooks (extend-only)**: `__race2.startDaily()` (starts today's seeded daily, returns the daily snapshot), `__race2.daily()` (`{today, save.daily, lastFinish.daily}`), `state()` gained `daily: boolean`.
+
+Verified:
+
+- Gates: typecheck ✅, build ✅ (992.97 kB / 372.11 kB gzip, +7.5 kB vs Phase 2), `test/laps.ts` **11/14** ✅ (STRICT-exempt set unchanged; sunrise 17.47 / dune-rush 23.52 baselines unchanged), `test/rivals.ts` **20/20** ✅, `test/career.ts` **119/119** ✅, `test/share.ts` **34/34** ✅, `test/knockout.ts` **50/50** ✅, `test/allocs.ts` **PASS** ✅ (+0.000MB/30s), `test/daily.ts` **59/59** ✅.
+- Browser (?mute=1, headless Chrome, evidence `qa/v6-phase3/`, not committed):
+  - 01: `#d=20260913.1.95000` import card (fresh load) — SERPENT'S TAIL, THEIR RESULT P1 · 1:35.000, TODAY'S CHALLENGE, RACE enabled, hash cleared.
+  - 02: `#d=20260910.2.88000` — DUNE RUSH / 2026-09-10, "THAT DAY'S CHALLENGE — DAILIES ARE ONLY PLAYABLE SAME-DAY", RACE `disabled`, DISMISS.
+  - 03/04: title DAILY button (no streak on fresh profile) → daily card: HALCYON EASY / APEX PRO / VESPER PRO, 2 LAPS, RACE TODAY'S CHALLENGE.
+  - 05 + `daily-race.webm`: mid-race on serpents-tail (day), standings P1 APEX / P2 VESPER / P3 YOU / P4 HALCYON, FINAL LAP splash, `state().daily = true`.
+  - 06: finish panel — accent `DAILY: P3 · STREAK 1` line, RACE RESULT table, SHARE RESULT / RETRY / BACK TO TITLE; save ledger `{lastFinishDate: '20260913', streak: 1, results: {'20260913': {position: 3, timeMs: 41150}}}`; **no PB/ghost/lifetime-stat writes**.
+  - SHARE RESULT → clipboard captured exactly `http://localhost:5173/#d=20260913.3.41150` + `DAILY LINK COPIED` toast; 07: pasted URL in a fresh navigation → import card with THEIR RESULT P3 · 0:41.150, RACE enabled.
+  - 08/09: title DAILY now reads `STREAK 1`; daily card gains `TODAY: P3 · 0:41.150` + RETRY TODAY'S CHALLENGE.
+
+Deviations:
+
+- **schemaVersion stays 2** (task allowed an additive bump): `test/share.ts` explicitly pins "schema version stays 2 (additive field, no bump)" and `test/career.ts` asserts `schemaVersion === 2`; the `daily` field is additive and defaults on old saves, so no bump is warranted.
+- The daily retry button on the card reads "RETRY TODAY'S CHALLENGE" after a finish (spec's "RACE TODAY'S CHALLENGE" is the fresh-state label; both start the same seeded race).
+- `parseDailyLink` accepts positions 1-99 and any valid calendar date (not just the last 14 days) — lenient validation by design; playability is governed solely by `dailyIsLive` (today only, so future-dated links are disabled too).
+- Same-document hash changes (e.g. editing the hash in-place) do not re-trigger import — matching the existing `#g=` flow, which only parses at boot. Verified intentionally during QA via fresh loads.
+
+Notes for Phase 4+: the daily's seeded rivals are full `RivalPreset`s — nothing in rivals/race was touched, so Phase 4 tuning deltas propagate to dailies automatically. `recordDailyFinish` is position-first by design; if Phase 6 wants "beat your time" secondary display, `results[dateKey].timeMs` is already the best time for the kept position. The `#d=` import writes nothing to save — a future "add friend's result to HUD" feature can extend `showDailyImport` without save changes.
+
 ## Phase 2 — 2 new tracks + GRAND TOUR cup (2026-09-13) ✅
 
 Shipped:
