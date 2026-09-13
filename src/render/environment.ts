@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { VARIANTS, type ThemeDef, type TrackVariant } from '../track/defs';
 import type { TrackCurve } from '../track/curve';
 
@@ -83,6 +84,19 @@ function makeMesa(rng: () => number, radius: number, height: number): THREE.Buff
   return geo;
 }
 
+function baked(geo: THREE.BufferGeometry, pos: THREE.Vector3, rotY = 0, scaleY = 1): THREE.BufferGeometry {
+  const g = geo.clone();
+  g.deleteAttribute('uv');
+  const m = new THREE.Matrix4().compose(
+    pos.clone(),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rotY, 0)),
+    new THREE.Vector3(1, scaleY, 1),
+  );
+  g.applyMatrix4(m);
+  if (!g.getAttribute('normal')) g.computeVertexNormals();
+  return g;
+}
+
 export interface Environment {
   group: THREE.Group;
   sunLight: THREE.DirectionalLight;
@@ -91,6 +105,7 @@ export interface Environment {
   applyVariant(variant: TrackVariant): void;
   update(cameraPos: THREE.Vector3): void;
   animate(t: number, dt: number): void;
+  dispose(): void;
 }
 
 export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: 'low' | 'medium' | 'high', curveRef: TrackCurve, variant: TrackVariant = 'day'): Environment {
@@ -178,6 +193,8 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
   const mesaMat = new THREE.MeshStandardMaterial({ color: theme.mesaColor, roughness: 0.95, flatShading: true });
   const mesaMatFar = new THREE.MeshStandardMaterial({ color: theme.mesaFarColor, roughness: 1, flatShading: true });
   const mesaGeoCache = new Map<string, THREE.BufferGeometry>();
+  const mesaNear: THREE.BufferGeometry[] = [];
+  const mesaFar: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 26; i++) {
     const a = rng() * Math.PI * 2;
     const dist = 700 + rng() * 2300;
@@ -192,11 +209,19 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
       mesaGeoCache.set(key, geo);
     }
     const far = dist > 1600;
-    const m = new THREE.Mesh(geo, far ? mesaMatFar : mesaMat);
-    m.position.set(x, height * 0.18 - 2, z);
-    m.rotation.y = rng() * Math.PI * 2;
-    group.add(m);
+    const bakedGeo = baked(geo, new THREE.Vector3(x, height * 0.18 - 2, z), rng() * Math.PI * 2);
+    (far ? mesaFar : mesaNear).push(bakedGeo);
   }
+  const mergeOrEmpty = (list: THREE.BufferGeometry[]): THREE.BufferGeometry | null => {
+    if (list.length === 0) return null;
+    const merged = mergeGeometries(list, false)!;
+    for (const g of list) g.dispose();
+    return merged;
+  };
+  const mesaNearMesh = mergeOrEmpty(mesaNear);
+  if (mesaNearMesh) group.add(new THREE.Mesh(mesaNearMesh, mesaMat));
+  const mesaFarMesh = mergeOrEmpty(mesaFar);
+  if (mesaFarMesh) group.add(new THREE.Mesh(mesaFarMesh, mesaMatFar));
 
   const rockMat = new THREE.MeshStandardMaterial({ color: theme.rockColor, roughness: 1, flatShading: true });
   const rockGeo = new THREE.DodecahedronGeometry(1, 0);
@@ -218,14 +243,17 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
   const clouds = new THREE.Group();
   const cloudDirs: number[] = [];
   for (let i = 0; i < 14; i++) {
-    const cloud = new THREE.Group();
-    const puffs = 3 + Math.floor(rng() * 4);
-    for (let p = 0; p < puffs; p++) {
-      const puff = new THREE.Mesh(new THREE.SphereGeometry(26 + rng() * 34, 10, 8), cloudMat);
-      puff.position.set((rng() - 0.5) * 90, (rng() - 0.5) * 16, (rng() - 0.5) * 50);
-      puff.scale.y = 0.42;
-      cloud.add(puff);
+    const puffs: THREE.BufferGeometry[] = [];
+    const puffCount = 3 + Math.floor(rng() * 4);
+    for (let p = 0; p < puffCount; p++) {
+      const puffGeo = new THREE.SphereGeometry(26 + rng() * 34, 10, 8);
+      const puffPos = new THREE.Vector3((rng() - 0.5) * 90, (rng() - 0.5) * 16, (rng() - 0.5) * 50);
+      puffs.push(baked(puffGeo, puffPos, 0, 0.42));
+      puffGeo.dispose();
     }
+    const mergedPuffs = mergeGeometries(puffs, false)!;
+    for (const p of puffs) p.dispose();
+    const cloud = new THREE.Mesh(mergedPuffs, cloudMat);
     const a = rng() * Math.PI * 2;
     const dist = 900 + rng() * 1900;
     cloud.position.set(Math.cos(a) * dist, 240 + rng() * 320, Math.sin(a) * dist);
@@ -442,6 +470,26 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     });
   };
 
+  const dispose = (): void => {
+    group.traverse((o) => {
+      const anyO = o as THREE.Mesh;
+      if (anyO.geometry) anyO.geometry.dispose();
+      const m = anyO.material as THREE.Material | THREE.Material[] | undefined;
+      const kill = (mm: THREE.Material) => {
+        const map = (mm as THREE.MeshStandardMaterial).map;
+        if (map) map.dispose();
+        mm.dispose();
+      };
+      if (Array.isArray(m)) m.forEach(kill);
+      else if (m) kill(m);
+    });
+    scene.remove(group);
+    scene.remove(sunLight.target);
+    scene.remove(sunLight);
+    scene.remove(hemiLight);
+    sunLight.shadow.dispose();
+  };
+
   return {
     group,
     sunLight,
@@ -452,5 +500,6 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     applyVariant,
     update,
     animate,
+    dispose,
   };
 }

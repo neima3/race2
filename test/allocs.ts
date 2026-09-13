@@ -1,0 +1,120 @@
+import * as THREE from 'three';
+import { TrackCurve } from '../src/track/curve';
+import { TRACKS, VARIANTS } from '../src/track/defs';
+import { CarPhysics } from '../src/physics/car';
+import { RaceController } from '../src/game/race';
+import { RivalManager, pickLineup } from '../src/game/rivals';
+import { SaveManager } from '../src/core/save';
+import { autopilotDrive } from '../src/systems/autopilot';
+import { ParticleSystem, RainSystem } from '../src/render/particles';
+import { computeOnSlick, surfaceGripFor } from '../src/game/rules';
+
+(globalThis as unknown as { localStorage: Storage }).localStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+  clear: () => {},
+  key: () => null,
+  length: 0,
+} as unknown as Storage;
+
+// 60s headless rival-race allocation probe: mirrors the main.ts sim-loop composition
+// (race + rivals + particles + rain + surface rules), samples JS heap every 5s.
+// Run: node --expose-gc node_modules/tsx/dist/cli.mjs test/allocs.ts
+
+const simDt = 1 / 120;
+const def = TRACKS[4]; // dune-rush (rival harness staple)
+const curve = new TrackCurve(def.points, true);
+const save = new SaveManager();
+const rain = true;
+const particles = new ParticleSystem();
+const rainFx = new RainSystem(950);
+rainFx.lines.visible = true;
+rainFx.setCount(520);
+
+const player = new CarPhysics(curve);
+const race = new RaceController(player, curve, def, save, () => {});
+race.totalLaps = 2;
+race.writesRecords = false;
+const rivals = new RivalManager(curve, def, { add: () => {} } as unknown as THREE.Group, false, pickLineup(def.id));
+rivals.totalLaps = 2;
+rivals.rain = rain;
+
+const camPos = new THREE.Vector3();
+const moverSnap: { dist: number; lat: number }[] = [];
+const input = { steer: 0, throttle: 0, brake: 0, drift: false };
+
+let acc = 0;
+let wallMs = 0;
+const sampleEvery = 5;
+let nextSample = 5000;
+let heap0: number | null = null;
+const rows: string[] = [];
+
+const gc = (globalThis as unknown as { gc?: () => void }).gc;
+const heap = (): number => {
+  if (gc) gc();
+  return (process.memoryUsage().heapUsed / 1048576);
+};
+
+player.placeAt(8, 2.5);
+rivals.placeOnGrid();
+race.start();
+
+// warm-up (shader-free; steady-state allocation)
+for (let i = 0; i < 3600; i++) {
+  race.update(simDt * 1000, input);
+  rivals.update(simDt * 1000, 'racing', race.totalProgress, moverSnap);
+  player.state.surfaceGrip = surfaceGripFor(rain);
+  player.state.onSlick = computeOnSlick(def.slicks, player.state.trackDist, player.state.lateral);
+  rivals.updateVisuals(simDt, particles, def.accent);
+  rainFx.update(simDt, camPos);
+  particles.update(simDt);
+}
+heap0 = heap();
+let lastSample = 0;
+let done = '';
+const t0 = performance.now();
+
+for (let i = 0; i < 60 * 120; i++) {
+  wallMs += simDt * 1000;
+  race.update(simDt * 1000, input);
+  const mode = race.phase === 'countdown' ? 'countdown' : 'racing';
+  rivals.update(simDt * 1000, mode, race.totalProgress, moverSnap);
+  player.state.surfaceGrip = surfaceGripFor(rain);
+  player.state.onSlick = computeOnSlick(def.slicks, player.state.trackDist, player.state.lateral);
+  particles.update(simDt);
+  rainFx.update(simDt, camPos);
+  rivals.standings(race.totalProgress);
+  if (race.phase === 'finished') {
+    done = `finished at ${((performance.now() - t0) / 1000).toFixed(1)}s wall-sim`;
+    break;
+  }
+  if (wallMs >= nextSample) {
+    rows.push(`t=${(wallMs / 1000).toFixed(0).padStart(3)}s heap=${heap().toFixed(2)}MB`);
+    nextSample += 5000;
+  }
+}
+if (!done) rows.push(`t=60s heap=${heap().toFixed(2)}MB`);
+void lastSample;
+
+// allocation rate over a fixed window with forced GC
+const h1 = heap();
+for (let i = 0; i < 30 * 120; i++) {
+  race.update(simDt * 1000, input);
+  if (race.phase === 'finished') break;
+  rivals.update(simDt * 1000, 'racing', race.totalProgress, moverSnap);
+  particles.update(simDt);
+}
+const h2 = heap();
+const delta = h2 - h1;
+
+console.log(`allocs probe: track=${def.id} rain=${rain} gc=${gc ? 'forced' : 'not-available'}`);
+for (const r of rows) console.log('  ' + r);
+console.log(`  30s steady-state window: ${delta >= 0 ? '+' : ''}${delta.toFixed(3)}MB (gc-forced)`);
+console.log(done ? `  ${done}` : '  60s elapsed, race still running');
+if (gc && delta > 2) {
+  console.log(`FAIL allocation churn > 2MB per 30s forced-GC window (${delta.toFixed(2)}MB)`);
+  process.exit(1);
+}
+console.log('PASS allocation probe');

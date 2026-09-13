@@ -491,14 +491,20 @@ class Game {
       this.scene.remove(this.trackGroup);
       this.trackGroup.traverse((o) => {
         if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
+          if (!o.geometry.userData.shared) o.geometry.dispose();
+          const kill = (m: THREE.Material) => {
+            if (m.userData.shared) return;
+            const map = (m as THREE.MeshStandardMaterial).map;
+            if (map && !map.userData.shared) map.dispose();
+            m.dispose();
+          };
           const m = o.material;
-          if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
-          else m.dispose();
+          if (Array.isArray(m)) m.forEach(kill);
+          else kill(m);
         }
       });
     }
-    if (this.environment) this.scene.remove(this.environment.group);
+    if (this.environment) this.environment.dispose();
     this.trackGroup = null;
     this.meshes = null;
     this.environment = null;
@@ -551,17 +557,19 @@ class Game {
       this.rainFx.lines.visible = false;
     }
 
-    const blobCanvas = document.createElement('canvas');
-    blobCanvas.width = 64;
-    blobCanvas.height = 64;
-    const bctx = blobCanvas.getContext('2d')!;
-    const grd = bctx.createRadialGradient(32, 32, 4, 32, 32, 30);
-    grd.addColorStop(0, 'rgba(0,0,0,0.55)');
-    grd.addColorStop(1, 'rgba(0,0,0,0)');
-    bctx.fillStyle = grd;
-    bctx.fillRect(0, 0, 64, 64);
-    this.shadowBlob = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(blobCanvas), transparent: true, depthWrite: false }));
-    this.shadowBlob.scale.set(3.4, 3.4, 1);
+    if (!this.shadowBlob) {
+      const blobCanvas = document.createElement('canvas');
+      blobCanvas.width = 64;
+      blobCanvas.height = 64;
+      const bctx = blobCanvas.getContext('2d')!;
+      const grd = bctx.createRadialGradient(32, 32, 4, 32, 32, 30);
+      grd.addColorStop(0, 'rgba(0,0,0,0.55)');
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
+      bctx.fillStyle = grd;
+      bctx.fillRect(0, 0, 64, 64);
+      this.shadowBlob = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(blobCanvas), transparent: true, depthWrite: false }));
+      this.shadowBlob.scale.set(3.4, 3.4, 1);
+    }
     this.trackGroup.add(this.shadowBlob);
     if (!this.sunFlare) {
       const flareCanvas = document.createElement('canvas');
@@ -588,6 +596,8 @@ class Game {
     this.sceneBody = this.save.profile.body;
     this.car.placeAtFrame(0, 8);
     if (this.skidMarks) {
+      this.skidMarks.mesh.geometry.dispose();
+      (this.skidMarks.mesh.material as THREE.Material).dispose();
       this.scene.remove(this.skidMarks.mesh);
       this.skidMarks = null;
     }

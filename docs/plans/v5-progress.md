@@ -1,5 +1,40 @@
 # RACE2 v5 — Progress Log
 
+## Phase 9 — Performance & soak (2026-09-13) ✅
+Shipped:
+- **Leak fixes (the headline):** `buildEnvironment` had been adding `sunLight`+`hemiLight` directly to the scene and `clearTrackScene` only removed the environment group — every track switch orphaned 2 lights (each new sun casts its own shadow map → double shadow passes → +140-166 draw calls after one switch, GPU memory +978% geometries / +1225% textures / +718% programs over 20 switches; v4 had the same bug). New `Environment.dispose()` (environment.ts): traverses the group disposing geometries/materials/maps (sky, ground grid CanvasTexture, mesas, rocks, clouds, water, fireflies, birds all leaked before), removes the 3 light objects, and `sunLight.shadow.dispose()` (frees the shadow map + mapPass render targets — exactly the +2 textures/switch). Wired into `clearTrackScene` (main.ts).
+- **Teardown hardening (main.ts):** `clearTrackScene` now skips `userData.shared` resources, disposes material maps (road/chevron/banner/mover/billboard canvas textures leaked per switch), disposes the old SkidMarks geometry+material (leaked per switch), and builds `shadowBlob` once (its 64px canvas texture leaked per switch — Sprite was invisible to the Mesh-only traverse).
+- **Merged car model (car-model.ts):** non-ghost cars merge static body parts per (material × castShadow) bucket via `mergeGeometries` → 34 → 20 draw calls/car (8 merged body meshes + 12 wheels), with module-level geometry + paint-independent-material caches marked `userData.shared` (one GPU copy across player + 3 rivals + replay + garage; bodyMat and the paint-derived accent2Mat stay per-instance so `setPaint` semantics are unchanged). Ghost car deliberately keeps the legacy per-part build (pixel-identical translucency sort; only one ghost exists; disposed on teardown). Shadow-caster union preserved (rivals still override castShadow per mesh via traverse — now 20 meshes instead of 34).
+- **Cloud + mesa merge (environment.ts):** 14 clouds merged per-cloud (≈60 → 14 draw calls), 26 mesas merged into near/far meshes (26 → 2). rng draw order byte-identical → identical layout; same materials/transforms → visually identical.
+- `test/allocs.ts` (new headless gate, run `npx tsx --expose-gc test/allocs.ts`): 60s rain rival-race sim loop; heap flat 14.49→14.56MB, 30s forced-GC steady-state window **+0.000MB** — zero retained allocation churn in the sim loop. PASS (exits 1 if >2MB).
+- Census/soak drivers + evidence in `qa/v5-phase9/` (census.sh, memswitch.sh, soak.sh, census.md, screenshots; not committed).
+
+Verified:
+- Gates: typecheck ✅, build ✅ (951.1 kB / 349.5 kB gzip, +3.4 kB), `test/laps.ts` 9/12 (same 3 STRICT-exempt; baselines byte-identical: T1 17.47 / volt 27.90) ✅, `test/rivals.ts` **20/20** ✅, `test/career.ts` 87/87 ✅, `test/share.ts` 34/34 ✅, `test/allocs.ts` PASS ✅.
+- **Census (Medium; High identical — bloom passes are not additive in renderer.info on this three version):**
+  | scenario | v4 baseline | v5 pre-fix | v5 post-fix | budget (184+20%=220) |
+  |---|---|---|---|---|
+  | day-solo (ghost) | 184 | 184 | **124** | ✅ |
+  | day-rivals | — | 252 | **151** | ✅ |
+  | rain-rivals sunrise | — | 334 (474 post-switch) | **202** | ✅ |
+  | rain-rivals canyon | — | 474 post-switch | **204** | ✅ |
+  | rain-rivals sky-loop | — | 308 post-switch | **151** | ✅ |
+  | rain-rivals gauntlet | — | 456 post-switch | **186** | ✅ |
+  Worst case 204 ≤ 220. Tris on the heaviest scenario 55.2k → 44.3k. Post-switch == fresh-page (light leak gone). Frame time avg 16.6-16.9ms = vsync-locked 60fps (Phase 6 measured 16.66/16.67ms — the ≤16ms avg budget is not reachable on a vsync-locked 60Hz display; per-frame GPU work dropped: −32% calls / −30% tris / one shadow pass instead of two; dynamic-res never engaged).
+- **GPU memory over 20 switches (solo/rival/cup-variant mix):** before geoms 61→658, tex 8→106, programs 22→180, lights 2→40, heap 10→54MB — FAIL; after tex flat 8-10, programs 22-26, lights 2, geoms 40-92 oscillating with per-track content and returning to baseline each cycle (k=4: 58 / k=12: 55 / k=20: 58) — PASS.
+- **10-min soak (730s, 23 cycles: cup-variant rival races across day/dusk/night/rain + solo finishes, autopilot):** calls 63-183, geoms 67-112, tex 8-10, programs 24-32 (32 = night headlights), lights 2-6 (night adds 4 headlight spots) — all bounded, no monotonic growth; resScale 1 throughout; fps 54-60; heap sawtooth 12-52MB is Chrome allocation allowance (idle-settle reclaimed to 33.4MB; DOM nodes flat at 397). Full table in qa/v5-phase9/census.md + soak.log.
+- Cheap wins verified, no change needed: rain counts are tier-scaled (low 220 / med 520 / high 950 drops, 1 draw call); minimap redraw costs **1.5µs** → 0.05ms/frame at 30Hz — negligible.
+- Visual identity: same-scenario screenshots pre/post fix (rival grid + garage) — identical environment (incl. the pre-existing floating-mesa look, also present in v4-era qa/soak screenshots) and identical rival car identity; ghost path untouched by design.
+
+Deviations:
+- Draw-call budget accounting: v4 census was never recorded numerically, so the baseline was re-measured per the task's fallback ("re-measure a day solo race") at commit 00c10e7 with the same fresh-page WARM protocol → 184 calls (this includes the v4-era light leak of one prior switch; noted in census.md). Budget = 220.
+- Frame-time budget interpreted as vsync-locked 60fps (avg 16.6-16.9ms), documented the same way as the Phase 6 numbers; dynamic-res stays the safety net and stayed at 1.0 in all clean-machine runs.
+- One dynamic-res downshift to 0.6 observed in an early soak run was traced to 6 leftover census browser sessions rendering in background tabs (machine load); with a clean machine the same scenario holds res 1.0 at 59-60fps — measurement artifact, not a regression.
+- Instanced wheels (would save ~9 calls/car) evaluated and NOT applied — CarVisual.wheels API churn across main/replay/rivals not justified once the budget was met by the merge.
+- The garage preview canvas renders the car partially out of frame when the garage is opened via `quitToMenu`+click mid-race — pre-existing on both pre-fix and post-fix builds (verified side by side), out of scope.
+
+Notes for Phase 10: `renderer.info` on this three version reports composer frames identically to direct renders, so High-tier draw calls == Medium; soak scripts live in qa/v5-phase9/ and can be re-run against the deployed build for the release soak spot-check. `test/allocs.ts` is a new optional gate (needs `--expose-gc` through tsx: `npx tsx --expose-gc test/allocs.ts`).
+
 ## Phase 8 — Race feel & podium (2026-09-13) ✅
 Shipped:
 - **Overtake slow-mo** (main.ts): `checkOvertake` runs at the 5Hz standings tick (same block as `hud.updateRivals`) — player position improvement (P3→P2) calls `triggerOvertake`: 250ms window (`slowmoUntil = now + 250`) + soft two-note chime (`audio.overtake()`). Dilation point: `timeScale` in the frame loop scales the incoming frame dt (`this.acc += dt * timeScale`) BEFORE the fixed-step accumulator divides into 120Hz steps — physics, rivals, and `race.elapsedMs` all dilate coherently; no step dropped or double-run (existing 8-step clamp intact). Documented choice: race clock dilates too — fair-time arcade effect, no real time gained/lost. Guards: skipped entirely under reduced-motion; 2s cooldown (`overtakeCooldownUntil`); no trigger in the final 3s before finish (estimated via `(finishDatum − totalProgress)/speed`); rival mode only (structural guard — time-trial cannot trigger even via QA hook); `race.phase === 'racing'` only. The `▲P2` flash reuses the Phase-3 position-change flash, which fires from `updateRivals` in the same tick.
