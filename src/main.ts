@@ -1586,6 +1586,7 @@ class Game {
     this.rig.setLookBack(input.lookBack);
     this.rig.boostKick = this.boostKick;
     this.boostKick = 0;
+    this.rig.speedFovEnabled = !this.save.settings.reducedMotion;
     this.rig.update(dt, s);
     this.environment?.update(this.rig.camera.position);
       this.environment?.animate(now / 1000, dt);
@@ -1618,6 +1619,7 @@ declare global {
       podium: () => boolean;
       startDaily: () => object;
       daily: () => object;
+      audioProbe: () => object;
     };
   }
 }
@@ -1774,5 +1776,6 @@ window.__race2 = {
     const save = game['save'];
     return { today: todayKey(), save: save.daily, lastFinish: game['lastFinish']?.daily ?? null };
   },
+  audioProbe: () => game['audio'].audioProbe(),
 };
 

@@ -1,5 +1,50 @@
 # RACE2 v6 — Progress Log
 
+## Phase 4 — Feel & honesty polish (2026-09-13) ✅
+
+Shipped:
+
+- **Stat-honest bodies** (`src/physics/car.ts`, tuning constants only): aero gains `driftGrip: 1.976` (+4% vs default 1.9 — looser slides, rewards skill), tank gains `accel: 35.7` (+5% vs default 34). Nothing else touched; standard stays identical. Garage bars (menus.ts `bodyStatRatios`) derive from tuning, so they now differentiate with zero UI changes: STANDARD 70/70/70/70, AERO speed 74/grip 67/**drift 73**/accel 70, TANK speed 67/grip 74/drift 70/**accel 74** (% widths).
+- **Night readability** (`src/track/defs.ts` night variant + `src/render/car-model.ts` headlights): `ambientDim` 0.52 → **0.64** (mesas/ground/rocks +23% brighter — both read clearly at a glance now), `starBrightness` 2.1 → **2.31** (+10%), headlight spotlight intensity 340 → **410**, angle 0.48 → **0.55 rad** (pools brighter + wider), decay 1.55 → 1.5. Dusk/day/rain variant rows and the `headlights:false` build path untouched.
+- **Speed FOV** (`src/render/camera.ts`): existing response was a linear widen `62 + 22·(speed/58)` (0→+22° across the whole range, no high-speed-specific term). Added an eased high-speed term on top: smoothstep from 45→58 m/s capped at **+4°**, temporally eased (rate 4/s, scalar state, zero allocation), applied in both chase and hood modes. `CameraRig.speedFovEnabled` flag set per-frame from `!settings.reducedMotion` (main.ts) — reduced-motion skips it entirely. Verified live: 40.8 m/s → fov 77 (old formula), 60.2 m/s → **88** (84 baseline + 4 saturated), 51.8 m/s with reducedMotion → **82** (baseline only).
+- **Audio probes** (`src/core/audio.ts` + new `test/probe.ts`): `blip`/`noiseBurst` gained an internal tag param; overtake chime, GO stinger (noise + 2 blips) and crowd swell register envelope taps (ring buffer, cap 12) in `probeTaps`; `AudioEngine.audioProbe()` returns `{ time, ctxState, sfxBus, musicBus, musicIntensity, musicLayers{base,intense}, events[{name,start,dur,gain}] }` — gain values read live from the AudioParams. Exposed as `window.__race2.audioProbe()` (extend-only). `test/probe.ts` (24 checks, permanent gate) runs the engine headless on a virtual-clock AudioContext mock (automation events evaluated analytically: set/linear/exp ramps + setTarget) and asserts each event actually moves its envelope: overtake attack 0.17 → mid-decay 0.0062 → 0.0001; GO peak 0.38 → done; crowd silent → attack 0.043 → hold 0.089 → release; `musicKick` intensity 0 → 0.7 → 0.972 with intense layer 0 → 0.447 and base 0.5 → 0.187, then decay after kick expiry; sfx mute gating; tap-buffer bounded. Exit 1 on no movement (event → no-op = broken wiring).
+
+Verified:
+
+- Gates: typecheck ✅, build ✅ (993.96 kB / 372.48 kB gzip, +1.0 kB vs Phase 3), `test/laps.ts` **11/14** ✅ on **all three bodies** (STRICT-exempt set unchanged), `test/rivals.ts` **20/20** ✅, `test/career.ts` **119/119** ✅, `test/share.ts` **34/34** ✅, `test/knockout.ts` **50/50** ✅, `test/daily.ts` **59/59** ✅, `test/probe.ts` **24/24** ✅, `test/allocs.ts` **PASS** ✅ (+0.000MB/30s).
+- **Steering-direction check after car.ts touch: PASS on all 3 bodies** (standard −0.999 / aero −0.999 / tank −0.998 heading·right; placement +2.50 rel·right each).
+- Harness ×3 table (autopilot, seconds; all within the ±35% band of T1 17.5 / T2 30.8 / T3 21.7 / T4 28.4):
+
+  | track | standard | aero | tank |
+  |---|---|---|---|
+  | sunrise-sprint | 17.47 | 17.02 | 17.63 |
+  | sky-loop | 24.72 | 24.40 | 24.78 |
+  | dune-rush | 23.52 | 22.98 | 23.77 |
+  | serpents-tail | 20.49 | 20.24 | 20.54 |
+  | neon-vertical | 23.18 | 22.85 | 23.24 |
+  | twilight-gauntlet | 36.58 | 35.97 | 36.77 |
+  | neon-circuit | 15.13 | 14.87 | 15.20 |
+  | ring-runner | 39.38 | 38.59 | 39.74 |
+  | volt-alley | 27.90 | 27.52 | 28.05 |
+  | salt-flats | 22.18 | 21.62 | 22.38 |
+  | harbor-nine | 24.23 | 23.78 | 24.43 |
+
+  standard times byte-identical to pre-change baseline (tuning untouched); aero identical too (driftGrip only affects drift, which the autopilot never engages — the gate proves the delta doesn't wedge anything); tank slightly faster in places (accel +5%). No track broke a body; the +4% aero driftGrip needed no reduction to +3%.
+- Browser (?mute=1, headless Chrome, evidence `qa/v6-phase4/`, not committed):
+  - Night A/B mesa (salt-flats): before — ground near-black, mesas indistinguishable from sky; after — mesas read as shapes against the sky, ground/rocks readable, headlight pool visible. Night A/B neon (harbor-nine): before — terrain mush; after — mesas/ground read clearly, pink edge line + brighter star field, night mood retained (`before/after-night-{mesa,neon}.png`).
+  - Day-unchanged proof: controlled pair (car at rest, same countdown moment, `git stash` for the before side) → **0.20% pixels differ**, diff image shows only countdown-splash animation edges + subpixel tree AA; zero 3D-field change (`before/after-day-controlled.png`, `day-controlled-diff.png`).
+  - Garage bars per body distinct (DOM-verified widths + screenshot `after-garage-bars.png`); locked cards show stats too, so honesty is visible pre-unlock.
+  - High-speed FOV frame + numbers above (`after-fov-highspeed.png`); `__race2.audioProbe()` returns live buses/taps on the muted page (ctxState "suspended", go-stinger taps present).
+
+Deviations:
+
+- **FOV interpretation**: the task's "if it already exists, tune to +4° max" was read as cap the *added high-speed term* at +4° — the existing linear +22° response is core camera feel and was left intact; the new term is a separate eased ≤+4° bonus above 45 m/s (documented current vs new above). Nerfing 22° → 4° would have been a drastic, out-of-scope feel regression.
+- Crowd probe uses `crowd(1.2, 0.09)` (game default 2.4 unchanged) so the hold-at-vol segment exists within a short virtual window; with dur 0.5 the release starts immediately after attack (correct engine behavior, unusable for a hold assert).
+- `test/probe.ts` no-ops `setInterval` during music scheduling for virtual-time determinism (`startMusic`'s synchronous first tick still schedules); `engine.stopMusic()` at test end.
+- AGENTS.md: added the probe gate line and fixed stale counts left from Phases 2/3 (laps 9/12+ → 11/14, career 109 → 119, 12 tracks → 14); full AGENTS.md refresh stays with Phase 6.
+
+Notes for Phase 5+: `CameraRig.speedFovEnabled` is the pattern for any future reduced-motion-gated camera work. `audioProbe()` taps only the four Phase-4 events; adding a tag string to other `blip`/`noiseBurst` call sites extends it trivially (buffer cap 12, oldest evicted). The night ambientDim floor (0.64) is a defs-data change — if Phase 6 balance wants it different per theme, `applyVariant` would need a theme-dim multiplier.
+
 ## Phase 3 — Daily Challenge (2026-09-13) ✅
 
 Shipped:

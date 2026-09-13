@@ -42,8 +42,8 @@ export const VARIANTS: Record<TrackVariant, VariantDef> = {
   },
   night: {
     skyTint: 0x060a1a, skyTintAmt: 0.78, sunTint: 0xbcd2ff, sunTintAmt: 0.85, sunElev: 0.42,
-    sunIntensityMult: 0.22, sunGlow: 0.3, starBrightness: 2.1, hemiMult: 0.4,
-    fogColorMult: 0.3, fogNearMult: 0.85, fogFarMult: 0.78, ambientDim: 0.52,
+    sunIntensityMult: 0.22, sunGlow: 0.3, starBrightness: 2.31, hemiMult: 0.4,
+    fogColorMult: 0.3, fogNearMult: 0.85, fogFarMult: 0.78, ambientDim: 0.64,
     cloudColorMult: 0.3, cloudOpacityMult: 0.8, reflectorMult: 2.4,
     headlights: true, rain: false,
   },

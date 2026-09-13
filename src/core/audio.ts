@@ -26,6 +26,7 @@ export class AudioEngine {
   private musicTheme: MusicTheme | null = null;
   private ambienceNodes: { src: AudioBufferSourceNode; gain: GainNode; filter?: BiquadFilterNode }[] = [];
   private ambienceKind: string | null = null;
+  private probeTaps: { name: string; t0: number; dur: number; gain: AudioParam }[] = [];
 
   musicEnabled = true;
   sfxEnabled = true;
@@ -139,7 +140,7 @@ export class AudioEngine {
     this.windGain = null;
   }
 
-  private blip(freq: number, dur: number, type: OscillatorType, vol: number, when = 0, slideTo?: number): void {
+  private blip(freq: number, dur: number, type: OscillatorType, vol: number, when = 0, slideTo?: number, tag?: string): void {
     if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const t0 = ctx.currentTime + when;
@@ -154,9 +155,10 @@ export class AudioEngine {
     g.connect(this.sfxGain);
     osc.start(t0);
     osc.stop(t0 + dur + 0.02);
+    if (tag) this.addTap(tag, t0, dur, g.gain);
   }
 
-  private noiseBurst(dur: number, vol: number, from: number, to: number): void {
+  private noiseBurst(dur: number, vol: number, from: number, to: number, tag?: string): void {
     if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const t0 = ctx.currentTime;
@@ -177,6 +179,35 @@ export class AudioEngine {
     filter.connect(g);
     g.connect(this.sfxGain);
     src.start(t0);
+    if (tag) this.addTap(tag, t0, dur, g.gain);
+  }
+
+  private addTap(name: string, t0: number, dur: number, gain: AudioParam): void {
+    this.probeTaps.push({ name, t0, dur, gain });
+    if (this.probeTaps.length > 12) this.probeTaps.shift();
+  }
+
+  /** Headless/audio-QA introspection: current bus gains, music intensity and recent event envelopes. */
+  audioProbe(): {
+    time: number;
+    ctxState: string | null;
+    sfxBus: number;
+    musicBus: number;
+    musicIntensity: number;
+    musicLayers: { base: number; intense: number } | null;
+    events: { name: string; start: number; dur: number; gain: number }[];
+  } {
+    return {
+      time: this.ctx?.currentTime ?? 0,
+      ctxState: this.ctx?.state ?? null,
+      sfxBus: this.sfxGain?.gain.value ?? 0,
+      musicBus: this.musicGain?.gain.value ?? 0,
+      musicIntensity: this.musicIntensity,
+      musicLayers: this.musicLayers.length === 2
+        ? { base: this.musicLayers[0].gain.gain.value, intense: this.musicLayers[1].gain.gain.value }
+        : null,
+      events: this.probeTaps.map((t) => ({ name: t.name, start: t.t0, dur: t.dur, gain: t.gain.value })),
+    };
   }
 
   uiClick(): void {
@@ -216,14 +247,14 @@ export class AudioEngine {
   }
 
   overtake(): void {
-    this.blip(880, 0.09, 'sine', 0.17);
-    this.blip(1318, 0.16, 'sine', 0.17, 0.07);
+    this.blip(880, 0.09, 'sine', 0.17, 0, undefined, 'overtake');
+    this.blip(1318, 0.16, 'sine', 0.17, 0.07, undefined, 'overtake');
   }
 
   goStinger(): void {
-    this.noiseBurst(0.35, 0.38, 240, 2600);
-    this.blip(150, 0.3, 'sawtooth', 0.22, 0, 70);
-    this.blip(587, 0.22, 'square', 0.11, 0.06);
+    this.noiseBurst(0.35, 0.38, 240, 2600, 'go');
+    this.blip(150, 0.3, 'sawtooth', 0.22, 0, 70, 'go');
+    this.blip(587, 0.22, 'square', 0.11, 0.06, undefined, 'go');
   }
 
   /** Procedural crowd swell: brownish noise through a wide bandpass with slow attack/release. */
@@ -260,6 +291,7 @@ export class AudioEngine {
     hp.connect(g);
     g.connect(this.sfxGain);
     src.start(t0);
+    this.addTap('crowd', t0, dur, g.gain);
   }
 
   /** Force the music intensity bus to full for a few seconds (FINAL LAP moment). */

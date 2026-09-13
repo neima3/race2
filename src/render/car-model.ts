@@ -219,7 +219,7 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarB
   }
 
   if (headlights) {
-    const spot = new THREE.SpotLight(0xf2f6ff, 340, 85, 0.48, 0.6, 1.55);
+    const spot = new THREE.SpotLight(0xf2f6ff, 410, 85, 0.55, 0.6, 1.5);
     spot.position.set(0, 0.85, 1.7);
     spot.castShadow = false;
     const target = new THREE.Object3D();

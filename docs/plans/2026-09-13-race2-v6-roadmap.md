@@ -4,7 +4,7 @@
 - [x] Phase 1: Knockout mode — lap-based elimination racing
 - [x] Phase 2: 2 new tracks + GRAND TOUR cup
 - [x] Phase 3: Daily Challenge — seeded race of the day, streaks, result sharing
-- [ ] Phase 4: Feel & honesty polish — real stat deltas, night tuning, speed feel, audio probes
+- [x] Phase 4: Feel & honesty polish — real stat deltas, night tuning, speed feel, audio probes
 - [ ] Phase 5: Offline PWA + first-run onboarding
 - [ ] Phase 6: Release QA + v2.1.0 + deploy + live verify
 

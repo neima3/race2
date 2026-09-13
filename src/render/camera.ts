@@ -5,6 +5,9 @@ export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
   mode: 'chase' | 'hood' = 'chase';
   boostKick = 0;
+  /** Eased FOV widen above 45 m/s, capped at +4 deg. Disabled by reduced-motion. */
+  speedFovEnabled = true;
+  private speedFov = 0;
   private camPos = new THREE.Vector3();
   private camLook = new THREE.Vector3();
   private shake = 0;
@@ -47,6 +50,10 @@ export class CameraRig {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(state.quat);
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(state.quat);
     const speedRatio = Math.min(1, state.speed / 58);
+    const hi = this.speedFovEnabled ? Math.min(1, Math.max(0, (state.speed - 45) / 13)) : 0;
+    const eased = hi * hi * (3 - 2 * hi);
+    this.speedFov += (eased - this.speedFov) * Math.min(1, 4 * dt);
+    const speedFov = this.speedFov * 4;
     const kick = this.boostKick * 9;
 
     if (this.mode === 'hood') {
@@ -55,7 +62,7 @@ export class CameraRig {
       const look = eye.clone().addScaledVector(forward, this.lookBack ? -10 : 10).addScaledVector(up, this.lookBack ? -0.4 : 0.1);
       this.camera.up.copy(up);
       this.camera.lookAt(look);
-      this.camera.fov = 72 + speedRatio * 16 - this.punch;
+      this.camera.fov = 72 + speedRatio * 16 + speedFov - this.punch;
     } else {
       const back = forward.clone().multiplyScalar(this.lookBack ? 8.4 : -8.8);
       const target = state.pos.clone().add(back).addScaledVector(up, 3.1);
@@ -67,7 +74,7 @@ export class CameraRig {
       const worldUp = up;
       this.camera.up.lerp(worldUp, 1 - Math.exp(-(state.grounded ? 8 : 2.2) * dt));
       this.camera.lookAt(this.camLook);
-      this.camera.fov = 62 + speedRatio * 22 + kick - this.punch;
+      this.camera.fov = 62 + speedRatio * 22 + speedFov + kick - this.punch;
     }
 
     if (this.shake > 0) {

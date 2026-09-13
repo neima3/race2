@@ -38,8 +38,8 @@ export type CarBodyId = 'standard' | 'aero' | 'tank';
 
 export const BODY_TUNING: Record<CarBodyId, Partial<CarTuning>> = {
   standard: {},
-  aero: { maxSpeed: 60.9, grip: 7.2 },
-  tank: { maxSpeed: 55.68, grip: 7.95, boostKick: 1.08 },
+  aero: { maxSpeed: 60.9, grip: 7.2, driftGrip: 1.976 },
+  tank: { maxSpeed: 55.68, grip: 7.95, boostKick: 1.08, accel: 35.7 },
 };
 
 export interface CarState {
