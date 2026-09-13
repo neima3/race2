@@ -6,7 +6,7 @@
 - [x] Phase 3: Daily Challenge — seeded race of the day, streaks, result sharing
 - [x] Phase 4: Feel & honesty polish — real stat deltas, night tuning, speed feel, audio probes
 - [x] Phase 5: Offline PWA + first-run onboarding
-- [ ] Phase 6: Release QA + v2.1.0 + deploy + live verify
+- [x] Phase 6: Release QA + v2.1.0 + deploy + live verify *(balance pass + QA sweep + v2.1.0 committed; Coolify deploy + live verify still pending — deploy is the only remaining step)*
 
 **Goal statement (full ambition):** Give RACE2 staying power: a knockout mode that creates elimination drama, two genuinely new tracks plus a fourth cup, a daily seeded challenge with streaks and shareable results, stat-honest cars, night races that read beautifully, and a game that plays offline after the first visit — shipped as v2.1.0, all gates green, verified live and muted.
 

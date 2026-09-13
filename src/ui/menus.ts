@@ -196,7 +196,7 @@ export class MenuManager {
     });
     buttons.append(play, daily, career, garage, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
-    const credits = el('div', 'title-credits', `v2.0.0 — built with Three.js · © 2026 neima.me`);
+    const credits = el('div', 'title-credits', `v2.1.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
     return screen;
   }
@@ -538,13 +538,13 @@ export class MenuManager {
     const ra = rivalAchievementState(this.save);
     const defs: { name: string; desc: string; done: boolean; progress?: string }[] = [
       { name: 'First Medal', desc: 'Earn any medal', done: medaled > 0 },
-      { name: 'Regular', desc: 'Medal 5 tracks', done: medaled >= 5, progress: `${medaled}/12` },
-      { name: 'Collector', desc: 'Medal all 12 tracks', done: medaled >= 12, progress: `${medaled}/12` },
+      { name: 'Regular', desc: 'Medal 5 tracks', done: medaled >= 5, progress: `${medaled}/${this.tracks.length}` },
+      { name: 'Collector', desc: 'Medal all 14 tracks', done: medaled >= this.tracks.length, progress: `${medaled}/${this.tracks.length}` },
       { name: 'Golden Touch', desc: '3 gold medals', done: golds >= 3, progress: `${golds}/3` },
-      { name: 'Midas Fleet', desc: 'Gold on every track', done: golds >= 12, progress: `${golds}/12` },
+      { name: 'Midas Fleet', desc: 'Gold on every track', done: golds >= this.tracks.length, progress: `${golds}/${this.tracks.length}` },
       { name: 'Dev Time', desc: '1 author medal', done: authors >= 1, progress: `${authors}/1` },
       { name: 'Studio Record', desc: 'Author on 6 tracks', done: authors >= 6, progress: `${authors}/6` },
-      { name: 'Neima Standard', desc: 'Author on all 12 tracks', done: authors >= 12, progress: `${authors}/12` },
+      { name: 'Neima Standard', desc: 'Author on all 14 tracks', done: authors >= this.tracks.length, progress: `${authors}/${this.tracks.length}` },
       { name: 'Star Struck', desc: '10 stars', done: total >= 10, progress: `${total}/10` },
       { name: 'Constellation', desc: '24 stars', done: total >= 24, progress: `${total}/24` },
       { name: 'Galaxy Brain', desc: '40+ stars', done: total >= 40, progress: `${total}/${this.tracks.length * 4}` },
@@ -557,7 +557,7 @@ export class MenuManager {
       { name: 'Untouchable', desc: '3 laps with no wall hits', done: st.cleanLaps >= 3, progress: `${Math.min(st.cleanLaps, 3)}/3` },
       { name: 'First Blood', desc: 'Win any rival race', done: ra.rivalWins >= 1, progress: `${Math.min(ra.rivalWins, 1)}/1` },
       { name: 'Cup Cadet', desc: 'Win your first cup trophy — any', done: ra.cupsWithTrophy >= 1, progress: `${Math.min(ra.cupsWithTrophy, 1)}/1` },
-      { name: 'Triple Crown', desc: 'Trophy in all 3 cups', done: ra.cupsWithTrophy >= 3, progress: `${ra.cupsWithTrophy}/3` },
+      { name: 'Triple Crown', desc: 'Trophy in any 3 cups', done: ra.cupsWithTrophy >= 3, progress: `${ra.cupsWithTrophy}/3` },
       { name: 'Social Climber', desc: 'Import a friend ghost and race it', done: ra.friendGhostRaces >= 1, progress: `${Math.min(ra.friendGhostRaces, 1)}/1` },
       { name: 'Full House', desc: 'Beat all 8 roster rivals across races', done: ra.rivalsBeaten >= 8, progress: `${ra.rivalsBeaten}/8` },
       { name: 'Tourist', desc: 'Trophy in the Grand Tour', done: ra.tourist >= 1, progress: `${Math.min(ra.tourist, 1)}/1` },
