@@ -89,6 +89,7 @@ export class MenuManager {
   private careerScreen: HTMLElement;
   private friendScreen: HTMLElement;
   private dailyScreen: HTMLElement;
+  private onboardScreen: HTMLElement;
   private dailyStreakEl: HTMLElement | null = null;
   private toastEl: HTMLElement | null = null;
   private toastTimer: number | null = null;
@@ -111,9 +112,53 @@ export class MenuManager {
     this.careerScreen = el('div', 'screen hidden');
     this.friendScreen = el('div', 'screen overlay-screen hidden');
     this.dailyScreen = el('div', 'screen overlay-screen hidden');
+    this.onboardScreen = this.buildOnboarding();
 
-    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen);
+    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.onboardScreen);
     this.buildTracksScreen();
+  }
+
+  private buildOnboarding(): HTMLElement {
+    const screen = el('div', 'screen overlay-screen hidden');
+    const panel = el('div', 'panel onboard-panel');
+    panel.append(el('div', 'fh-title', 'WELCOME TO RACE2'));
+    panel.append(el('h2', 'screen-title', 'HOW TO RACE'));
+    const cards = el('div', 'onboard-cards');
+    const card = (title: string, lines: string[]) => {
+      const c = el('div', 'onboard-card');
+      c.append(el('div', 'onboard-card-title', title));
+      for (const l of lines) c.append(el('div', 'onboard-card-line', l));
+      return c;
+    };
+    cards.append(
+      card('DRIVE', [
+        'STEER &mdash; A / D or &#8592; &#8594;',
+        'GAS &mdash; W or &#8593; &nbsp;&middot;&nbsp; BRAKE &mdash; S or &#8595;',
+        'TOUCH &mdash; left pad steers, right pedals gas / brake',
+      ]),
+      card('DRIFT &amp; BOOST', [
+        'HOLD SPACE or SHIFT to drift through corners',
+        'ORANGE PADS &mdash; drive over them for free speed',
+      ]),
+      card('GO RACING', [
+        'CAREER &mdash; race rivals across cups for trophies',
+        'DAILY &mdash; a new seeded challenge every day',
+      ]),
+    );
+    panel.append(cards);
+    const actions = el('div', 'onboard-actions');
+    const skip = el('button', 'menu-btn', 'SKIP');
+    const got = el('button', 'menu-btn primary', 'GOT IT');
+    const dismiss = () => {
+      this.patchSettings({ onboarded: true });
+      this.show('title');
+    };
+    skip.addEventListener('click', dismiss);
+    got.addEventListener('click', dismiss);
+    actions.append(skip, got);
+    panel.append(actions);
+    screen.append(panel);
+    return screen;
   }
 
   private buildTitle(): HTMLElement {
@@ -959,7 +1004,7 @@ export class MenuManager {
 
   hideAll(): void {
     this.isGarageOpen = false;
-    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen]) {
+    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.onboardScreen]) {
       s.classList.add('hidden');
     }
   }
@@ -968,6 +1013,10 @@ export class MenuManager {
     this.hideAll();
     if (screen === 'title') {
       this.refreshDailyStreak();
+      if (!this.save.settings.onboarded) {
+        this.onboardScreen.classList.remove('hidden');
+        return;
+      }
       this.titleScreen.classList.remove('hidden');
     }
     else if (screen === 'tracks') {

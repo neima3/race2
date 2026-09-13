@@ -40,6 +40,8 @@ export class HUD {
   private posFlashEl: HTMLElement;
   private standingsEl: HTMLElement;
   private standRows: { root: HTMLElement; pos: HTMLElement; dot: HTMLElement; name: HTMLElement; gap: HTMLElement }[] = [];
+  private ctxHintEl: HTMLElement;
+  private ctxHintTimer: number | null = null;
   private lastRivalPos = 0;
 
   constructor() {
@@ -100,7 +102,16 @@ export class HUD {
 
     this.minimap = new Minimap();
 
-    this.root.append(topBar, bottomBar, this.progressTrack, this.centerEl, this.splitToast, this.respawnHint, this.standingsEl, this.minimap.root);
+    this.ctxHintEl = el('div', 'hud-ctx-hint');
+
+    this.root.append(topBar, bottomBar, this.progressTrack, this.centerEl, this.splitToast, this.respawnHint, this.standingsEl, this.ctxHintEl, this.minimap.root);
+  }
+
+  showContextHint(text: string): void {
+    this.ctxHintEl.textContent = text;
+    this.ctxHintEl.classList.add('show');
+    if (this.ctxHintTimer !== null) clearTimeout(this.ctxHintTimer);
+    this.ctxHintTimer = window.setTimeout(() => this.ctxHintEl.classList.remove('show'), 4000);
   }
 
   setDriftMode(on: boolean, best: number): void {

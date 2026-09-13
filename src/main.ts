@@ -37,6 +37,12 @@ import { TouchControls } from './ui/touch';
 
 type AppState = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished' | 'replay' | 'photo';
 
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+
 const kmh = 3.6;
 const EMPTY_DOTS: { x: number; z: number; paint: number }[] = [];
 
@@ -751,6 +757,13 @@ class Game {
     this.race!.useExternalGhost(friendActive ? this.friendGhost!.samples : null);
     this.friendRaceActive = friendActive;
     this.hud.setGhostTag(friendActive ? 'FRIEND' : null);
+    if (this.knockoutMode && !this.save.settings.hintKnockout) {
+      this.save.updateSettings({ hintKnockout: true });
+      this.hud.showContextHint('LAST PLACE EACH LAP IS ELIMINATED');
+    } else if (this.rivalMode && !this.knockoutMode && !this.save.settings.hintRival) {
+      this.save.updateSettings({ hintRival: true });
+      this.hud.showContextHint('FINISH P2 OR BETTER TO SCORE POINTS');
+    }
     this.race!.start();
     this.hud.setLapCounter(this.rivalMode ? `LAP ${this.race!.lapNumber}/${this.race!.totalLaps}` : null);
     this.ringsHit.clear();

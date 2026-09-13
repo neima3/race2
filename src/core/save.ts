@@ -21,6 +21,9 @@ export interface Settings {
   reducedMotion: boolean;
   shakeIntensity: number;
   leftyTouch: boolean;
+  onboarded?: boolean;
+  hintRival?: boolean;
+  hintKnockout?: boolean;
 }
 
 const SAVE_KEY = 'race2.save.v1';
@@ -126,6 +129,9 @@ const DEFAULT_SETTINGS: Settings = {
   reducedMotion: false,
   shakeIntensity: 1,
   leftyTouch: false,
+  onboarded: false,
+  hintRival: false,
+  hintKnockout: false,
 };
 
 function emptyTrackSave(): TrackSave {
@@ -199,8 +205,23 @@ export class SaveManager {
   private storedSchemaVersion = 0;
 
   constructor() {
+    const hadPriorProfile =
+      !!localStorage.getItem(SAVE_KEY) ||
+      !!localStorage.getItem(SETTINGS_KEY) ||
+      !!localStorage.getItem(PLAYER_KEY) ||
+      !!localStorage.getItem(STATS_KEY);
     this.saves = this.loadSaves();
     this._settings = this.loadSettings();
+    if (hadPriorProfile) {
+      let storedHasOnboarded = false;
+      try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        storedHasOnboarded = !!raw && 'onboarded' in (JSON.parse(raw) as object);
+      } catch {
+        /* corrupted settings — treat returning player as onboarded */
+      }
+      if (!storedHasOnboarded) this._settings.onboarded = true;
+    }
     this._profile = this.loadProfile();
     this._stats = this.loadStats();
   }
