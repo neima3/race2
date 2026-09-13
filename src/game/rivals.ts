@@ -5,7 +5,7 @@ import type { TrackDef } from '../track/defs';
 import { buildCarVisual, type CarVisual, type CarBodyStyle } from '../render/car-model';
 import type { ParticleSystem } from '../render/particles';
 import { autopilotDrive, type AutoPilotState } from '../systems/autopilot';
-import { updateBoostPads, computeOnSlick, moverOverlap, applyMoverScrub, resetPads, type PadState } from './rules';
+import { updateBoostPads, computeOnSlick, moverOverlap, applyMoverScrub, resetPads, surfaceGripFor, type PadState } from './rules';
 
 export type RivalTier = 'easy' | 'mid' | 'pro';
 
@@ -167,6 +167,7 @@ const tmpColor = new THREE.Color();
 export class RivalManager {
   readonly rivals: Rival[] = [];
   totalLaps = DEFAULT_RIVAL_LAPS;
+  rain = false;
   private curve: TrackCurve;
   private def: TrackDef;
   private frozen: Standing[] | null = null;
@@ -177,11 +178,11 @@ export class RivalManager {
   private playerFinishMs: number | null = null;
   private dotBuf: MinimapDot[] = [];
 
-  constructor(curve: TrackCurve, def: TrackDef, parent: THREE.Group, shadows: boolean, lineup: RivalPreset[] = pickLineup(def.id)) {
+  constructor(curve: TrackCurve, def: TrackDef, parent: THREE.Group, shadows: boolean, lineup: RivalPreset[] = pickLineup(def.id), opts: { night?: boolean } = {}) {
     this.curve = curve;
     this.def = def;
     for (const preset of lineup) {
-      const visual = buildCarVisual(preset.paint, false, preset.body);
+      const visual = buildCarVisual(preset.paint, false, preset.body, opts.night === true);
       visual.group.visible = false;
       visual.group.traverse((o) => {
         if (o instanceof THREE.Mesh) o.castShadow = shadows;
@@ -267,6 +268,7 @@ export class RivalManager {
         continue;
       }
       car.state.onSlick = computeOnSlick(this.def.slicks, car.state.trackDist, car.state.lateral);
+      car.state.surfaceGrip = surfaceGripFor(this.rain);
       const gap = playerProgress - r.totalProgress;
       const raw = gap >= 0 ? Math.max(0, gap - RUBBER_BAND_DEADZONE) : Math.min(0, gap + RUBBER_BAND_DEADZONE);
       r.band = Math.max(-1, Math.min(1, raw / RUBBER_BAND_RAMP)) * RUBBER_BAND;

@@ -2,6 +2,60 @@ import type { ControlPoint } from './curve';
 
 export type ThemeId = 'alpine' | 'canyon' | 'neon' | 'mesa';
 
+export type TrackVariant = 'day' | 'dusk' | 'night' | 'rain';
+
+export interface VariantDef {
+  skyTint: number;
+  skyTintAmt: number;
+  sunTint: number;
+  sunTintAmt: number;
+  sunElev: number | null;
+  sunIntensityMult: number;
+  sunGlow: number;
+  starBrightness: number;
+  hemiMult: number;
+  fogColorMult: number;
+  fogNearMult: number;
+  fogFarMult: number;
+  ambientDim: number;
+  cloudColorMult: number;
+  cloudOpacityMult: number;
+  reflectorMult: number;
+  headlights: boolean;
+  rain: boolean;
+}
+
+export const VARIANTS: Record<TrackVariant, VariantDef> = {
+  day: {
+    skyTint: 0x000000, skyTintAmt: 0, sunTint: 0xffffff, sunTintAmt: 0, sunElev: null,
+    sunIntensityMult: 1, sunGlow: 1, starBrightness: 1, hemiMult: 1,
+    fogColorMult: 1, fogNearMult: 1, fogFarMult: 1, ambientDim: 1,
+    cloudColorMult: 1, cloudOpacityMult: 1, reflectorMult: 1,
+    headlights: false, rain: false,
+  },
+  dusk: {
+    skyTint: 0xff7a3a, skyTintAmt: 0.3, sunTint: 0xffa04a, sunTintAmt: 0.55, sunElev: 0.09,
+    sunIntensityMult: 0.8, sunGlow: 1.2, starBrightness: 1.1, hemiMult: 0.72,
+    fogColorMult: 0.9, fogNearMult: 0.9, fogFarMult: 0.85, ambientDim: 0.86,
+    cloudColorMult: 0.82, cloudOpacityMult: 1.1, reflectorMult: 1.35,
+    headlights: false, rain: false,
+  },
+  night: {
+    skyTint: 0x060a1a, skyTintAmt: 0.78, sunTint: 0xbcd2ff, sunTintAmt: 0.85, sunElev: 0.42,
+    sunIntensityMult: 0.22, sunGlow: 0.3, starBrightness: 2.1, hemiMult: 0.4,
+    fogColorMult: 0.3, fogNearMult: 0.85, fogFarMult: 0.78, ambientDim: 0.52,
+    cloudColorMult: 0.3, cloudOpacityMult: 0.8, reflectorMult: 2.4,
+    headlights: true, rain: false,
+  },
+  rain: {
+    skyTint: 0x5a6472, skyTintAmt: 0.5, sunTint: 0x8a94a2, sunTintAmt: 0.6, sunElev: null,
+    sunIntensityMult: 0.42, sunGlow: 0.25, starBrightness: 0, hemiMult: 0.72,
+    fogColorMult: 0.78, fogNearMult: 0.55, fogFarMult: 0.5, ambientDim: 0.8,
+    cloudColorMult: 0.55, cloudOpacityMult: 1.6, reflectorMult: 1.6,
+    headlights: false, rain: true,
+  },
+};
+
 export interface ThemeDef {
   skyTop: number;
   skyMid: number;
@@ -78,6 +132,7 @@ export interface TrackDef {
   accent: number;
   accentName: string;
   theme: ThemeId;
+  variant?: TrackVariant;
   points: ControlPoint[];
   checkpoints: CheckpointDef[];
   boosts: BoostDef[];

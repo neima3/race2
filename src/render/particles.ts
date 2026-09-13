@@ -199,3 +199,81 @@ export class ParticleSystem {
     (geo.getAttribute('size') as THREE.BufferAttribute).needsUpdate = true;
   }
 }
+
+const RAIN_BOX = 72;
+const RAIN_HEIGHT = 36;
+const RAIN_FALL = 24;
+const RAIN_WIND = 4.5;
+const RAIN_STREAK = 0.55;
+
+export class RainSystem {
+  readonly lines: THREE.LineSegments;
+  private xs: Float32Array;
+  private ys: Float32Array;
+  private zs: Float32Array;
+  private linePos: Float32Array;
+  private maxCount: number;
+  private count = 0;
+  private needsSeed = false;
+
+  constructor(maxCount: number) {
+    this.maxCount = maxCount;
+    this.xs = new Float32Array(maxCount);
+    this.ys = new Float32Array(maxCount);
+    this.zs = new Float32Array(maxCount);
+    this.linePos = new Float32Array(maxCount * 6);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.linePos, 3));
+    geo.setDrawRange(0, 0);
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xaebdd4,
+      transparent: true,
+      opacity: 0.34,
+      depthWrite: false,
+    });
+    this.lines = new THREE.LineSegments(geo, mat);
+    this.lines.frustumCulled = false;
+    this.lines.visible = false;
+  }
+
+  setCount(n: number): void {
+    this.count = Math.min(n, this.maxCount);
+    this.lines.geometry.setDrawRange(0, this.count * 2);
+    this.needsSeed = true;
+  }
+
+  update(dt: number, cam: THREE.Vector3): void {
+    const half = RAIN_BOX / 2;
+    const yMin = cam.y - 6;
+    if (this.needsSeed) {
+      this.needsSeed = false;
+      for (let i = 0; i < this.count; i++) {
+        this.xs[i] = cam.x + (Math.random() - 0.5) * RAIN_BOX;
+        this.ys[i] = yMin + Math.random() * RAIN_HEIGHT;
+        this.zs[i] = cam.z + (Math.random() - 0.5) * RAIN_BOX;
+      }
+    }
+    for (let i = 0; i < this.count; i++) {
+      let x = this.xs[i] - RAIN_WIND * dt;
+      let y = this.ys[i] - RAIN_FALL * dt;
+      const z = this.zs[i];
+      if (y < yMin) y += RAIN_HEIGHT;
+      this.xs[i] = x;
+      this.ys[i] = y;
+      let rx = x - cam.x;
+      rx -= Math.floor(rx / RAIN_BOX) * RAIN_BOX;
+      let rz = z - cam.z;
+      rz -= Math.floor(rz / RAIN_BOX) * RAIN_BOX;
+      x = cam.x - half + rx;
+      const wz = cam.z - half + rz;
+      const o = i * 6;
+      this.linePos[o] = x;
+      this.linePos[o + 1] = y;
+      this.linePos[o + 2] = wz;
+      this.linePos[o + 3] = x + RAIN_WIND * 0.02;
+      this.linePos[o + 4] = y + RAIN_STREAK;
+      this.linePos[o + 5] = wz;
+    }
+    (this.lines.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+  }
+}

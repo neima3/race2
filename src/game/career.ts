@@ -1,4 +1,4 @@
-import { TRACKS, type TrackDef } from '../track/defs';
+import { TRACKS, type TrackDef, type TrackVariant } from '../track/defs';
 import { pickLineup, PLAYER_NAME, type RivalPreset, type RivalTier, type Standing } from './rivals';
 import type { SaveManager, CupRun, CupRunEntry, TrophyKind } from '../core/save';
 
@@ -11,6 +11,7 @@ export interface CupDef {
   accentName: string;
   tiers: RivalTier[];
   trackIds: string[];
+  variants?: TrackVariant[];
 }
 
 export const CUP_POINTS = [25, 18, 15, 12];
@@ -26,6 +27,7 @@ export const CUPS: CupDef[] = [
     accentName: '#ffb52e',
     tiers: ['easy', 'easy', 'mid'],
     trackIds: ['sunrise-sprint', 'canyon-twist', 'dune-rush', 'gauntlet-ii'],
+    variants: ['day', 'dusk', 'day', 'dusk'],
   },
   {
     id: 'street-cup',
@@ -36,6 +38,7 @@ export const CUPS: CupDef[] = [
     accentName: '#29e6ff',
     tiers: ['mid', 'mid', 'mid'],
     trackIds: ['sky-loop', 'serpents-tail', 'twilight-gauntlet', 'volt-alley'],
+    variants: ['night', 'rain', 'day', 'night'],
   },
   {
     id: 'gauntlet-cup',
@@ -46,6 +49,7 @@ export const CUPS: CupDef[] = [
     accentName: '#b44dff',
     tiers: ['mid', 'mid', 'pro'],
     trackIds: ['grand-gauntlet', 'neon-vertical', 'neon-circuit', 'ring-runner'],
+    variants: ['dusk', 'night', 'rain', 'day'],
   },
 ];
 
@@ -66,6 +70,10 @@ export function cupRaceTrack(cup: CupDef, raceIndex: number): TrackDef {
 
 export function cupLineup(cup: CupDef, raceIndex: number): RivalPreset[] {
   return pickLineup(cup.trackIds[raceIndex], raceIndex + 1, cup.tiers);
+}
+
+export function cupRaceVariant(cup: CupDef, raceIndex: number): TrackVariant {
+  return cup.variants?.[Math.max(0, Math.min((cup.variants.length ?? 0) - 1, raceIndex))] ?? 'day';
 }
 
 function hasMedal(save: SaveManager, t: TrackDef): boolean {

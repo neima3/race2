@@ -25,7 +25,7 @@ export const PAINTS: { name: string; color: number }[] = [
   { name: 'Copper', color: 0xd78a4a },
 ];
 
-export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarBodyStyle = 'standard'): CarVisual {
+export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarBodyStyle = 'standard', headlights = false): CarVisual {
   const group = new THREE.Group();
   const bodyGroup = new THREE.Group();
   group.add(bodyGroup);
@@ -187,6 +187,17 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarB
 
   let wheelSpin = 0;
   let squashSpring = { v: 0, x: 0 };
+
+  if (headlights && !ghost) {
+    const spot = new THREE.SpotLight(0xf2f6ff, 340, 85, 0.48, 0.6, 1.55);
+    spot.position.set(0, 0.85, 1.7);
+    spot.castShadow = false;
+    const target = new THREE.Object3D();
+    target.position.set(0, -0.6, 26);
+    group.add(target);
+    spot.target = target;
+    group.add(spot);
+  }
 
   return {
     group,

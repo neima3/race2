@@ -4,7 +4,7 @@ import { InputManager } from './core/input';
 import { SaveManager } from './core/save';
 import { AudioEngine } from './core/audio';
 import { TrackCurve } from './track/curve';
-import { TRACKS, THEMES, type TrackDef } from './track/defs';
+import { TRACKS, THEMES, VARIANTS, type TrackDef, type TrackVariant } from './track/defs';
 
 function curveLen(def: TrackDef): number {
   return new TrackCurve(def.points, true, 6).length;
@@ -21,12 +21,12 @@ import { buildTrackProps } from './render/props';
 import { autopilotDrive } from './systems/autopilot';
 import { el } from './ui/common';
 import { buildEnvironment, type Environment } from './render/environment';
-import { ParticleSystem } from './render/particles';
+import { ParticleSystem, RainSystem } from './render/particles';
 import { CameraRig } from './render/camera';
 import { RaceController, type RaceEvents } from './game/race';
 import { RivalManager, DEFAULT_RIVAL_LAPS, type RivalMode, type Standing, type RivalPreset } from './game/rivals';
-import { computeOnSlick, moverOverlap, applyMoverScrub } from './game/rules';
-import { cupRaceTrack, cupLineup, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
+import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
+import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
 import type { TrophyKind } from './core/save';
 import { HUD } from './ui/hud';
 import { MenuManager } from './ui/menus';
@@ -36,6 +36,10 @@ type AppState = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished' | 'repla
 
 const kmh = 3.6;
 const EMPTY_DOTS: { x: number; z: number; paint: number }[] = [];
+
+function parseVariantParam(v: string | null): TrackVariant | null {
+  return v === 'day' || v === 'dusk' || v === 'night' || v === 'rain' ? v : null;
+}
 
 class Game {
   private renderer: THREE.WebGLRenderer;
@@ -70,6 +74,9 @@ class Game {
   private mapAcc = 0;
   private moverSnap: { dist: number; lat: number }[] = [];
   private track: TrackDef = TRACKS[0];
+  private urlVariant: TrackVariant | null = parseVariantParam(new URLSearchParams(window.location.search).get('variant'));
+  private variant: TrackVariant = 'day';
+  private rainFx: RainSystem | null = null;
 
   private state: AppState = 'menu';
   private menuOrbitAngle = 0;
@@ -422,20 +429,39 @@ class Game {
     }
   }
 
+  private resolveVariant(def: TrackDef): TrackVariant {
+    if (this.urlVariant) return this.urlVariant;
+    if (this.careerRace) return cupRaceVariant(this.careerRace.cup, this.careerRace.raceIndex);
+    return def.variant ?? 'day';
+  }
+
   private loadTrackIntoScene(def: TrackDef): void {
     this.clearTrackScene();
     this.track = def;
     const curve = new TrackCurve(def.points, true);
     this.curve = curve;
+    const variant = this.resolveVariant(def);
+    this.variant = variant;
 
-    this.environment = buildEnvironment(this.scene, THEMES[def.theme], this.quality, curve);
+    this.environment = buildEnvironment(this.scene, THEMES[def.theme], this.quality, curve, variant);
     this.trackGroup = new THREE.Group();
     this.scene.add(this.trackGroup);
     this.scene.add(this.particles.points);
 
-    this.meshes = buildTrackMeshes(curve, def);
+    this.meshes = buildTrackMeshes(curve, def, variant);
     this.trackGroup.add(this.meshes.group);
     this.trackGroup.add(buildTrackProps(curve, def.theme, this.quality));
+
+    if (VARIANTS[variant].rain) {
+      if (!this.rainFx) {
+        this.rainFx = new RainSystem(950);
+        this.scene.add(this.rainFx.lines);
+      }
+      this.rainFx.lines.visible = true;
+      this.rainFx.setCount(this.quality === 'low' ? 220 : this.quality === 'medium' ? 520 : 950);
+    } else if (this.rainFx) {
+      this.rainFx.lines.visible = false;
+    }
 
     const blobCanvas = document.createElement('canvas');
     blobCanvas.width = 64;
@@ -480,7 +506,7 @@ class Game {
     this.skidMarks = new SkidMarks();
     this.trackGroup.add(this.skidMarks.mesh);
 
-    this.carVisual = buildCarVisual(this.save.profile.paint, false, this.save.profile.body);
+    this.carVisual = buildCarVisual(this.save.profile.paint, false, this.save.profile.body, VARIANTS[variant].headlights);
     this.carVisual.group.traverse((o) => {
       if (o instanceof THREE.Mesh) o.castShadow = this.quality !== 'low';
     });
@@ -495,7 +521,8 @@ class Game {
       payload?: RaceEvents[K]
     ) => this.onRaceEvent(ev, payload));
 
-    this.rivals = new RivalManager(curve, def, this.trackGroup, this.quality !== 'low', this.rivalLineup ?? undefined);
+    this.rivals = new RivalManager(curve, def, this.trackGroup, this.quality !== 'low', this.rivalLineup ?? undefined, { night: VARIANTS[variant].headlights });
+    this.rivals.rain = VARIANTS[variant].rain;
     this.rivalsBuiltWith = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
 
     this.rig.snapBehind(this.car.state);
@@ -508,7 +535,7 @@ class Game {
     this.hudAcc = 0;
     this.mapAcc = 0;
     const lineupSig = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
-    if (def.id !== this.track.id || (this.rivalMode && lineupSig !== this.rivalsBuiltWith)) {
+    if (def.id !== this.track.id || (this.rivalMode && lineupSig !== this.rivalsBuiltWith) || this.resolveVariant(def) !== this.variant) {
       this.loadTrackIntoScene(def);
     }
     this.hud.setMinimapTrack(this.curve!, def.accent);
@@ -900,6 +927,7 @@ class Game {
       }
       this.environment?.update(this.rig.camera.position);
       this.environment?.animate(now / 1000, dt);
+      if (this.rainFx?.lines.visible) this.rainFx.update(dt, this.rig.camera.position);
       this.renderFrame();
       return;
     }
@@ -909,6 +937,7 @@ class Game {
 
     const onSlick = computeOnSlick(this.track.slicks, this.car!.state.trackDist, this.car!.state.lateral);
     this.car!.state.onSlick = onSlick;
+    this.car!.state.surfaceGrip = surfaceGripFor(VARIANTS[this.variant].rain);
     if (onSlick !== this.wasOnSlick && Math.abs(this.car!.state.forwardSpeed) > 12) {
       this.particles.landingDust(this.car!.state.pos.clone());
       this.audio.drift();
@@ -1138,6 +1167,7 @@ class Game {
     this.rig.update(dt, s);
     this.environment?.update(this.rig.camera.position);
       this.environment?.animate(now / 1000, dt);
+    if (this.rainFx?.lines.visible) this.rainFx.update(dt, this.rig.camera.position);
     this.particles.update(dt);
     this.renderFrame();
   };
@@ -1234,6 +1264,8 @@ window.__race2 = {
       trackLen: car ? Math.round(car['curve'].length ?? 0) : 0,
       lateral: car ? +car.state.lateral.toFixed(1) : 0,
       track: game['track'].id,
+      variant: game['variant'],
+      surfaceGrip: car ? car.state.surfaceGrip : 1,
       fov: +game['rig'].camera.fov.toFixed(0),
       countdownMs: Math.round(game['race']?.countdownMs ?? -1),
       acc: +game['acc'].toFixed(4),

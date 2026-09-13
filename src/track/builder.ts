@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TrackCurve } from './curve';
-import type { TrackDef } from './defs';
+import type { TrackDef, TrackVariant } from './defs';
 
 function makeRoadTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -57,7 +57,7 @@ export interface TrackMeshes {
   movers: { mesh: THREE.Mesh; dist: number; speed: number; range: number; phase: number }[];
 }
 
-export function buildTrackMeshes(curve: TrackCurve, def: TrackDef): TrackMeshes {
+export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: TrackVariant = 'day'): TrackMeshes {
   const group = new THREE.Group();
   const frames = curve.frames;
   const n = frames.length;
@@ -107,11 +107,13 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef): TrackMeshes 
   }
 
   const roadTex = makeRoadTexture();
+  const wet = variant === 'rain';
   const roadMat = new THREE.MeshStandardMaterial({
     map: roadTex,
-    roughness: 0.82,
-    metalness: 0.05,
+    roughness: wet ? 0.34 : 0.82,
+    metalness: wet ? 0.32 : 0.05,
   });
+  if (wet) roadMat.color.set(0x8f95a2);
   const roadGeo = new THREE.BufferGeometry();
   roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   roadGeo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));

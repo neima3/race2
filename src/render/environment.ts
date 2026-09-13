@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { ThemeDef } from '../track/defs';
+import { VARIANTS, type ThemeDef, type TrackVariant } from '../track/defs';
 import type { TrackCurve } from '../track/curve';
 
 function makeSkyMaterial(theme: ThemeDef): THREE.ShaderMaterial {
@@ -12,6 +12,8 @@ function makeSkyMaterial(theme: ThemeDef): THREE.ShaderMaterial {
       horizonColor: { value: new THREE.Color(theme.skyHorizon) },
       sunColor: { value: new THREE.Color(theme.sunColor) },
       sunDir: { value: new THREE.Vector3(...theme.sunDir).normalize() },
+      sunGlow: { value: 1 },
+      starBrightness: { value: 1 },
     },
     vertexShader: `
       varying vec3 vDir;
@@ -27,17 +29,19 @@ function makeSkyMaterial(theme: ThemeDef): THREE.ShaderMaterial {
       uniform vec3 horizonColor;
       uniform vec3 sunColor;
       uniform vec3 sunDir;
+      uniform float sunGlow;
+      uniform float starBrightness;
       varying vec3 vDir;
       void main() {
         float h = normalize(vDir).y;
         vec3 col = mix(horizonColor, midColor, smoothstep(0.0, 0.18, h));
         col = mix(col, topColor, smoothstep(0.18, 0.65, h));
         float sunAmt = max(dot(normalize(vDir), sunDir), 0.0);
-        col += sunColor * pow(sunAmt, 350.0) * 1.6;
-        col += sunColor * pow(sunAmt, 18.0) * 0.32;
-        col += vec3(1.0, 0.75, 0.45) * pow(sunAmt, 3.5) * 0.12;
+        col += sunColor * pow(sunAmt, 350.0) * 1.6 * sunGlow;
+        col += sunColor * pow(sunAmt, 18.0) * 0.32 * sunGlow;
+        col += vec3(1.0, 0.75, 0.45) * pow(sunAmt, 3.5) * 0.12 * sunGlow;
         float stars = step(0.9993, fract(sin(dot(floor(vDir * 260.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453));
-        col += stars * smoothstep(0.05, 0.4, h) * 0.55;
+        col += stars * smoothstep(0.05, 0.4, h) * 0.55 * starBrightness;
         gl_FragColor = vec4(col, 1.0);
       }
     `,
@@ -83,15 +87,18 @@ export interface Environment {
   group: THREE.Group;
   sunLight: THREE.DirectionalLight;
   hemiLight: THREE.HemisphereLight;
+  readonly variant: TrackVariant;
+  applyVariant(variant: TrackVariant): void;
   update(cameraPos: THREE.Vector3): void;
   animate(t: number, dt: number): void;
 }
 
-export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: 'low' | 'medium' | 'high', curveRef: TrackCurve): Environment {
+export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: 'low' | 'medium' | 'high', curveRef: TrackCurve, variant: TrackVariant = 'day'): Environment {
   const group = new THREE.Group();
   scene.add(group);
 
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(4200, 32, 18), makeSkyMaterial(theme));
+  const skyMat = makeSkyMaterial(theme);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(4200, 32, 18), skyMat);
   group.add(sky);
 
   scene.fog = new THREE.Fog(theme.fogColor, theme.fogNear, theme.fogFar);
@@ -116,7 +123,27 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
   const hemiLight = new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, 0.85);
   scene.add(hemiLight);
 
-  let groundMat: THREE.Material;
+  const base = {
+    skyTop: new THREE.Color(theme.skyTop),
+    skyMid: new THREE.Color(theme.skyMid),
+    skyHorizon: new THREE.Color(theme.skyHorizon),
+    sun: new THREE.Color(theme.sunColor),
+    sunDir: new THREE.Vector3(...theme.sunDir).normalize(),
+    fog: new THREE.Color(theme.fogColor),
+    fogNear: theme.fogNear,
+    fogFar: theme.fogFar,
+    sunIntensity: theme.sunIntensity,
+    hemiIntensity: 0.85,
+    ground: new THREE.Color(theme.groundColor),
+    mesa: new THREE.Color(theme.mesaColor),
+    mesaFar: new THREE.Color(theme.mesaFarColor),
+    rock: new THREE.Color(theme.rockColor),
+    cloud: new THREE.Color(theme.cloudColor),
+    cloudOpacity: theme.cloudOpacity,
+    reflector: new THREE.Color(theme.hemiSky).lerp(new THREE.Color(0xffffff), 0.5),
+  };
+
+  let groundMat: THREE.MeshStandardMaterial;
   if (theme.ambientSound === 'synth') {
     const gc = document.createElement('canvas');
     gc.width = 256;
@@ -276,9 +303,10 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
 
   let clock = 0;
 
+  const reflectorMat = new THREE.MeshBasicMaterial({ color: base.reflector.clone() });
   const reflectors = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.12, 6, 5),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color(theme.hemiSky).lerp(new THREE.Color(0xffffff), 0.5) }),
+    reflectorMat,
     260,
   );
   reflectors.visible = false;
@@ -336,6 +364,47 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     group.add(water);
   }
 
+  let currentVariant: TrackVariant = 'day';
+  const scratch = new THREE.Color();
+
+  const applyVariant = (v: TrackVariant): void => {
+    const d = VARIANTS[v];
+    currentVariant = v;
+    const u = skyMat.uniforms;
+    u.topColor.value.copy(scratch.copy(base.skyTop).lerp(new THREE.Color(d.skyTint), d.skyTintAmt));
+    u.midColor.value.copy(scratch.copy(base.skyMid).lerp(new THREE.Color(d.skyTint), d.skyTintAmt));
+    u.horizonColor.value.copy(scratch.copy(base.skyHorizon).lerp(new THREE.Color(d.skyTint), d.skyTintAmt));
+    u.sunColor.value.copy(scratch.copy(base.sun).lerp(new THREE.Color(d.sunTint), d.sunTintAmt));
+    const dir = base.sunDir.clone();
+    if (d.sunElev !== null) {
+      dir.y = d.sunElev;
+      dir.normalize();
+    }
+    u.sunDir.value.copy(dir);
+    u.sunGlow.value = d.sunGlow;
+    u.starBrightness.value = d.starBrightness;
+
+    sunOffset.copy(dir).multiplyScalar(460);
+    sunLight.color.copy(u.sunColor.value as THREE.Color);
+    sunLight.intensity = base.sunIntensity * d.sunIntensityMult;
+    hemiLight.intensity = base.hemiIntensity * d.hemiMult;
+
+    const fog = scene.fog as THREE.Fog;
+    fog.color.copy(scratch.copy(base.fog).multiplyScalar(d.fogColorMult));
+    fog.near = base.fogNear * d.fogNearMult;
+    fog.far = base.fogFar * d.fogFarMult;
+
+    groundMat.color.copy(scratch.copy(base.ground).multiplyScalar(d.ambientDim));
+    mesaMat.color.copy(scratch.copy(base.mesa).multiplyScalar(d.ambientDim));
+    mesaMatFar.color.copy(scratch.copy(base.mesaFar).multiplyScalar(d.ambientDim));
+    rockMat.color.copy(scratch.copy(base.rock).multiplyScalar(d.ambientDim));
+    cloudMat.color.copy(scratch.copy(base.cloud).multiplyScalar(d.cloudColorMult));
+    cloudMat.opacity = Math.min(1, base.cloudOpacity * d.cloudOpacityMult);
+    reflectorMat.color.copy(scratch.copy(base.reflector).multiplyScalar(d.reflectorMult));
+  };
+
+  applyVariant(variant);
+
   let clock2 = 0;
   const update = (cameraPos: THREE.Vector3): void => {
     sky.position.copy(cameraPos);
@@ -373,5 +442,15 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     });
   };
 
-  return { group, sunLight, hemiLight, update, animate };
+  return {
+    group,
+    sunLight,
+    hemiLight,
+    get variant() {
+      return currentVariant;
+    },
+    applyVariant,
+    update,
+    animate,
+  };
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { TrackCurve } from '../track/curve';
+import { combinedGripMultiplier } from '../game/rules';
 
 export interface CarTuning {
   maxSpeed: number;
@@ -57,6 +58,7 @@ export interface CarState {
   boostTime: number;
   wallHit: number;
   onSlick: boolean;
+  surfaceGrip: number;
   landedAt: number;
 }
 
@@ -120,6 +122,7 @@ export class CarPhysics {
       boostTime: 0,
       wallHit: 0,
       onSlick: false,
+      surfaceGrip: 1,
       landedAt: -10,
     };
   }
@@ -227,7 +230,7 @@ export class CarPhysics {
       vF += slopeAccel * dt;
 
       const gripBase = drift ? t.driftGrip : t.grip;
-      const grip = s.onSlick ? gripBase * 0.45 : gripBase;
+      const grip = gripBase * combinedGripMultiplier(s.onSlick, s.surfaceGrip);
       const gripMult = s.offroad ? t.offroadGrip / t.grip : 1;
       vL *= Math.max(0, 1 - grip * gripMult * dt);
 
@@ -236,7 +239,7 @@ export class CarPhysics {
       if (s.boostTime > 0 && vF < t.maxSpeed * 1.18) vF += 26 * dt;
 
       const speed = Math.abs(vF);
-      const yawCapRaw = Math.min(t.maxYawRate, 38 / Math.max(speed, 3));
+      const yawCapRaw = Math.min(t.maxYawRate, (38 * s.surfaceGrip) / Math.max(speed, 3));
       const yawCap = yawCapRaw * (s.onSlick ? 0.75 : 1);
       const steerAuth = controlsEnabled ? steer : 0;
       let targetYaw = -steerAuth * yawCap;

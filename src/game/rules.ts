@@ -1,6 +1,18 @@
 import type { CarPhysics } from '../physics/car';
 import type { TrackDef } from '../track/defs';
 
+export const RAIN_GRIP_MULT = 0.82;
+export const SURFACE_GRIP_FLOOR = 0.32;
+export const SLICK_GRIP_MULT = 0.45;
+
+export function surfaceGripFor(rain: boolean): number {
+  return rain ? RAIN_GRIP_MULT : 1;
+}
+
+export function combinedGripMultiplier(onSlick: boolean, surfaceGrip: number): number {
+  return Math.max(SURFACE_GRIP_FLOOR, (onSlick ? SLICK_GRIP_MULT : 1) * surfaceGrip);
+}
+
 export interface PadState {
   lastBoostIndex: number;
   boostCooldown: number;

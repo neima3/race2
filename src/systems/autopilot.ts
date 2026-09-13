@@ -99,7 +99,7 @@ export function autopilotDrive(
     }
   }
   const paceHugging = skill.pace !== undefined;
-  const targetSpeed = Math.min(58, Math.max(14, Math.sqrt(38 / Math.max(maxCurv, 1e-4)))) * (skill.pace ?? 1);
+  const targetSpeed = Math.min(58, Math.max(14, Math.sqrt((38 * s.surfaceGrip) / Math.max(maxCurv, 1e-4)))) * (skill.pace ?? 1);
   const brakeAt = paceHugging ? 1.03 : 1.1;
   const liftAt = paceHugging ? 1.0 : 0.95;
   let throttle: number;

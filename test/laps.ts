@@ -6,6 +6,7 @@ import { RaceController } from '../src/game/race';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
 import { serializeGhost } from '../src/game/race';
+import { RAIN_GRIP_MULT, SURFACE_GRIP_FLOOR, combinedGripMultiplier } from '../src/game/rules';
 
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
   getItem: () => null,
@@ -154,6 +155,112 @@ let bodyCheckFails = 0;
   }
 }
 
+let rainCheckFails = 0;
+if (process.argv.includes('--rain')) {
+  const def = TRACKS.find((t) => t.id === 'volt-alley')!;
+  const curve = new TrackCurve(def.points, true);
+
+  const combined = combinedGripMultiplier(true, RAIN_GRIP_MULT);
+  const clampOk = combined >= SURFACE_GRIP_FLOOR && Math.abs(combined - RAIN_GRIP_MULT * 0.45) < 1e-9;
+  if (clampOk) {
+    console.log(`PASS rain: combined grip rain(${RAIN_GRIP_MULT}) x slick(0.45) = ${combined.toFixed(3)} >= floor ${SURFACE_GRIP_FLOOR}`);
+  } else {
+    rainCheckFails++;
+    console.log(`FAIL rain: combined grip ${combined.toFixed(3)} (expected ${RAIN_GRIP_MULT * 0.45} clamped at >= ${SURFACE_GRIP_FLOOR})`);
+  }
+
+  const simDt = 1 / 120;
+  const dry = new CarPhysics(curve, bodyTuning);
+  const wet = new CarPhysics(curve, bodyTuning);
+  dry.placeAt(40, 0);
+  wet.placeAt(40, 0);
+  wet.state.surfaceGrip = RAIN_GRIP_MULT;
+  const f0 = curve.frames[dry.state.trackIndex];
+  dry.state.vel.addScaledVector(f0.binormal, 6);
+  wet.state.vel.addScaledVector(f0.binormal, 6);
+  for (let i = 0; i < 12; i++) {
+    dry.step(simDt, 0, 1, 0, false, true);
+    wet.step(simDt, 0, 1, 0, false, true);
+  }
+  const dryLatVel = dry.state.vel.dot(curve.frames[dry.state.trackIndex].binormal);
+  const wetLatVel = wet.state.vel.dot(curve.frames[wet.state.trackIndex].binormal);
+  const gripOk = wetLatVel > dryLatVel * 1.05;
+  if (gripOk) {
+    console.log(`PASS rain: wet residual lateral vel ${wetLatVel.toFixed(2)} > dry ${dryLatVel.toFixed(2)} (grip multiplier active)`);
+  } else {
+    rainCheckFails++;
+    console.log(`FAIL rain: wet residual lateral vel ${wetLatVel.toFixed(2)} vs dry ${dryLatVel.toFixed(2)} (expected wet > dry x 1.05)`);
+  }
+
+  const steerCar = new CarPhysics(curve, bodyTuning);
+  steerCar.state.surfaceGrip = RAIN_GRIP_MULT;
+  steerCar.placeAt(30, 0);
+  for (let i = 0; i < 90; i++) steerCar.step(simDt, -1, 1, 0, false, true);
+  const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(steerCar.state.quat);
+  const headingRight = fwd.dot(curve.frames[steerCar.state.trackIndex].binormal);
+  const steerOk = headingRight < -0.02 && steerCar.state.lateral < -0.1;
+  if (steerOk) {
+    console.log(`PASS rain: steering-direction (heading·right=${headingRight.toFixed(3)}, lateral ${steerCar.state.lateral.toFixed(2)})`);
+  } else {
+    rainCheckFails++;
+    console.log(`FAIL rain: steering-direction heading·right=${headingRight.toFixed(3)} lateral=${steerCar.state.lateral.toFixed(2)}`);
+  }
+
+  const car = new CarPhysics(curve, bodyTuning);
+  const save = new SaveManager();
+  const race = new RaceController(car, curve, def, save, () => {});
+  race.start();
+  car.placeAtFrame(0, 8);
+  car.state.surfaceGrip = RAIN_GRIP_MULT;
+  race.countdownMs = 1;
+  const ap = { smooth: 0 };
+  let wall = 0;
+  let finished = false;
+  let pendingRespawn = false;
+  let recover = 0;
+  let recoverDir = 1;
+  let stuck = 0;
+  let input = { steer: 0, throttle: 0, brake: 0, drift: false, lookBack: false, respawn: false, restart: false, cameraToggle: false, pause: false, photo: false };
+  while (wall < 150000) {
+    if (pendingRespawn) {
+      race.respawnAtCheckpoint();
+      pendingRespawn = false;
+    }
+    race.update(simDt * 1000, input);
+    wall += simDt * 1000;
+    const speedNow = car.state.speed;
+    const latNow = car.state.lateral;
+    if (race.phase === 'finished') {
+      finished = true;
+      break;
+    }
+    if (recover > 0) {
+      recover -= 1;
+      input = { steer: recoverDir, throttle: 0, brake: 1, drift: false, lookBack: false, respawn: false, restart: false, cameraToggle: false, pause: false, photo: false };
+      if (recover === 0) ap.smooth = 0;
+      continue;
+    }
+    const r = autopilotDrive(car, curve, simDt, ap);
+    pendingRespawn = !!r.respawn;
+    if (speedNow < 2.5 && Math.abs(latNow) > 3) stuck++;
+    else stuck = 0;
+    if (stuck > 40) {
+      stuck = 0;
+      recover = 55;
+      recoverDir = -(Math.sign(latNow) || 1);
+    }
+    input = { steer: r.respawn ? 0 : r.steer, throttle: r.respawn ? 0 : r.throttle, brake: r.respawn ? 0 : r.brake, drift: false, lookBack: false, respawn: false, restart: false, cameraToggle: false, pause: false, photo: false };
+  }
+  const timeMs = Math.round(race.elapsedMs);
+  const persistOk = car.state.surfaceGrip === RAIN_GRIP_MULT;
+  if (finished && persistOk) {
+    console.log(`PASS rain volt-alley: ${(timeMs / 1000).toFixed(2)}s (surfaceGrip ${RAIN_GRIP_MULT} persisted through respawns, rain x slick zones stacked)`);
+  } else {
+    rainCheckFails++;
+    console.log(`FAIL rain volt-alley: ${finished ? 'finished' : 'DID NOT FINISH'} (surfaceGrip now ${car.state.surfaceGrip})`);
+  }
+}
+
 if (process.argv.includes('--emit-ghosts')) {
   const entries = results
     .filter((r) => r.ghost)
@@ -162,4 +269,4 @@ if (process.argv.includes('--emit-ghosts')) {
   (await import('node:fs')).writeFileSync('src/track/devghosts.gen.ts', out);
   console.log('dev ghosts written to src/track/devghosts.gen.ts');
 }
-if (failed.length > strictFails.length || bodyCheckFails > 0) process.exit(1);
+if (failed.length > strictFails.length || bodyCheckFails > 0 || rainCheckFails > 0) process.exit(1);
