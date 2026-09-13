@@ -199,9 +199,10 @@ export class HUD {
       const row = this.standRows[i];
       row.pos.textContent = String(i + 1);
       row.name.textContent = s.name;
-      row.gap.textContent = i === 0 ? '' : `+${Math.round(s.gapMeters)}m`;
+      row.gap.textContent = s.eliminated ? 'OUT' : i === 0 ? '' : `+${Math.round(s.gapMeters)}m`;
       row.dot.style.background = cssHex(s.paint);
       row.root.classList.toggle('you', s.isPlayer);
+      row.root.classList.toggle('out', s.eliminated === true);
       this.standingsEl.append(row.root);
     }
   }

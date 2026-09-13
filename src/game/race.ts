@@ -23,6 +23,7 @@ export interface FinishResult {
   previousBest: number | null;
   splitDetail: { splitMs: number; deltaMs: number | null }[];
   isRecordLapCount?: number;
+  knockout?: { position: number };
 }
 
 export interface RaceEvents {
@@ -383,6 +384,22 @@ export class RaceController {
       })(),
     }));
     this.emit('finish', { timeMs, medal, newBest, previousBest: prevBest, splitDetail });
+  }
+
+  finishKnockedOut(position: number): void {
+    if (this.phase !== 'racing') return;
+    this.phase = 'finished';
+    this.controlsEnabled = false;
+    const timeMs = Math.round(this.elapsedMs);
+    const prevBest = this.save.trackSave(this.def.id).bestTimeMs;
+    const splitDetail = this.checkpointSplits.map((splitMs, i) => ({
+      splitMs,
+      deltaMs: (() => {
+        const gt = this.ghostCpSplits[i];
+        return gt !== undefined && gt >= 0 ? splitMs - gt : null;
+      })(),
+    }));
+    this.emit('finish', { timeMs, medal: 'none', newBest: false, previousBest: prevBest, splitDetail, knockout: { position } });
   }
 
   ghostSampleAt(elapsedMs: number): { pos: THREE.Vector3; quat: THREE.Quaternion } | null {

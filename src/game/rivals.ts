@@ -89,6 +89,7 @@ const TIER_TUNING: Record<RivalTier, { accel: number; maxSpeed: number }> = {
 };
 
 export const DEFAULT_RIVAL_LAPS = 2;
+export const KNOCKOUT_LAPS = 3;
 export const PLAYER_NAME = 'YOU';
 
 const RUBBER_BAND = 0.08;
@@ -110,6 +111,7 @@ export interface RivalTelemetry {
   tier: RivalTier;
   paint: number;
   finished: boolean;
+  eliminated: boolean;
   lapsDone: number;
   totalProgress: number;
   speedMs: number;
@@ -126,6 +128,16 @@ export interface Standing {
   paint: number;
   finished: boolean;
   finishTimeMs: number | null;
+  eliminated?: boolean;
+}
+
+export interface KnockoutEvent {
+  name: string;
+  isPlayer: boolean;
+  paint: number;
+  position: number;
+  survivors: number;
+  pos: THREE.Vector3;
 }
 
 export interface MinimapDot {
@@ -158,6 +170,9 @@ interface Rival {
   finishRank: number;
   finishTimeMs: number | null;
   band: number;
+  eliminated: boolean;
+  koPos: number;
+  lapCrossed: boolean;
 }
 
 const tmpPos = new THREE.Vector3();
@@ -168,6 +183,8 @@ export class RivalManager {
   readonly rivals: Rival[] = [];
   totalLaps = DEFAULT_RIVAL_LAPS;
   rain = false;
+  knockout = false;
+  onKnockout: (ev: KnockoutEvent) => void = () => {};
   private curve: TrackCurve;
   private def: TrackDef;
   private frozen: Standing[] | null = null;
@@ -176,6 +193,9 @@ export class RivalManager {
   private playerPaint = 0x29e6ff;
   private playerFinished = false;
   private playerFinishMs: number | null = null;
+  private playerOut = false;
+  private playerKoPos = 0;
+  private koLapsFired = 0;
   private dotBuf: MinimapDot[] = [];
 
   constructor(curve: TrackCurve, def: TrackDef, parent: THREE.Group, shadows: boolean, lineup: RivalPreset[] = pickLineup(def.id), opts: { night?: boolean } = {}) {
@@ -210,6 +230,9 @@ export class RivalManager {
         finishRank: 0,
         finishTimeMs: null,
         band: 0,
+        eliminated: false,
+        koPos: 0,
+        lapCrossed: false,
       });
     }
   }
@@ -228,6 +251,9 @@ export class RivalManager {
     this.raceClockMs = 0;
     this.playerFinished = false;
     this.playerFinishMs = null;
+    this.playerOut = false;
+    this.playerKoPos = 0;
+    this.koLapsFired = 0;
     for (let k = 0; k < this.rivals.length; k++) {
       const r = this.rivals[k];
       const slot = this.gridSlot(k);
@@ -246,6 +272,10 @@ export class RivalManager {
       r.finishTimeMs = null;
       r.band = 0;
       r.ap.smooth = 0;
+      r.eliminated = false;
+      r.koPos = 0;
+      r.lapCrossed = false;
+      r.visual.group.visible = true;
       resetPads(r.pads);
     }
   }
@@ -254,10 +284,12 @@ export class RivalManager {
     for (const r of this.rivals) r.visual.group.visible = on;
   }
 
-  update(dtMs: number, mode: RivalMode, playerProgress: number, movers: MoverSnapshot[] | null = null): void {
+  update(dtMs: number, mode: RivalMode, playerProgress: number, movers: MoverSnapshot[] | null = null, playerLapEff = 0): void {
     const dt = dtMs / 1000;
     if (mode === 'racing') this.raceClockMs += dtMs;
+    for (const r of this.rivals) r.lapCrossed = false;
     for (const r of this.rivals) {
+      if (r.eliminated) continue;
       const car = r.car;
       if (mode === 'countdown') {
         car.step(dt, 0, 0, 0, false, false);
@@ -309,6 +341,48 @@ export class RivalManager {
         }
       }
     }
+    if (this.knockout && mode === 'racing' && !this.playerOut) {
+      let crossingEff = playerLapEff > this.koLapsFired ? playerLapEff : 0;
+      for (const r of this.rivals) {
+        if (!r.eliminated && r.lapCrossed) {
+          const eff = r.lapOffset + r.lapsDone;
+          if (eff > crossingEff) crossingEff = eff;
+        }
+      }
+      while (crossingEff > this.koLapsFired && !this.playerOut) {
+        this.koLapsFired++;
+        this.processKnockoutBoundary(playerProgress);
+      }
+    }
+  }
+
+  /**
+   * Knockout: fires once per completed racing lap (lap-line boundary). The last-place
+   * car by totalProgress among non-eliminated cars is eliminated while more than 2
+   * survivors remain. A rival is despawned (visual hidden, sim skipped from now on);
+   * the player triggers the KNOCKED OUT race end via the onKnockout callback.
+   */
+  private processKnockoutBoundary(playerProgress: number): void {
+    const aliveRivals = this.rivals.filter((r) => !r.eliminated);
+    const aliveCount = aliveRivals.length + (this.playerOut ? 0 : 1);
+    if (aliveCount <= 2) return;
+    const order = this.standings(playerProgress).filter((s) => !s.eliminated);
+    const last = order[order.length - 1];
+    if (!last) return;
+    const position = order.length;
+    const survivors = aliveCount - 1;
+    if (last.isPlayer) {
+      this.playerOut = true;
+      this.playerKoPos = position;
+      this.onKnockout({ name: PLAYER_NAME, isPlayer: true, paint: this.playerPaint, position, survivors, pos: this.rivals[0].car.state.pos.clone() });
+    } else {
+      const r = aliveRivals.find((x) => x.skill.name === last.name);
+      if (!r) return;
+      r.eliminated = true;
+      r.koPos = position;
+      r.visual.group.visible = false;
+      this.onKnockout({ name: r.skill.name, isPlayer: false, paint: r.skill.paint, position, survivors, pos: r.car.state.pos.clone() });
+    }
   }
 
   private respawnRival(r: Rival): void {
@@ -336,24 +410,25 @@ export class RivalManager {
       if (prev < target && curr >= target && curr - prev < len * 0.5) {
         r.nextCheckpoint++;
       }
-    } else if (crossedFinish) {
-      const cpsDone = r.nextCheckpoint >= cps.length;
-      const rollout = r.lapsDone === 0 && r.lapOffset === -1 && r.nextCheckpoint === 0;
-      if (cpsDone || rollout) {
-        const progressValid = rollout || r.maxProgress > len * 0.92;
-        if (progressValid) {
-          r.lapsDone++;
-          r.nextCheckpoint = 0;
-          r.maxProgress = curr;
-          r.pads.lastBoostIndex = -1;
-          if (r.lapOffset + r.lapsDone >= this.totalLaps) {
-            r.finished = true;
-            r.finishRank = ++this.finishCounter;
-            r.finishTimeMs = this.raceClockMs;
+      } else if (crossedFinish) {
+        const cpsDone = r.nextCheckpoint >= cps.length;
+        const rollout = r.lapsDone === 0 && r.lapOffset === -1 && r.nextCheckpoint === 0;
+        if (cpsDone || rollout) {
+          const progressValid = rollout || r.maxProgress > len * 0.92;
+          if (progressValid) {
+            r.lapsDone++;
+            if (this.knockout && r.lapOffset + r.lapsDone >= 1) r.lapCrossed = true;
+            r.nextCheckpoint = 0;
+            r.maxProgress = curr;
+            r.pads.lastBoostIndex = -1;
+            if (r.lapOffset + r.lapsDone >= this.totalLaps) {
+              r.finished = true;
+              r.finishRank = ++this.finishCounter;
+              r.finishTimeMs = this.raceClockMs;
+            }
           }
         }
       }
-    }
     r.prevDist = curr;
     r.totalProgress = (r.lapOffset + r.lapsDone) * len + curr;
   }
@@ -367,18 +442,21 @@ export class RivalManager {
   }
 
   dotPositions(): MinimapDot[] {
+    let n = 0;
     for (let i = 0; i < this.rivals.length; i++) {
       const r = this.rivals[i];
-      const d = this.dotBuf[i];
+      if (r.eliminated) continue;
+      const d = this.dotBuf[n];
       if (d) {
         d.x = r.car.state.pos.x;
         d.z = r.car.state.pos.z;
         d.paint = r.skill.paint;
       } else {
-        this.dotBuf[i] = { x: r.car.state.pos.x, z: r.car.state.pos.z, paint: r.skill.paint };
+        this.dotBuf[n] = { x: r.car.state.pos.x, z: r.car.state.pos.z, paint: r.skill.paint };
       }
+      n++;
     }
-    this.dotBuf.length = this.rivals.length;
+    this.dotBuf.length = n;
     return this.dotBuf;
   }
 
@@ -389,7 +467,13 @@ export class RivalManager {
     const list: Standing[] = [];
     for (const r of this.rivals) {
       const finished = r.finished && r.finishRank > 0;
-      keys.push(finished ? Number.MAX_SAFE_INTEGER - r.finishRank : r.totalProgress);
+      keys.push(
+        r.eliminated
+          ? -1e12 + (999 - r.koPos)
+          : finished
+            ? Number.MAX_SAFE_INTEGER - r.finishRank
+            : r.totalProgress,
+      );
       list.push({
         name: r.skill.name,
         progress: finished ? finishDatum : r.totalProgress,
@@ -398,9 +482,14 @@ export class RivalManager {
         paint: r.skill.paint,
         finished: r.finished,
         finishTimeMs: r.finishTimeMs,
+        eliminated: r.eliminated,
       });
     }
-    keys.push(playerProgress);
+    keys.push(
+      this.playerOut
+        ? -1e12 + (999 - this.playerKoPos)
+        : playerProgress,
+    );
     list.push({
       name: PLAYER_NAME,
       progress: playerProgress,
@@ -409,6 +498,7 @@ export class RivalManager {
       paint: this.playerPaint,
       finished: this.playerFinished,
       finishTimeMs: this.playerFinishMs,
+      eliminated: this.playerOut,
     });
     const order = keys.map((k, i) => [k, i] as const).sort((a, b) => b[0] - a[0]);
     const ordered = order.map(([, i]) => list[i]);
@@ -432,6 +522,7 @@ export class RivalManager {
       tier: r.skill.tier,
       paint: r.skill.paint,
       finished: r.finished,
+      eliminated: r.eliminated,
       lapsDone: r.lapsDone,
       totalProgress: Math.round(r.totalProgress),
       speedMs: +r.car.state.forwardSpeed.toFixed(1),
@@ -443,6 +534,7 @@ export class RivalManager {
 
   updateVisuals(dt: number, particles: ParticleSystem | null, accent: number): void {
     for (const r of this.rivals) {
+      if (r.eliminated) continue;
       const v = r.visual;
       v.group.position.copy(r.car.state.pos);
       v.group.quaternion.copy(r.car.state.quat);

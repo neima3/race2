@@ -350,6 +350,8 @@ button {
 
 .finish-flash.splash-final { color: var(--accent-2); text-shadow: 0 0 60px rgba(255, 181, 46, 0.9), 0 4px 24px rgba(0, 0, 0, 0.5); }
 
+.finish-flash.splash-out { color: var(--danger); text-shadow: 0 0 60px rgba(255, 77, 109, 0.85), 0 4px 24px rgba(0, 0, 0, 0.5); }
+
 .medal {
   display: inline-block;
   padding: 2px 10px;
@@ -705,6 +707,8 @@ button {
 .finish-medal.banner-gold { background: rgba(255, 207, 63, 0.16); color: var(--gold); box-shadow: 0 0 40px rgba(255, 207, 63, 0.4); }
 .finish-medal.banner-silver { background: rgba(215, 222, 232, 0.14); color: var(--silver); box-shadow: 0 0 40px rgba(215, 222, 232, 0.3); }
 .finish-medal.banner-bronze { background: rgba(224, 141, 79, 0.16); color: var(--bronze); box-shadow: 0 0 40px rgba(224, 141, 79, 0.35); }
+
+.finish-medal.ko { background: rgba(255, 77, 109, 0.14); color: var(--danger); box-shadow: 0 0 40px rgba(255, 77, 109, 0.35); }
 
 @keyframes medalPop {
   0% { transform: scale(0.3); opacity: 0; }
@@ -1074,6 +1078,13 @@ button {
   box-shadow: 0 0 18px rgba(41, 230, 255, 0.4);
 }
 
+.mode-chip.knockout.on {
+  background: linear-gradient(135deg, #ff4d6d, #ff7a3d);
+  color: #1a0508;
+  border-color: transparent;
+  box-shadow: 0 0 18px rgba(255, 77, 109, 0.45);
+}
+
 .hud-driftmode {
   position: absolute;
   top: calc(150px + var(--safe-top));
@@ -1304,6 +1315,17 @@ button {
 }
 
 .standing-row.you .sr-name { color: var(--player-accent, var(--accent)); }
+
+.standing-row.out {
+  opacity: 0.42;
+  filter: saturate(0.2);
+}
+
+.standing-row.out .sr-gap {
+  color: var(--danger);
+  opacity: 1;
+  font-weight: 700;
+}
 
 .sr-pos {
   width: 13px;

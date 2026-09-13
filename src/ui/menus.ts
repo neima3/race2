@@ -17,6 +17,7 @@ function trophyLabel(t: TrophyKind): string {
 }
 
 function finishGap(s: Standing, leader: Standing): string {
+  if (s.eliminated) return 'OUT';
   if (s.finished && s.finishTimeMs != null) {
     if (leader.finished && leader.finishTimeMs != null && s !== leader) {
       return `+${((s.finishTimeMs - leader.finishTimeMs) / 1000).toFixed(1)}s`;
@@ -57,6 +58,7 @@ function starsForTime(bestMs: number | null, medals: TrackDef['medals']): number
 export class MenuManager {
   driftAttack = false;
   rivalsMode = false;
+  knockoutMode = false;
   readonly root: HTMLElement;
   onPlayTrack: (track: TrackDef) => void = () => {};
   onQuitToMenu: () => void = () => {};
@@ -157,15 +159,26 @@ export class MenuManager {
     driftChip.addEventListener('click', () => {
       this.driftAttack = !this.driftAttack;
       if (this.driftAttack) this.rivalsMode = false;
+      this.knockoutMode = false;
       this.buildTracksScreen();
     });
     const rivalsChip = el('button', 'mode-chip rivals' + (this.rivalsMode ? ' on' : ''), 'RIVALS');
     rivalsChip.addEventListener('click', () => {
       this.rivalsMode = !this.rivalsMode;
       if (this.rivalsMode) this.driftAttack = false;
+      this.knockoutMode = false;
       this.buildTracksScreen();
     });
-    right.append(driftChip, rivalsChip);
+    const knockoutChip = el('button', 'mode-chip knockout' + (this.knockoutMode ? ' on' : ''), 'KNOCKOUT');
+    knockoutChip.addEventListener('click', () => {
+      this.knockoutMode = !this.knockoutMode;
+      if (this.knockoutMode) {
+        this.driftAttack = false;
+        this.rivalsMode = false;
+      }
+      this.buildTracksScreen();
+    });
+    right.append(driftChip, rivalsChip, knockoutChip);
     right.append(el('div', 'star-total', `&#11088; ${totalStars}/48`));
     const back = el('button', 'menu-btn small', '&#8592; BACK');
     back.addEventListener('click', () => this.show('title'));
@@ -710,7 +723,9 @@ export class MenuManager {
         : '<div class="finish-medal none">P4 — NO TROPHY</div>';
     }
     const medalHtml = rivalMode
-      ? ''
+      ? result.knockout
+        ? `<div class="finish-medal ko">KNOCKED OUT &middot; P${result.knockout.position}</div>`
+        : ''
       : result.medal === 'none'
         ? '<div class="finish-medal none">NO MEDAL</div>'
         : `<div class="finish-medal banner-${result.medal}">${result.medal.toUpperCase()}</div>`;

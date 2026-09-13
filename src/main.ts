@@ -25,7 +25,7 @@ import { ParticleSystem, RainSystem } from './render/particles';
 import { CameraRig } from './render/camera';
 import { RaceController, deserializeGhost, type GhostSample, type RaceEvents } from './game/race';
 import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, ShareError } from './game/share';
-import { RivalManager, DEFAULT_RIVAL_LAPS, type RivalMode, type Standing, type RivalPreset } from './game/rivals';
+import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
 import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
 import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
 import { achievementPops, rivalAchievementState, type RivalAchievementState } from './game/achievements';
@@ -69,6 +69,7 @@ class Game {
   private race: RaceController | null = null;
   private rivals: RivalManager | null = null;
   private rivalMode = false;
+  private knockoutMode = false;
   private rivalLineup: RivalPreset[] | null = null;
   private rivalsBuiltWith: string | null = null;
   private careerRace: { cup: CupDef; raceIndex: number } | null = null;
@@ -274,6 +275,7 @@ class Game {
     if (!this.friendGhost || this.friendGhost.trackId !== track.id) return;
     this.menu.driftAttack = false;
     this.menu.rivalsMode = false;
+    this.menu.knockoutMode = false;
     this.driftMode = false;
     this.careerRace = null;
     this.rivalLineup = null;
@@ -623,6 +625,7 @@ class Game {
 
     this.rivals = new RivalManager(curve, def, this.trackGroup, this.quality !== 'low', this.rivalLineup ?? undefined, { night: VARIANTS[variant].headlights });
     this.rivals.rain = VARIANTS[variant].rain;
+    this.rivals.onKnockout = (ev) => this.onKnockoutEvent(ev);
     this.rivalsBuiltWith = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
 
     this.rig.snapBehind(this.car.state);
@@ -630,8 +633,10 @@ class Game {
   }
 
   private startTrack(def: TrackDef): void {
-    this.rivalMode = this.menu.rivalsMode || this.careerRace !== null;
+    this.knockoutMode = this.menu.knockoutMode && this.careerRace === null;
+    this.rivalMode = this.menu.rivalsMode || this.knockoutMode || this.careerRace !== null;
     if (!this.rivalMode) this.rivalLineup = null;
+    if (this.knockoutMode) this.menu.driftAttack = false;
     this.hudAcc = 0;
     this.mapAcc = 0;
     this.lastPlayerPos = 0;
@@ -647,7 +652,8 @@ class Game {
     if (this.rivalMode && this.rivals) {
       const slot = this.rivals.gridSlot(3);
       this.car!.placeAt(slot.dist, slot.lateral);
-      this.rivals.totalLaps = DEFAULT_RIVAL_LAPS;
+      this.rivals.totalLaps = this.knockoutMode ? KNOCKOUT_LAPS : DEFAULT_RIVAL_LAPS;
+      this.rivals.knockout = this.knockoutMode;
       this.rivals.setPlayerPaint(this.save.profile.paint);
       this.rivals.placeOnGrid();
       this.rivals.setVisible(true);
@@ -685,7 +691,7 @@ class Game {
     this.audio.startEngine();
     this.audio.startMusic(def.theme);
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
-    this.race!.totalLaps = this.rivalMode ? DEFAULT_RIVAL_LAPS : 1;
+    this.race!.totalLaps = this.rivalMode ? (this.knockoutMode ? KNOCKOUT_LAPS : DEFAULT_RIVAL_LAPS) : 1;
     this.race!.writesRecords = !this.rivalMode;
     const friendActive = !this.rivalMode && !!this.friendGhost && this.friendGhost.trackId === def.id;
     this.race!.useExternalGhost(friendActive ? this.friendGhost!.samples : null);
@@ -795,18 +801,27 @@ class Game {
     } else if (ev === 'finish') {
       const r = payload as RaceEvents['finish'];
       const achvBefore: RivalAchievementState = rivalAchievementState(this.save);
-      this.audio.finish(r.medal);
-      this.input.rumble(0.5, 0.9, 500);
-      this.hud.showFinish(r);
+      if (r.knockout) {
+        this.audio.crash();
+        this.input.rumble(0.9, 0.6, 300);
+        this.shake(0.8);
+        this.hud.showSplash('KNOCKED OUT', 'splash-out');
+      } else {
+        this.audio.finish(r.medal);
+        this.input.rumble(0.5, 0.9, 500);
+        this.hud.showFinish(r);
+      }
       let rivalStandings: Standing[] | null = null;
       if (this.rivalMode && this.rivals) {
         rivalStandings = this.rivals.freeze(this.race!.totalProgress, r.timeMs);
-        console.log('[rivals] finish order: ' + rivalStandings.map((s, i) => `P${i + 1} ${s.name}${s.gapMeters > 0 ? ` +${Math.round(s.gapMeters)}m` : ''}`).join(' | '));
+        console.log('[rivals] finish order: ' + rivalStandings.map((s, i) => `P${i + 1} ${s.name}${s.eliminated ? ' OUT' : s.gapMeters > 0 ? ` +${Math.round(s.gapMeters)}m` : ''}`).join(' | '));
       }
-      const tierBase = r.medal === 'author' ? 0x29e6ff : r.medal === 'gold' ? 0xffcf3f : r.medal === 'silver' ? 0xd7dee8 : r.medal === 'bronze' ? 0xe08d4f : 0x29e6ff;
-      const tierColors = [new THREE.Color(tierBase), new THREE.Color(tierBase).lerp(new THREE.Color(0xffffff), 0.6), new THREE.Color(tierBase).lerp(new THREE.Color(0x000000), 0.25)];
-      this.particles.confetti(this.car!.state.pos.clone(), tierColors);
-      this.slowmoUntil = this.save.settings.reducedMotion ? 0 : performance.now() + 850;
+      if (!r.knockout) {
+        const tierBase = r.medal === 'author' ? 0x29e6ff : r.medal === 'gold' ? 0xffcf3f : r.medal === 'silver' ? 0xd7dee8 : r.medal === 'bronze' ? 0xe08d4f : 0x29e6ff;
+        const tierColors = [new THREE.Color(tierBase), new THREE.Color(tierBase).lerp(new THREE.Color(0xffffff), 0.6), new THREE.Color(tierBase).lerp(new THREE.Color(0x000000), 0.25)];
+        this.particles.confetti(this.car!.state.pos.clone(), tierColors);
+        this.slowmoUntil = this.save.settings.reducedMotion ? 0 : performance.now() + 850;
+      }
       window.setTimeout(() => {
         this.state = 'finished';
         this.hud.clearCenter();
@@ -832,7 +847,9 @@ class Game {
           }
         }
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
-        if (this.rivalMode && rivalStandings) {
+        if (this.knockoutMode) {
+          // knockout is a standalone mode — never writes PB/ghost/rival/lifetime stats
+        } else if (this.rivalMode && rivalStandings) {
           const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
           const beaten = rivalStandings.slice(Math.max(0, pos)).filter((s) => !s.isPlayer).map((s) => s.name);
           this.save.addStats({ rivalWins: pos === 1 ? 1 : 0, rivalsBeaten: beaten });
@@ -845,7 +862,7 @@ class Game {
           careerPanel = this.applyCareerResult(rivalStandings);
         }
         this.announceAchievementPops(achvBefore);
-        const hasNext = !careerPanel && idx < TRACKS.length - 1;
+        const hasNext = !careerPanel && !r.knockout && idx < TRACKS.length - 1;
         const playerPosInRace = rivalStandings ? rivalStandings.findIndex((s) => s.isPlayer) + 1 : -1;
         const podiumEligible =
           !!rivalStandings &&
@@ -865,6 +882,24 @@ class Game {
     for (const pop of achievementPops(before, rivalAchievementState(this.save))) {
       this.menu.showToast(`ACHIEVEMENT UNLOCKED — ${pop.name}`);
     }
+  }
+
+  private onKnockoutEvent(ev: KnockoutEvent): void {
+    if (ev.isPlayer) {
+      this.race?.finishKnockedOut(ev.position);
+      return;
+    }
+    this.hud.showSplash(`${ev.name} ELIMINATED`, 'splash-out');
+    if (!this.save.settings.reducedMotion) {
+      for (let i = 0; i < 7; i++) {
+        this.particles.driftSmoke(
+          ev.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.6, Math.random() * 0.8, (Math.random() - 0.5) * 1.6)),
+          new THREE.Vector3(0, 0, 0),
+          1,
+        );
+      }
+    }
+    this.audio.crowd(1.4, 0.08);
   }
 
   private applyCareerResult(standings: Standing[]): CareerPanelData {
@@ -928,8 +963,8 @@ class Game {
 
   private enterPodium(order: Standing[] | null): void {
     if (!order || this.podium || this.state !== 'finished' || !this.curve || !this.carVisual || !this.rivals || !this.trackGroup) return;
-    const top3 = order.slice(0, 3);
-    if (top3.length < 3) return;
+    const top3 = order.filter((s) => !s.eliminated).slice(0, 3);
+    if (top3.length < 2) return;
     const reduced = this.save.settings.reducedMotion;
     const f = this.curve.frames[0];
     const group = new THREE.Group();
@@ -946,7 +981,7 @@ class Game {
     const xAxis = new THREE.Vector3().crossVectors(f.normal, f.tangent);
     const frameQuat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, f.normal, f.tangent));
     const centers: THREE.Vector3[] = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < top3.length; i++) {
       const h = heights[i];
       const block = new THREE.Mesh(new THREE.BoxGeometry(3, h, 3), blockMat);
       block.position.copy(f.pos).addScaledVector(f.binormal, lats[i]).addScaledVector(f.normal, h / 2);
@@ -958,7 +993,7 @@ class Game {
       group.add(trim);
       centers.push(f.pos.clone().addScaledVector(f.binormal, lats[i]).addScaledVector(f.normal, h));
     }
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < top3.length; i++) {
       const s = top3[i];
       const visual = s.isPlayer ? this.carVisual : this.rivals.rivals.find((r) => r.skill.name === s.name)?.visual ?? null;
       if (!visual) continue;
@@ -1264,10 +1299,15 @@ class Game {
     this.acc += dt * timeScale;
     let steps = 0;
     while (this.acc >= simDt && steps < 8) {
+      const prevLaps = this.race!.completedLaps;
       this.race!.update(simDt * 1000, input);
       if (this.rivalMode && this.rivals) {
         const mode: RivalMode = this.race!.phase === 'countdown' ? 'countdown' : 'racing';
-        this.rivals.update(simDt * 1000, mode, this.race!.totalProgress, this.moverSnap);
+        const playerLapEff =
+          this.knockoutMode && this.race!.phase === 'racing' && this.race!.completedLaps > prevLaps
+            ? this.race!.completedLaps
+            : 0;
+        this.rivals.update(simDt * 1000, mode, this.race!.totalProgress, this.moverSnap, playerLapEff);
       }
       this.acc -= simDt;
       steps++;
@@ -1500,7 +1540,7 @@ declare global {
   interface Window {
     __race2: {
       inst: Game;
-      start: (trackIndex: number, rivals?: boolean) => void;
+      start: (trackIndex: number, rivals?: boolean | 'knockout') => void;
       drive: (v: { steer?: number; throttle?: number; brake?: number; drift?: boolean }) => void;
       auto: (on: boolean) => string;
       state: () => object;
@@ -1520,8 +1560,13 @@ declare global {
 
 window.__race2 = {
   inst: game,
-  start: (trackIndex: number, rivals?: boolean) => {
+  start: (trackIndex: number, rivals?: boolean | 'knockout') => {
     game['menu'].rivalsMode = rivals === true;
+    game['menu'].knockoutMode = rivals === 'knockout';
+    if (rivals === 'knockout') {
+      game['menu'].driftAttack = false;
+      game['driftMode'] = false;
+    }
     game['startTrack'](TRACKS[Math.max(0, Math.min(TRACKS.length - 1, trackIndex))]);
   },
   auto: (on: boolean) => {
@@ -1594,10 +1639,11 @@ window.__race2 = {
        acc: +game['acc'].toFixed(4),
        lastT: Math.round(game['lastT']),
        perfNow: Math.round(performance.now()),
-       timeScale: performance.now() < game['slowmoUntil'] ? 0.35 : 1,
-       slowmo: performance.now() < game['slowmoUntil'],
-       podium: !!game['podium'],
-       autoDbg: game['autoDbg'],
+        timeScale: performance.now() < game['slowmoUntil'] ? 0.35 : 1,
+        slowmo: performance.now() < game['slowmoUntil'],
+        podium: !!game['podium'],
+        knockout: game['knockoutMode'],
+        autoDbg: game['autoDbg'],
     };
   },
       respawn: () => game['race']?.respawnAtCheckpoint(),
