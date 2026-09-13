@@ -168,6 +168,26 @@ export class ParticleSystem {
     }
   }
 
+  startBurst(pos: THREE.Vector3, forward: THREE.Vector3, count = 36): void {
+    const white = new THREE.Color(0xf4faff);
+    const accent = new THREE.Color(0x29e6ff);
+    for (let i = 0; i < count; i++) {
+      const c = white.clone().lerp(accent, Math.random() * 0.8);
+      this.spawn(
+        pos,
+        forward
+          .clone()
+          .multiplyScalar(6 + Math.random() * 12)
+          .add(new THREE.Vector3((Math.random() - 0.5) * 10, 1 + Math.random() * 6, (Math.random() - 0.5) * 10)),
+        0.45 + Math.random() * 0.35,
+        0.55,
+        0.7,
+        c,
+        -4,
+      );
+    }
+  }
+
   update(dt: number): void {
     for (let i = 0; i < MAX; i++) {
       const p = this.particles[i];

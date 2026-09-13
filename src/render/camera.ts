@@ -9,6 +9,7 @@ export class CameraRig {
   private camLook = new THREE.Vector3();
   private shake = 0;
   private lookBack = false;
+  private punch = 0;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(62, aspect, 0.3, 5000);
@@ -21,6 +22,11 @@ export class CameraRig {
 
   addShake(amount: number): void {
     this.shake = Math.min(1.2, this.shake + amount);
+  }
+
+  /** Additive FOV impulse; positive = pull-in (zoom), decays over ~0.7s. */
+  addPunch(magnitude: number): void {
+    this.punch = Math.max(this.punch, magnitude);
   }
 
   setLookBack(v: boolean): void {
@@ -37,6 +43,7 @@ export class CameraRig {
   update(dt: number, state: CarState): void {
     this.shake = Math.max(0, this.shake - dt * 2.2);
     this.boostKick = Math.max(0, this.boostKick - dt * 1.4);
+    this.punch = Math.max(0, this.punch - dt * 20);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(state.quat);
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(state.quat);
     const speedRatio = Math.min(1, state.speed / 58);
@@ -48,7 +55,7 @@ export class CameraRig {
       const look = eye.clone().addScaledVector(forward, this.lookBack ? -10 : 10).addScaledVector(up, this.lookBack ? -0.4 : 0.1);
       this.camera.up.copy(up);
       this.camera.lookAt(look);
-      this.camera.fov = 72 + speedRatio * 16;
+      this.camera.fov = 72 + speedRatio * 16 - this.punch;
     } else {
       const back = forward.clone().multiplyScalar(this.lookBack ? 8.4 : -8.8);
       const target = state.pos.clone().add(back).addScaledVector(up, 3.1);
@@ -60,7 +67,7 @@ export class CameraRig {
       const worldUp = up;
       this.camera.up.lerp(worldUp, 1 - Math.exp(-(state.grounded ? 8 : 2.2) * dt));
       this.camera.lookAt(this.camLook);
-      this.camera.fov = 62 + speedRatio * 22 + kick;
+      this.camera.fov = 62 + speedRatio * 22 + kick - this.punch;
     }
 
     if (this.shake > 0) {

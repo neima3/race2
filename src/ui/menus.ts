@@ -66,6 +66,7 @@ export class MenuManager {
   onTiltRequest: () => void = () => {};
 
   onWatchReplay: () => void = () => {};
+  onViewPodium: () => void = () => {};
   onCareerStartRace: (cup: CupDef, raceIndex: number) => void = () => {};
   onCareerNextRace: () => void = () => {};
   onCareerHubReturn: () => void = () => {};
@@ -689,7 +690,7 @@ export class MenuManager {
     this.pauseScreen.classList.add('hidden');
   }
 
-  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null): void {
+  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null, podium = false): void {
     this.finishScreen.replaceChildren();
     const panel = el('div', 'panel finish-panel');
     const rivalMode = standings != null && standings.length > 0;
@@ -768,6 +769,11 @@ export class MenuManager {
     }
     if (career) {
       if (careerFinal) {
+        if (podium) {
+          const pod = el('button', 'menu-btn', 'VIEW PODIUM');
+          pod.addEventListener('click', () => this.onViewPodium());
+          panel.append(pod);
+        }
         const hub = el('button', 'menu-btn primary', 'CAREER HUB');
         hub.addEventListener('click', () => this.onCareerHubReturn());
         panel.append(hub);
@@ -786,6 +792,11 @@ export class MenuManager {
     retry.addEventListener('click', () => this.onRestart());
     const replay = el('button', 'menu-btn', '&#9654; WATCH REPLAY');
     replay.addEventListener('click', () => this.onWatchReplay());
+    if (podium) {
+      const pod = el('button', 'menu-btn', 'VIEW PODIUM');
+      pod.addEventListener('click', () => this.onViewPodium());
+      panel.append(pod);
+    }
     if (hasNext) {
       const next = el('button', 'menu-btn', 'NEXT TRACK &#8594;');
       next.addEventListener('click', () => {

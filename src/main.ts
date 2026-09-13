@@ -113,6 +113,19 @@ class Game {
   private skidPrevL2: THREE.Vector3 | null = null;
   private skidPrevR2: THREE.Vector3 | null = null;
   private slowmoUntil = 0;
+  private lastPlayerPos = 0;
+  private overtakeCooldownUntil = 0;
+  private wasDrifting = false;
+  private lastPodiumOrder: Standing[] | null = null;
+  private podium: {
+    group: THREE.Group;
+    angle: number;
+    center: THREE.Vector3;
+    camPos: THREE.Vector3;
+    timers: number[];
+    cleanup: () => void;
+  } | null = null;
+  private podiumUi: HTMLElement | null = null;
   private photo: { yaw: number; pitch: number; dist: number; filterIdx: number } | null = null;
   private photoUi: HTMLElement | null = null;
   private readonly photoFilters = ['none', 'sepia(0.5) saturate(1.3)', 'hue-rotate(180deg) saturate(1.2)', 'grayscale(1)'];
@@ -121,7 +134,7 @@ class Game {
   private driftMode = false;
   private replayCar: CarVisual | null = null;
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
-  private lastFinish: { result: RaceEvents['finish']; hasNext: boolean } | null = null;
+  private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean } | null = null;
   private friendGhost: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
   private shareBusy = false;
   private canvasEl: HTMLCanvasElement = canvas;
@@ -184,6 +197,7 @@ class Game {
       this.applyPlayerStyle(paint, body);
     };
     this.menu.onWatchReplay = () => this.startReplay();
+    this.menu.onViewPodium = () => this.enterPodium(this.lastPodiumOrder);
     this.menu.onShareGhost = (track) => this.shareGhost(track);
     this.menu.onFriendRace = (track) => this.raceFriendGhost(track);
     this.garage = new GarageSystem(this.save);
@@ -608,6 +622,10 @@ class Game {
     if (!this.rivalMode) this.rivalLineup = null;
     this.hudAcc = 0;
     this.mapAcc = 0;
+    this.lastPlayerPos = 0;
+    this.overtakeCooldownUntil = 0;
+    this.lastPodiumOrder = null;
+    this.exitPodium();
     const lineupSig = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
     if (def.id !== this.track.id || (this.rivalMode && lineupSig !== this.rivalsBuiltWith) || this.resolveVariant(def) !== this.variant) {
       this.loadTrackIntoScene(def);
@@ -706,8 +724,14 @@ class Game {
       this.hud.setCountdown(String(n), '');
     } else if (ev === 'go') {
       this.audio.countdownBeep(true);
+      this.audio.goStinger();
       this.hud.setCountdown('GO!', 'go');
       if (this.state === 'countdown') this.state = 'racing';
+      if (!this.save.settings.reducedMotion && this.curve) {
+        const f = this.curve.frames[0];
+        this.particles.startBurst(f.pos.clone().addScaledVector(f.normal, 1.2), f.tangent.clone(), this.rivalMode ? 64 : 36);
+        this.rig.addPunch(this.rivalMode ? 13 : 8);
+      }
       window.setTimeout(() => this.hud.clearCenter(), 900);
     } else if (ev === 'checkpoint') {
       const cp = payload as RaceEvents['checkpoint'];
@@ -750,6 +774,11 @@ class Game {
       this.hud.setLapCounter(`LAP ${l.lap}/${l.totalLaps}`);
     } else if (ev === 'finalLap') {
       this.hud.setLapCounter('FINAL LAP');
+      if (this.rivalMode && this.race!.phase === 'racing') {
+        this.hud.showSplash('FINAL LAP', 'splash-final');
+        this.audio.musicKick(7);
+        this.audio.crowd(2.2, 0.08);
+      }
     } else if (ev === 'finish') {
       const r = payload as RaceEvents['finish'];
       this.audio.finish(r.medal);
@@ -794,8 +823,15 @@ class Game {
           careerPanel = this.applyCareerResult(rivalStandings);
         }
         const hasNext = !careerPanel && idx < TRACKS.length - 1;
-        this.lastFinish = { result: r, hasNext };
-        this.menu.showFinish(this.track, r, hasNext, this.driftMode ? Math.round(this.driftScore) : null, rivalStandings, careerPanel);
+        const playerPosInRace = rivalStandings ? rivalStandings.findIndex((s) => s.isPlayer) + 1 : -1;
+        const podiumEligible =
+          !!rivalStandings &&
+          ((careerPanel !== null && careerPanel.isFinal && playerPosInRace >= 1 && playerPosInRace <= 3) ||
+            (!this.careerRace && playerPosInRace === 1));
+        this.lastPodiumOrder = podiumEligible ? rivalStandings : null;
+        const driftArg = this.driftMode ? Math.round(this.driftScore) : null;
+        this.lastFinish = { result: r, hasNext, drift: driftArg, standings: rivalStandings, career: careerPanel, podium: podiumEligible };
+        this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible);
         this.touch.hide();
         this.audio.stopEngine();
       }, 1400);
@@ -831,6 +867,166 @@ class Game {
     };
   }
 
+  private checkOvertake(order: Standing[]): void {
+    const pos = order.findIndex((s) => s.isPlayer) + 1;
+    const prev = this.lastPlayerPos;
+    this.lastPlayerPos = pos;
+    if (prev > 0 && pos > 0 && pos < prev) this.triggerOvertake(pos, false);
+  }
+
+  /**
+   * Overtake moment: 250ms time dilation + soft chime. The ▲P flash itself is the
+   * Phase-3 position-change flash, driven by hud.updateRivals in the same tick.
+   * Dilation scales the incoming frame dt before the fixed-step accumulator divides
+   * it into 120Hz steps, so physics, rivals and race timers all dilate coherently
+   * with zero dropped or double-run steps. This is a fair-time arcade effect: race
+   * elapsedMs dilates with the sim, so no real-time is gained or lost on the ledger.
+   */
+  private triggerOvertake(_newPos: number, force: boolean): void {
+    if (!this.rivalMode || this.save.settings.reducedMotion) return;
+    if (this.state !== 'racing' || this.race!.phase !== 'racing' || !this.car || !this.curve) return;
+    const now = performance.now();
+    if (!force) {
+      if (now < this.overtakeCooldownUntil) return;
+      const speed = Math.max(4, Math.abs(this.car.state.forwardSpeed));
+      const remainingS = (this.race!.totalLaps * this.curve.length - this.race!.totalProgress) / speed;
+      if (remainingS < 3) return;
+    }
+    this.overtakeCooldownUntil = now + 2000;
+    this.slowmoUntil = now + 250;
+    this.audio.overtake();
+  }
+
+  private enterPodium(order: Standing[] | null): void {
+    if (!order || this.podium || this.state !== 'finished' || !this.curve || !this.carVisual || !this.rivals || !this.trackGroup) return;
+    const top3 = order.slice(0, 3);
+    if (top3.length < 3) return;
+    const reduced = this.save.settings.reducedMotion;
+    const f = this.curve.frames[0];
+    const group = new THREE.Group();
+    const heights = [1.5, 1.0, 0.65];
+    const lats = [0, -3.6, 3.6];
+    const blockMat = new THREE.MeshStandardMaterial({ color: 0x111830, roughness: 0.55, metalness: 0.25 });
+    const trimMat = new THREE.MeshStandardMaterial({
+      color: this.track.accent,
+      roughness: 0.4,
+      metalness: 0.3,
+      emissive: this.track.accent,
+      emissiveIntensity: 0.55,
+    });
+    const xAxis = new THREE.Vector3().crossVectors(f.normal, f.tangent);
+    const frameQuat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, f.normal, f.tangent));
+    const centers: THREE.Vector3[] = [];
+    for (let i = 0; i < 3; i++) {
+      const h = heights[i];
+      const block = new THREE.Mesh(new THREE.BoxGeometry(3, h, 3), blockMat);
+      block.position.copy(f.pos).addScaledVector(f.binormal, lats[i]).addScaledVector(f.normal, h / 2);
+      block.castShadow = this.quality !== 'low';
+      block.receiveShadow = this.quality !== 'low';
+      group.add(block);
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(3.14, 0.07, 3.14), trimMat);
+      trim.position.copy(block.position).addScaledVector(f.normal, h / 2 + 0.035);
+      group.add(trim);
+      centers.push(f.pos.clone().addScaledVector(f.binormal, lats[i]).addScaledVector(f.normal, h));
+    }
+    for (let i = 0; i < 3; i++) {
+      const s = top3[i];
+      const visual = s.isPlayer ? this.carVisual : this.rivals.rivals.find((r) => r.skill.name === s.name)?.visual ?? null;
+      if (!visual) continue;
+      visual.group.position.copy(centers[i]);
+      visual.group.quaternion.copy(frameQuat);
+    }
+    this.trackGroup.add(group);
+    const center = f.pos.clone().addScaledVector(f.normal, 1.2);
+
+    this.menu.hideAll();
+    this.hud.hide();
+    this.touch.hide();
+    this.hud.clearCenter();
+
+    const overlay = el('div', 'podium-overlay');
+    const strip = el('div', 'podium-strip');
+    strip.append(el('div', 'fh-title', 'PODIUM'));
+    const cupPoints = new Map<string, number>();
+    if (this.lastFinish?.career) for (const e of this.lastFinish.career.standings) cupPoints.set(e.name, e.points);
+    top3.forEach((s, i) => {
+      const row = el('div', `podium-row podium-${i + 1}${s.isPlayer ? ' you' : ''}`);
+      const swatch = el('span', 'fp-swatch');
+      swatch.style.background = '#' + s.paint.toString(16).padStart(6, '0');
+      const pts = cupPoints.get(s.name);
+      row.append(
+        el('span', 'fp-pos', `P${i + 1}`),
+        swatch,
+        el('span', 'fp-name', s.name),
+        el('span', 'fp-gap', pts !== undefined ? `${pts} PTS` : i === 0 ? 'WINNER' : `+${Math.round(s.gapMeters)}m`),
+      );
+      strip.append(row);
+    });
+    const hint = el('div', 'podium-hint', 'TAP OR PRESS ANY KEY TO CONTINUE');
+    overlay.append(strip, hint);
+    document.getElementById('ui-root')!.append(overlay);
+    this.podiumUi = overlay;
+
+    const skip = () => this.exitPodium();
+    overlay.addEventListener('pointerdown', skip);
+    window.addEventListener('keydown', skip);
+
+    const timers: number[] = [];
+    this.audio.crowd(2.8, 0.11);
+    timers.push(window.setTimeout(() => this.audio.crowd(2.2, 0.08), 3200));
+    if (!reduced) {
+      const confettiPos = center.clone().addScaledVector(f.normal, 5.5);
+      const palette = [0xffcf3f, 0xd7dee8, 0xe08d4f, this.track.accent, top3[0].paint].map((h) => new THREE.Color(h));
+      this.particles.confetti(confettiPos, palette);
+      timers.push(window.setTimeout(() => this.particles.confetti(confettiPos, palette), 900));
+      timers.push(window.setTimeout(() => this.particles.confetti(confettiPos, palette), 2100));
+    }
+
+    this.podium = {
+      group,
+      angle: reduced ? Math.PI * 0.75 : Math.PI * 0.25,
+      center,
+      camPos: new THREE.Vector3(),
+      timers,
+      cleanup: () => {
+        window.removeEventListener('keydown', skip);
+        this.trackGroup?.remove(group);
+        group.traverse((o) => {
+          if (o instanceof THREE.Mesh) {
+            o.geometry.dispose();
+            (o.material as THREE.Material).dispose();
+          }
+        });
+      },
+    };
+  }
+
+  private updatePodium(dt: number): void {
+    const p = this.podium;
+    if (!p) return;
+    if (!this.save.settings.reducedMotion) p.angle += dt * 0.22;
+    p.camPos.set(p.center.x + Math.cos(p.angle) * 13, p.center.y + 4.6, p.center.z + Math.sin(p.angle) * 13);
+    const cam = this.rig.camera;
+    cam.position.lerp(p.camPos, 1 - Math.exp(-3 * dt));
+    cam.up.set(0, 1, 0);
+    cam.lookAt(p.center.x, p.center.y + 1.1, p.center.z);
+    cam.fov = 55;
+    cam.updateProjectionMatrix();
+  }
+
+  private exitPodium(): void {
+    const p = this.podium;
+    if (!p) return;
+    this.podium = null;
+    for (const t of p.timers) clearTimeout(t);
+    p.cleanup();
+    this.podiumUi?.remove();
+    this.podiumUi = null;
+    this.hud.root.classList.remove('hidden');
+    const lf = this.lastFinish;
+    if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium);
+  }
+
   private startReplay(): void {
     const samples = this.race?.lastLapSamples ?? [];
     if (samples.length < 10) return;
@@ -851,7 +1047,8 @@ class Game {
     if (this.replayCar) this.replayCar.group.visible = false;
     this.replay = null;
     this.state = 'finished';
-    if (this.lastFinish) this.menu.showFinish(this.track, this.lastFinish.result as RaceEvents['finish'], this.lastFinish.hasNext);
+    const lf = this.lastFinish;
+    if (lf) this.menu.showFinish(this.track, lf.result as RaceEvents['finish'], lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium);
   }
 
   private updateReplay(dt: number): void {
@@ -941,7 +1138,9 @@ class Game {
     const input = this.input.sample(this.save.settings.steeringSensitivity);
 
     if (input.pause) {
-      if (this.state === 'photo') {
+      if (this.podium) {
+        this.exitPodium();
+      } else if (this.state === 'photo') {
         this.exitPhoto();
       } else if (this.state === 'racing' || this.state === 'countdown') {
         if (this.race?.phase !== 'finished') this.pause();
@@ -983,6 +1182,16 @@ class Game {
     if (this.state === 'photo') {
       this.updatePhoto();
       this.environment?.update(this.rig.camera.position);
+      this.renderFrame();
+      return;
+    }
+
+    if (this.podium && this.state === 'finished') {
+      this.updatePodium(dt);
+      this.environment?.update(this.rig.camera.position);
+      this.environment?.animate(now / 1000, dt);
+      if (this.rainFx?.lines.visible) this.rainFx.update(dt, this.rig.camera.position);
+      this.particles.update(dt);
       this.renderFrame();
       return;
     }
@@ -1146,6 +1355,9 @@ class Game {
         this.driftScore += s.driftAmount * s.speed * dt * 12;
         this.lapDrift += s.driftAmount * s.speed * dt * 12;
       }
+      const drifting = s.driftAmount > 0.35 && s.grounded && s.speed > 14;
+      if (drifting && !this.wasDrifting && !onSlick) this.audio.drift();
+      this.wasDrifting = drifting;
       if (!s.grounded) this.lapAir += dt;
 
       const stuckOffroad = s.offroad && s.grounded && s.speed < 6;
@@ -1181,7 +1393,9 @@ class Game {
       this.hudAcc += dt;
       if (this.hudAcc >= 0.2) {
         this.hudAcc = 0;
-        this.hud.updateRivals(this.rivals.standings(this.race!.totalProgress), this.save.settings.reducedMotion);
+        const order = this.rivals.standings(this.race!.totalProgress);
+        this.hud.updateRivals(order, this.save.settings.reducedMotion);
+        if (this.state === 'racing' && this.race!.phase === 'racing') this.checkOvertake(order);
       }
     }
 
@@ -1269,6 +1483,8 @@ declare global {
       standings: () => object;
       career: () => object;
       friend: () => object | null;
+      overtake: () => string;
+      podium: () => boolean;
     };
   }
 }
@@ -1344,12 +1560,15 @@ window.__race2 = {
       track: game['track'].id,
       variant: game['variant'],
       surfaceGrip: car ? car.state.surfaceGrip : 1,
-      fov: +game['rig'].camera.fov.toFixed(0),
-      countdownMs: Math.round(game['race']?.countdownMs ?? -1),
-      acc: +game['acc'].toFixed(4),
-      lastT: Math.round(game['lastT']),
-      perfNow: Math.round(performance.now()),
-      autoDbg: game['autoDbg'],
+       fov: +game['rig'].camera.fov.toFixed(0),
+       countdownMs: Math.round(game['race']?.countdownMs ?? -1),
+       acc: +game['acc'].toFixed(4),
+       lastT: Math.round(game['lastT']),
+       perfNow: Math.round(performance.now()),
+       timeScale: performance.now() < game['slowmoUntil'] ? 0.35 : 1,
+       slowmo: performance.now() < game['slowmoUntil'],
+       podium: !!game['podium'],
+       autoDbg: game['autoDbg'],
     };
   },
       respawn: () => game['race']?.respawnAtCheckpoint(),
@@ -1390,6 +1609,21 @@ window.__race2 = {
     const rivals = game['rivals'];
     if (!game['rivalMode'] || !rivals || !race) return [];
     return rivals.standings(race.totalProgress);
+  },
+  overtake: () => {
+    const pos = game['lastPlayerPos'] > 1 ? game['lastPlayerPos'] - 1 : 2;
+    game['triggerOvertake'](pos, true);
+    return 'slowmo-forced';
+  },
+  podium: () => {
+    let order = game['lastPodiumOrder'];
+    if (!order) {
+      const race = game['race'];
+      const rivals = game['rivals'];
+      if (race && rivals) order = rivals.standings(race.totalProgress);
+    }
+    game['enterPodium'](order);
+    return !!game['podium'];
   },
 };
 

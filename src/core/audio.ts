@@ -22,6 +22,7 @@ export class AudioEngine {
   private shiftBlipUntil = 0;
   private musicLayers: { gain: GainNode; intense: boolean }[] = [];
   private musicIntensity = 0;
+  private musicKickUntil = 0;
   private musicTheme: MusicTheme | null = null;
   private ambienceNodes: { src: AudioBufferSourceNode; gain: GainNode; filter?: BiquadFilterNode }[] = [];
   private ambienceKind: string | null = null;
@@ -214,10 +215,65 @@ export class AudioEngine {
     notes.forEach((n, i) => this.blip(n, 0.24, 'triangle', 0.3, i * 0.11));
   }
 
+  overtake(): void {
+    this.blip(880, 0.09, 'sine', 0.17);
+    this.blip(1318, 0.16, 'sine', 0.17, 0.07);
+  }
+
+  goStinger(): void {
+    this.noiseBurst(0.35, 0.38, 240, 2600);
+    this.blip(150, 0.3, 'sawtooth', 0.22, 0, 70);
+    this.blip(587, 0.22, 'square', 0.11, 0.06);
+  }
+
+  /** Procedural crowd swell: brownish noise through a wide bandpass with slow attack/release. */
+  crowd(dur = 2.4, vol = 0.09): void {
+    if (!this.ctx || !this.sfxGain) return;
+    const ctx = this.ctx;
+    const len = Math.max(1, Math.ceil(ctx.sampleRate * dur));
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      last = 0.96 * last + 0.04 * w;
+      data[i] = last * 3.2;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 750;
+    bp.Q.value = 0.55;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 260;
+    const g = ctx.createGain();
+    const t0 = ctx.currentTime;
+    const attack = Math.min(0.5, dur * 0.25);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + attack);
+    g.gain.setValueAtTime(vol, Math.max(attack, t0 + dur - 0.6));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(bp);
+    bp.connect(hp);
+    hp.connect(g);
+    g.connect(this.sfxGain);
+    src.start(t0);
+  }
+
+  /** Force the music intensity bus to full for a few seconds (FINAL LAP moment). */
+  musicKick(seconds = 6): void {
+    if (!this.ctx) return;
+    this.musicKickUntil = this.ctx.currentTime + seconds;
+    this.musicIntensity = Math.max(this.musicIntensity, 0.7);
+  }
+
   setSpeedIntensity(speedRatio: number, boosting: boolean): void {
     if (!this.ctx) return;
-    const target = boosting || speedRatio > 0.82 ? 1 : speedRatio > 0.35 ? 0.55 : 0;
-    this.musicIntensity += (target - this.musicIntensity) * 0.04;
+    const kicked = this.ctx.currentTime < this.musicKickUntil;
+    const target = kicked ? 1 : boosting || speedRatio > 0.82 ? 1 : speedRatio > 0.35 ? 0.55 : 0;
+    this.musicIntensity += (target - this.musicIntensity) * (kicked ? 0.18 : 0.04);
     const t = this.ctx.currentTime;
     for (const layer of this.musicLayers) {
       const wanted = layer.intense ? this.musicIntensity : 1 - this.musicIntensity * 0.7;

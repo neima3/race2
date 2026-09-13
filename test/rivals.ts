@@ -197,6 +197,83 @@ for (const def of RACE_TRACKS) {
   );
 }
 
+// Slow-mo accumulator integrity: a forced 0.35x time-dilation window (same scaling
+// point as main.ts — incoming frame dt scaled BEFORE the fixed-step accumulator
+// divides it into 120Hz steps) must not drop or double-run any sim step. Trajectory
+// is a pure function of the step index, so total steps, final progress and the race
+// clock must match the non-slowmo run (only wall-clock duration differs).
+{
+  const def = TRACKS[0];
+  const lineup = pickLineup(def.id);
+  const runAccumulated = (slowmo: boolean) => {
+    const curve = new TrackCurve(def.points, true);
+    const car = new CarPhysics(curve);
+    const save = new SaveManager();
+    const race = new RaceController(car, curve, def, save, () => {}, { laps: 2, writesRecords: false });
+    const rivals = new RivalManager(curve, def, new THREE.Group(), false, lineup);
+    const slot = rivals.gridSlot(3);
+    car.placeAt(slot.dist, slot.lateral);
+    rivals.placeOnGrid();
+    race.start();
+    race.countdownMs = 1;
+    const wallDt = 1 / 60;
+    let acc = 0;
+    let wall = 0;
+    let steps = 0;
+    const ap = { smooth: 0 };
+    let input = { steer: 0, throttle: 0, brake: 0, drift: false, lookBack: false, respawn: false, restart: false, cameraToggle: false, pause: false, photo: false };
+    let recover = 0;
+    let recoverDir = 1;
+    let stuck = 0;
+    while (race.phase !== 'finished' && wall < 90000) {
+      const timeScale = slowmo && wall >= 5000 && wall < 5250 ? 0.35 : 1;
+      acc += wallDt * timeScale;
+      let frameSteps = 0;
+      while (acc >= simDt && frameSteps < 8) {
+        if (race.phase === 'racing') {
+          if (recover > 0) {
+            recover -= 1;
+            input = { steer: recoverDir, throttle: 0, brake: 1, drift: false, lookBack: false, respawn: false, restart: false, cameraToggle: false, pause: false, photo: false };
+            if (recover === 0) ap.smooth = 0;
+          } else {
+            const r = autopilotDrive(car, curve, simDt, ap);
+            if (car.state.speed < 2.5 && Math.abs(car.state.lateral) > 3) stuck++;
+            else stuck = 0;
+            if (stuck > 40) {
+              stuck = 0;
+              recover = 55;
+              recoverDir = -(Math.sign(car.state.lateral) || 1);
+            }
+            input = { steer: r.steer, throttle: r.throttle, brake: r.brake, drift: false, lookBack: false, respawn: false, restart: false, cameraToggle: false, pause: false, photo: false };
+          }
+        }
+        race.update(simDt * 1000, input);
+        rivals.update(simDt * 1000, race.phase === 'countdown' ? 'countdown' : 'racing', race.totalProgress);
+        acc -= simDt;
+        frameSteps++;
+        steps++;
+      }
+      if (frameSteps === 8) acc = 0;
+      wall += wallDt;
+    }
+    return { finished: race.phase === 'finished', steps, progress: race.totalProgress, timeMs: race.elapsedMs };
+  };
+  const normal = runAccumulated(false);
+  const dilated = runAccumulated(true);
+  console.log(
+    `slow-mo integrity: normal {steps=${normal.steps}, progress=${normal.progress.toFixed(2)}m, clock=${normal.timeMs.toFixed(0)}ms} | ` +
+    `dilated {steps=${dilated.steps}, progress=${dilated.progress.toFixed(2)}m, clock=${dilated.timeMs.toFixed(0)}ms}`,
+  );
+  if (normal.finished && dilated.finished) pass(`slow-mo: both accumulator runs finished (${normal.steps} vs ${dilated.steps} steps)`);
+  else fail(`slow-mo: run did not finish (normal=${normal.finished}, dilated=${dilated.finished})`);
+  if (Math.abs(normal.steps - dilated.steps) <= 2) pass(`slow-mo: sim step count preserved (delta ${Math.abs(normal.steps - dilated.steps)})`);
+  else fail(`slow-mo: step count diverged (normal=${normal.steps}, dilated=${dilated.steps})`);
+  if (Math.abs(normal.progress - dilated.progress) < 0.5) pass(`slow-mo: final progress matches (delta ${Math.abs(normal.progress - dilated.progress).toFixed(4)}m)`);
+  else fail(`slow-mo: final progress diverged (delta ${Math.abs(normal.progress - dilated.progress).toFixed(3)}m)`);
+  if (Math.abs(normal.timeMs - dilated.timeMs) < 20) pass(`slow-mo: race clock dilates coherently (delta ${Math.abs(normal.timeMs - dilated.timeMs).toFixed(2)}ms)`);
+  else fail(`slow-mo: race clock diverged (delta ${Math.abs(normal.timeMs - dilated.timeMs).toFixed(2)}ms)`);
+}
+
 // Aggregate assertions
 for (const r of results) {
   if (!r.finished) fail(`${r.track}: player did not finish`);
@@ -210,6 +287,6 @@ for (const r of results) {
 if (results.length >= 2 && results.every((r) => r.playerPos === 1)) fail('player is always P1 — tiers need tuning');
 if (results.length >= 2 && results.every((r) => r.playerPos === 4)) fail('player is always P4 — tiers need tuning');
 
-const total = 2 + results.length * 6 + 2;
+const total = 2 + results.length * 6 + 2 + 4;
 console.log(`\nrivals test: ${total - failures}/${total} checks passed`);
 if (failures > 0) process.exit(1);

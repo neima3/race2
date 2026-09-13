@@ -281,4 +281,11 @@ export class HUD {
     const label = result.medal === 'none' ? 'FINISHED' : `${result.medal.toUpperCase()} MEDAL`;
     this.centerEl.innerHTML = `<div class="finish-flash ${medalClass}">${label}</div>`;
   }
+
+  showSplash(text: string, cls: string): void {
+    const splash = el('div', `finish-flash ${cls}`, text);
+    this.centerEl.replaceChildren();
+    this.centerEl.append(splash);
+    window.setTimeout(() => splash.remove(), 2400);
+  }
 }

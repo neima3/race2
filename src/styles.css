@@ -348,6 +348,8 @@ button {
 .finish-flash.banner-silver { color: var(--silver); text-shadow: 0 0 60px rgba(215, 222, 232, 0.8); }
 .finish-flash.banner-bronze { color: var(--bronze); text-shadow: 0 0 60px rgba(224, 141, 79, 0.8); }
 
+.finish-flash.splash-final { color: var(--accent-2); text-shadow: 0 0 60px rgba(255, 181, 46, 0.9), 0 4px 24px rgba(0, 0, 0, 0.5); }
+
 .medal {
   display: inline-block;
   padding: 2px 10px;
@@ -1127,6 +1129,85 @@ button {
 }
 @keyframes cutFlash {
   to { opacity: 0; }
+}
+
+/* ---------- Podium ceremony ---------- */
+
+.podium-overlay {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  z-index: 22;
+  animation: screenIn 400ms ease;
+}
+
+.podium-strip {
+  position: absolute;
+  top: calc(9% + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: min(300px, 84vw);
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: rgba(10, 14, 26, 0.66);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(6px);
+}
+
+.podium-strip .fh-title { text-align: center; margin-bottom: 2px; }
+
+.podium-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.podium-row.podium-1 { border-color: rgba(255, 207, 63, 0.5); }
+.podium-row.podium-2 { border-color: rgba(215, 222, 232, 0.4); }
+.podium-row.podium-3 { border-color: rgba(224, 141, 79, 0.5); }
+
+.podium-row.you {
+  background: rgba(41, 230, 255, 0.08);
+  box-shadow: inset 2px 0 0 var(--player-accent, var(--accent));
+}
+
+.podium-row.you .fp-name { color: var(--player-accent, var(--accent)); }
+
+.podium-row .fp-name { flex: 1; }
+
+.podium-hint {
+  position: absolute;
+  bottom: calc(26px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+  animation: podiumHintPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes podiumHintPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .podium-overlay { animation: none; }
+  .podium-hint { animation: none; opacity: 0.8; }
 }
 
 /* ---------- Rival race HUD ---------- */
