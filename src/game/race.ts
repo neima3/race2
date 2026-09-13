@@ -38,7 +38,7 @@ export interface RaceEvents {
   finalLap: undefined;
 }
 
-interface GhostSample {
+export interface GhostSample {
   t: number;
   pos: THREE.Vector3;
   quat: THREE.Quaternion;
@@ -103,6 +103,7 @@ export class RaceController {
   private pads: PadState = { lastBoostIndex: -1, boostCooldown: 0 };
   private recording: GhostSample[] = [];
   private ghost: GhostSample[] = [];
+  private externalGhost: GhostSample[] | null = null;
   private ghostDists: number[] = [];
   private ghostCpSplits: number[] = [];
   ghostActive = false;
@@ -137,10 +138,14 @@ export class RaceController {
     this.lapOffset = this.car.state.trackDist > this.curve.length * 0.5 ? -1 : 0;
     this.progressDatum = this.lapOffset * this.curve.length + this.car.state.trackDist;
     if (this.writesRecords) {
-      const playerGhost = this.save.trackSave(this.def.id).ghost;
-      const devGhost = DEV_GHOSTS[this.def.id];
-      const ghostData = playerGhost ?? devGhost ?? null;
-      this.ghost = ghostData ? deserializeGhost(ghostData) : [];
+      if (this.externalGhost) {
+        this.ghost = this.externalGhost;
+      } else {
+        const playerGhost = this.save.trackSave(this.def.id).ghost;
+        const devGhost = DEV_GHOSTS[this.def.id];
+        const ghostData = playerGhost ?? devGhost ?? null;
+        this.ghost = ghostData ? deserializeGhost(ghostData) : [];
+      }
     } else {
       this.ghost = [];
     }
@@ -168,6 +173,10 @@ export class RaceController {
         this.ghostCpSplits.push(split ?? -1);
       }
     }
+  }
+
+  useExternalGhost(samples: GhostSample[] | null): void {
+    this.externalGhost = samples;
   }
 
   ghostSplitDelta(index: number): number | null {

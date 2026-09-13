@@ -23,7 +23,8 @@ import { el } from './ui/common';
 import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem, RainSystem } from './render/particles';
 import { CameraRig } from './render/camera';
-import { RaceController, type RaceEvents } from './game/race';
+import { RaceController, deserializeGhost, type GhostSample, type RaceEvents } from './game/race';
+import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, ShareError } from './game/share';
 import { RivalManager, DEFAULT_RIVAL_LAPS, type RivalMode, type Standing, type RivalPreset } from './game/rivals';
 import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
 import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
@@ -121,6 +122,8 @@ class Game {
   private replayCar: CarVisual | null = null;
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
   private lastFinish: { result: RaceEvents['finish']; hasNext: boolean } | null = null;
+  private friendGhost: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
+  private shareBusy = false;
   private canvasEl: HTMLCanvasElement = canvas;
   private get canvas(): HTMLCanvasElement { return this.canvasEl; }
   private photoCleanup: (() => void) | null = null;
@@ -181,6 +184,8 @@ class Game {
       this.applyPlayerStyle(paint, body);
     };
     this.menu.onWatchReplay = () => this.startReplay();
+    this.menu.onShareGhost = (track) => this.shareGhost(track);
+    this.menu.onFriendRace = (track) => this.raceFriendGhost(track);
     this.garage = new GarageSystem(this.save);
     this.menu.onSettingsChanged = (s) => {
       this.audio.setMusicEnabled(this.runtimeMuted ? false : s.music);
@@ -213,6 +218,75 @@ class Game {
     this.applyAudioSettings();
     this.lastT = performance.now();
     requestAnimationFrame(this.frame);
+    void this.checkShareHash();
+  }
+
+  private async shareGhost(track: TrackDef): Promise<void> {
+    if (this.shareBusy) return;
+    const ts = this.save.trackSave(track.id);
+    if (!ts.ghost || ts.bestTimeMs == null) {
+      this.menu.showToast('NO GHOST TO SHARE');
+      return;
+    }
+    this.shareBusy = true;
+    try {
+      const samples = deserializeGhost(ts.ghost);
+      if (samples.length < 2) {
+        this.menu.showToast('NO GHOST TO SHARE');
+        return;
+      }
+      const code = await encodeGhostCode(track, samples);
+      const url = window.location.origin + window.location.pathname + buildShareLink(track, ts.bestTimeMs, code);
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({ title: 'RACE2 ghost', text: `Beat my ${track.name} ghost: ${(ts.bestTimeMs / 1000).toFixed(2)}s`, url });
+          return;
+        } catch (e) {
+          if (e && typeof e === 'object' && (e as { name?: string }).name === 'AbortError') return;
+        }
+      }
+      await navigator.clipboard.writeText(url);
+      this.menu.showToast('GHOST LINK COPIED');
+    } catch {
+      this.menu.showToast('SHARE FAILED');
+    } finally {
+      this.shareBusy = false;
+    }
+  }
+
+  private raceFriendGhost(track: TrackDef): void {
+    if (!this.friendGhost || this.friendGhost.trackId !== track.id) return;
+    this.menu.driftAttack = false;
+    this.menu.rivalsMode = false;
+    this.driftMode = false;
+    this.careerRace = null;
+    this.rivalLineup = null;
+    this.startTrack(track);
+  }
+
+  private async checkShareHash(): Promise<void> {
+    const hash = window.location.hash;
+    if (!hash.startsWith('#g=')) return;
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    const link = parseShareLink(hash);
+    if (!link) {
+      this.menu.showToast('INVALID GHOST LINK');
+      return;
+    }
+    const def = TRACKS.find((t) => t.id === link.trackId);
+    if (!def) {
+      this.menu.showToast('INVALID GHOST LINK');
+      return;
+    }
+    try {
+      const samples = await decodeGhostCode(link.code);
+      if (samples.length < 2) throw new ShareError('empty ghost');
+      this.friendGhost = { trackId: def.id, timeMs: link.timeMs, samples };
+      this.save.setFriendGhost(def.id, { code: link.code, timeMs: link.timeMs, dateMs: Date.now() });
+      this.menu.showFriendChallenge(def, link.timeMs);
+    } catch {
+      this.menu.showToast('INVALID GHOST LINK');
+    }
   }
 
   private applyAudioSettings(): void {
@@ -583,6 +657,9 @@ class Game {
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
     this.race!.totalLaps = this.rivalMode ? DEFAULT_RIVAL_LAPS : 1;
     this.race!.writesRecords = !this.rivalMode;
+    const friendActive = !this.rivalMode && !!this.friendGhost && this.friendGhost.trackId === def.id;
+    this.race!.useExternalGhost(friendActive ? this.friendGhost!.samples : null);
+    this.hud.setGhostTag(friendActive ? 'FRIEND' : null);
     this.race!.start();
     this.hud.setLapCounter(this.rivalMode ? `LAP ${this.race!.lapNumber}/${this.race!.totalLaps}` : null);
     this.ringsHit.clear();
@@ -1191,6 +1268,7 @@ declare global {
       rivals: () => object;
       standings: () => object;
       career: () => object;
+      friend: () => object | null;
     };
   }
 }
@@ -1294,6 +1372,10 @@ window.__race2 = {
     }
   },
   rivals: () => game['rivals']?.telemetry() ?? [],
+  friend: () => {
+    const fg = game['friendGhost'];
+    return fg ? { track: fg.trackId, timeMs: fg.timeMs, samples: fg.samples.length } : null;
+  },
   career: () => {
     const save = game['save'];
     return {

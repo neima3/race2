@@ -59,6 +59,12 @@ export interface CupRun {
   positions: number[];
 }
 
+export interface FriendGhostEntry {
+  code: string;
+  timeMs: number;
+  dateMs: number;
+}
+
 export interface PlayerProfile {
   paint: number;
   body: 'standard' | 'aero' | 'tank';
@@ -97,6 +103,7 @@ export interface AllSaves {
   tracks: Record<string, TrackSave>;
   cups: Record<string, CupSave>;
   careerRun: CupRun | null;
+  friendGhosts: Record<string, FriendGhostEntry>;
 }
 
 function emptyCupSave(): CupSave {
@@ -108,6 +115,21 @@ function sanitizeCupRun(v: unknown): CupRun | null {
   const r = v as Partial<CupRun>;
   if (typeof r.cupId !== 'string' || typeof r.nextRace !== 'number' || !Array.isArray(r.entries) || !Array.isArray(r.positions)) return null;
   return { cupId: r.cupId, nextRace: r.nextRace, entries: r.entries, positions: r.positions };
+}
+
+function sanitizeFriendGhosts(v: unknown): Record<string, FriendGhostEntry> {
+  const out: Record<string, FriendGhostEntry> = {};
+  if (!v || typeof v !== 'object') return out;
+  const r = v as Record<string, unknown>;
+  for (const key of Object.keys(r)) {
+    const e = r[key] as Partial<FriendGhostEntry> | null;
+    if (!e || typeof e !== 'object') continue;
+    if (typeof e.code !== 'string' || !e.code || e.code.length > 20000) continue;
+    if (typeof e.timeMs !== 'number' || !Number.isFinite(e.timeMs) || e.timeMs <= 0) continue;
+    if (typeof e.dateMs !== 'number' || !Number.isFinite(e.dateMs)) continue;
+    out[key] = { code: e.code, timeMs: e.timeMs, dateMs: e.dateMs };
+  }
+  return out;
 }
 
 export class SaveManager {
@@ -205,13 +227,14 @@ export class SaveManager {
             tracks: parsed.tracks,
             cups: parsed.cups ?? {},
             careerRun: sanitizeCupRun(parsed.careerRun),
+            friendGhosts: sanitizeFriendGhosts(parsed.friendGhosts),
           };
         }
       }
     } catch {
       /* corrupted — start fresh */
     }
-    return { tracks: {}, cups: {}, careerRun: null };
+    return { tracks: {}, cups: {}, careerRun: null, friendGhosts: {} };
   }
 
   private loadSettings(): Settings {
@@ -295,6 +318,15 @@ export class SaveManager {
 
   setCupRun(run: CupRun | null): void {
     this.saves.careerRun = run;
+    this.persistSaves();
+  }
+
+  friendGhost(trackId: string): FriendGhostEntry | null {
+    return this.saves.friendGhosts[trackId] ?? null;
+  }
+
+  setFriendGhost(trackId: string, entry: FriendGhostEntry): void {
+    this.saves.friendGhosts[trackId] = entry;
     this.persistSaves();
   }
 

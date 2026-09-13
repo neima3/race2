@@ -69,6 +69,8 @@ export class MenuManager {
   onCareerStartRace: (cup: CupDef, raceIndex: number) => void = () => {};
   onCareerNextRace: () => void = () => {};
   onCareerHubReturn: () => void = () => {};
+  onShareGhost: (track: TrackDef) => Promise<void> = async () => {};
+  onFriendRace: (track: TrackDef) => void = () => {};
 
   private titleScreen: HTMLElement;
   private tracksScreen: HTMLElement;
@@ -78,6 +80,9 @@ export class MenuManager {
   private garageScreen: HTMLElement;
   private achievementsScreen: HTMLElement;
   private careerScreen: HTMLElement;
+  private friendScreen: HTMLElement;
+  private toastEl: HTMLElement | null = null;
+  private toastTimer: number | null = null;
   careerCup: CupDef | null = null;
   garageCanvas: HTMLCanvasElement | null = null;
   isGarageOpen = false;
@@ -95,8 +100,9 @@ export class MenuManager {
     this.garageScreen = el('div', 'screen hidden');
     this.achievementsScreen = el('div', 'screen hidden');
     this.careerScreen = el('div', 'screen hidden');
+    this.friendScreen = el('div', 'screen overlay-screen hidden');
 
-    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen);
+    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen);
     this.buildTracksScreen();
   }
 
@@ -176,6 +182,7 @@ export class MenuManager {
         .map((k) => `<span class="mini-medal ${ms && ms[k] ? `earned mm-${k}` : ''}" title="${k}"></span>`)
         .join('');
       const starRow = Array.from({ length: 4 }, (_, si) => `<span class="pstar ${si < stars ? 'on' : ''}">&#11088;</span>`).join('');
+      const shareAffordance = unlocked && ts.ghost ? `<span class="track-share" role="button" title="SHARE GHOST">&#10548;</span>` : '';
       card.innerHTML = `
         <div class="track-card-top" style="--accent:${track.accentName}">
           <span class="track-num">${unlocked ? String(i + 1).padStart(2, '0') : '&#128274;'}</span>
@@ -187,9 +194,19 @@ export class MenuManager {
         <div class="track-card-bottom">
           <div class="track-best">${unlocked ? (ts.bestTimeMs != null ? formatTimePrecise(ts.bestTimeMs) : '&mdash;:--.---') : 'LOCKED'}</div>
           <div class="track-medals">${medalsRow}</div>
+          ${shareAffordance}
         </div>
         <div class="track-stars">${starRow}</div>
       `;
+      const shareEl = card.querySelector('.track-share');
+      if (shareEl) {
+        shareEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (shareEl.classList.contains('busy')) return;
+          shareEl.classList.add('busy');
+          void this.onShareGhost(track).finally(() => shareEl.classList.remove('busy'));
+        });
+      }
       card.addEventListener('click', () => {
         if (!unlocked) return;
         this.onPlayTrack(track);
@@ -601,6 +618,39 @@ export class MenuManager {
     screen.classList.remove('hidden');
   }
 
+  showFriendChallenge(track: TrackDef, timeMs: number): void {
+    this.friendScreen.replaceChildren();
+    const panel = el('div', 'panel friend-panel');
+    panel.style.setProperty('--accent', track.accentName);
+    panel.append(el('div', 'fh-title', 'CHALLENGE'));
+    panel.append(el('h2', 'screen-title', 'FRIEND GHOST CHALLENGE'));
+    panel.append(el('div', 'friend-track', track.name.toUpperCase()));
+    panel.append(el('div', 'friend-time', formatTimePrecise(timeMs)));
+    const pb = this.save.trackSave(track.id).bestTimeMs;
+    panel.append(el('div', 'friend-pb', pb != null ? `YOUR PB ${formatTimePrecise(pb)}` : 'NO PB YET &mdash; SET ONE'));
+    const race = el('button', 'menu-btn primary', 'RACE');
+    race.addEventListener('click', () => this.onFriendRace(track));
+    const dismiss = el('button', 'menu-btn', 'DISMISS');
+    dismiss.addEventListener('click', () => this.show('title'));
+    panel.append(race, dismiss);
+    this.friendScreen.append(panel);
+    this.hideAll();
+    this.friendScreen.classList.remove('hidden');
+  }
+
+  showToast(text: string): void {
+    if (!this.toastEl) {
+      this.toastEl = el('div', 'menu-toast');
+      this.root.append(this.toastEl);
+    }
+    this.toastEl.textContent = text;
+    this.toastEl.classList.remove('show');
+    void this.toastEl.offsetWidth;
+    this.toastEl.classList.add('show');
+    if (this.toastTimer !== null) clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => this.toastEl?.classList.remove('show'), 2200);
+  }
+
   private buildPause(): HTMLElement {
     const screen = el('div', 'screen overlay-screen hidden');
     const panel = el('div', 'panel');
@@ -751,6 +801,19 @@ export class MenuManager {
     });
     panel.append(retry);
     if (!rivalMode) panel.append(replay);
+    if (!rivalMode && this.save.trackSave(track.id).ghost) {
+      const share = el('button', 'menu-btn', 'SHARE GHOST');
+      share.addEventListener('click', () => {
+        if (share.disabled) return;
+        share.textContent = 'ENCODING…';
+        share.disabled = true;
+        void this.onShareGhost(track).finally(() => {
+          share.textContent = 'SHARE GHOST';
+          share.disabled = false;
+        });
+      });
+      panel.append(share);
+    }
     panel.append(menu);
     this.finishScreen.append(panel);
     this.finishScreen.classList.remove('hidden');
@@ -762,7 +825,7 @@ export class MenuManager {
 
   hideAll(): void {
     this.isGarageOpen = false;
-    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen]) {
+    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen]) {
       s.classList.add('hidden');
     }
   }

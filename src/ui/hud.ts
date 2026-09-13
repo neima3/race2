@@ -22,6 +22,7 @@ export class HUD {
   private driftEl: HTMLElement;
   private respawnHint: HTMLElement;
   private liveDeltaEl: HTMLElement;
+  private ghostTagEl: HTMLElement;
   private lapEl: HTMLElement;
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
@@ -50,6 +51,7 @@ export class HUD {
     this.timerEl = el('div', 'hud-timer', '0:00.000');
     this.bestEl = el('div', 'hud-best');
     this.liveDeltaEl = el('div', 'hud-live-delta');
+    this.ghostTagEl = el('div', 'hud-ghost-tag hidden');
     this.posWrap = el('div', 'hud-pos-wrap');
     this.posFlashEl = el('div', 'hud-pos-flash');
     const posLine = el('div', 'hud-pos');
@@ -57,7 +59,7 @@ export class HUD {
     this.posTotalEl = el('span', 'hud-pos-total', '/4');
     posLine.append(this.posNumEl, this.posTotalEl);
     this.posWrap.append(this.posFlashEl, posLine);
-    timerWrap.append(this.timerEl, this.bestEl, this.liveDeltaEl, this.posWrap);
+    timerWrap.append(this.timerEl, this.bestEl, this.liveDeltaEl, this.ghostTagEl, this.posWrap);
     const cpWrap = el('div', 'hud-cp-wrap');
     this.cpEl = el('div', 'hud-cp');
     this.lapEl = el('div', 'hud-lap hidden');
@@ -125,6 +127,16 @@ export class HUD {
     if (!this.driftMode) return;
     const elScore = document.getElementById('dm-score');
     if (elScore) elScore.textContent = String(Math.round(score));
+  }
+
+  setGhostTag(tag: string | null): void {
+    if (tag === null) {
+      this.ghostTagEl.classList.add('hidden');
+      this.ghostTagEl.textContent = '';
+    } else {
+      this.ghostTagEl.textContent = tag;
+      this.ghostTagEl.classList.remove('hidden');
+    }
   }
 
   show(trackName: string, bestMs: number | null, cpTotal: number, cpDists: number[] = [], trackLen = 1): void {

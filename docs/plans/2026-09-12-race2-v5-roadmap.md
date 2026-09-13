@@ -7,7 +7,7 @@
 - [x] Phase 4: Career — cups, points, podiums, trophies
 - [x] Phase 5: Car progression — distinct tuning per body, unlocks, stat bars
 - [ ] Phase 6: Weather & time-of-day — rain, dusk, night variants with real grip effects
-- [ ] Phase 7: Ghost sharing — share/import PB ghosts via URL codes
+- [x] Phase 7: Ghost sharing — share/import PB ghosts via URL codes
 - [ ] Phase 8: Race feel & podium — overtake/final-lap moments, podium ceremony
 - [ ] Phase 9: Performance & soak — 4-car + weather budget, memory, 10-min soak
 - [ ] Phase 10: Balance + release QA + deploy v2.0
