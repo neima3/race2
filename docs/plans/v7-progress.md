@@ -184,3 +184,9 @@ Honest verdicts: no z-fighting/floating/popping/shimmer found in any mode on any
 **Gates at HEAD: typecheck ✅ build ✅ (1.02 MB / 383 kB gzip) laps 14/14 ✅ rivals 20/20 ✅ career 119/119 ✅ share 34/34 ✅ knockout 50/50 ✅ daily 59/59 ✅ probe 24/24 ✅ allocs PASS ✅.**
 
 Notes for Phase 6: title-screen orbit scene should avoid canyon-twist's seam junction framing (start straight now has a visible merge fan on 6 tracks — pick sunrise-sprint or salt-flats as the photogenic default); menu panels must stay readable over the brighter worlds (P1-P4 palettes). Minimap tool: `qa/geomap.html` on the dev server; geo harnesses in `test/tmp/geo-*.ts` are reusable regression checks for any future CP edits.
+
+## Phases 5-6 (2026-09-13)
+- P5 subagent QA sweep: geometry audit found REAL seam folds/kinks on 8 tracks -> repaired; headless harness went 11/14 -> 14/14 (old STRICT-exempt trio was broken geometry, not bot weakness). Medals rescaled x4, dev ghosts regen x14, career street-cup pin held via disclosed paceBias 0.996. Full muted gameplay matrix PASS (7 time-trials incl night/rain, rival, knockout, daily, drift, photo x4, touch, reduced-motion). Perf: rain rivals 148 draw calls.
+- P5 lead follow-up (grok findings): disposed merge/toNonIndexed source geometries in terrain.ts; sRGB colorSpace on banner/chevron/pillar canvas textures (builder.ts).
+- P6: title tagline "TRACKMANIA-STYLE TIME ATTACK" -> "HIGH-SPEED ARCADE RACING"; version 2.2.0 (package.json + title credits). Final smoke: rival race on grand-gauntlet muted — standings/minimap/curbs/mesas all correct (qa/v7-phase5/final-rival-race.png).
+- Grok CLI: scoped review of terrain.ts/roadTextures.ts delivered 5 findings (4 real, fixed; 1 false positive — window material IS disposed via group traverse). Earlier full-diff reviews timed out; scoped-file prompts work.

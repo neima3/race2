@@ -166,7 +166,7 @@ export class MenuManager {
     const logo = el('div', 'game-logo');
     logo.innerHTML = `
       <div class="logo-race">RACE<span class="logo-2">2</span></div>
-      <div class="logo-tag">TRACKMANIA-STYLE TIME ATTACK</div>
+      <div class="logo-tag">HIGH-SPEED ARCADE RACING</div>
     `;
     const buttons = el('div', 'menu-buttons');
     const play = el('button', 'menu-btn primary', 'PLAY');
@@ -196,7 +196,7 @@ export class MenuManager {
     });
     buttons.append(play, daily, career, garage, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
-    const credits = el('div', 'title-credits', `v2.1.0 — built with Three.js · © 2026 neima.me`);
+    const credits = el('div', 'title-credits', `v2.2.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
     return screen;
   }
