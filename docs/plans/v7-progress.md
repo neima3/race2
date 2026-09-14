@@ -104,3 +104,8 @@ Deviations:
 - Long QA detour honest note: mid-phase "black road" panics were partly QA-churn artifacts (mutations applied to a stale mesh reference, results-panel dimming, photo-mode camera) — the albedo lift + underlay are the only lasting changes; all final evidence re-taken pristine.
 
 Notes for Phase 4+: scatter should keep `minRoadDistance` discipline (props hug the shoulder in places — P4 scope); crest-underside tone could take a subtle vertical gradient later; curbs+underlay add ~10k tris — budget headroom still comfortable.
+
+## Phase 4 (completed by lead after subagent hit usage limit mid-phase)
+- props.ts rewritten: cluster placement (jittered anchors + gaussian scatter), 2-3 geometry variants per family, ±8% palette jitter, min road distance (solid ≥ halfWidth+6m, scatter ≥ +2.5m), per-theme instanced ground scatter (tufts/scrub/pebbles/light dots), deterministic seeding.
+- Evidence captured by the subagent before the limit: qa/v7-phase4/01-21 (all 4 themes day + neon night + rain + dusk, wide/corner/close-up/chase) — lead reviewed mesa-wide + neon-night-wide: cluster density reads well, signage/poles placed on straights, nothing floating.
+- Lead verified all gates green post-hoc (see gates above) + steering/lateral untouched (render-only diff).
