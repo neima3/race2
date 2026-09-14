@@ -13,6 +13,28 @@ export interface CarVisual {
 
 export type CarBodyStyle = 'standard' | 'aero' | 'tank';
 
+// ---- contact shadow blob: one soft radial-gradient texture shared by player + rivals ----
+let contactShadowTex: THREE.Texture | null = null;
+export function contactShadowTexture(): THREE.Texture {
+  if (contactShadowTex) return contactShadowTex;
+  if (typeof document === 'undefined') {
+    contactShadowTex = new THREE.Texture();
+    return contactShadowTex;
+  }
+  const cv = document.createElement('canvas');
+  cv.width = 128;
+  cv.height = 128;
+  const ctx = cv.getContext('2d')!;
+  const grd = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
+  grd.addColorStop(0, 'rgba(0,0,0,0.7)');
+  grd.addColorStop(0.5, 'rgba(0,0,0,0.38)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, 128, 128);
+  contactShadowTex = new THREE.CanvasTexture(cv);
+  return contactShadowTex;
+}
+
 export const PAINTS: { name: string; color: number }[] = [
   { name: 'Cyan Flux', color: 0x29e6ff },
   { name: 'Solar', color: 0xffb52e },

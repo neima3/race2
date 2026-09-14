@@ -15,6 +15,7 @@ function makeSkyMaterial(theme: ThemeDef): THREE.ShaderMaterial {
       sunDir: { value: new THREE.Vector3(...theme.sunDir).normalize() },
       sunGlow: { value: 1 },
       starBrightness: { value: 1 },
+      hazeColor: { value: new THREE.Color(theme.fogColor) },
     },
     vertexShader: `
       varying vec3 vDir;
@@ -32,15 +33,19 @@ function makeSkyMaterial(theme: ThemeDef): THREE.ShaderMaterial {
       uniform vec3 sunDir;
       uniform float sunGlow;
       uniform float starBrightness;
+      uniform vec3 hazeColor;
       varying vec3 vDir;
       void main() {
         float h = normalize(vDir).y;
         vec3 col = mix(horizonColor, midColor, smoothstep(0.0, 0.18, h));
         col = mix(col, topColor, smoothstep(0.18, 0.65, h));
         float sunAmt = max(dot(normalize(vDir), sunDir), 0.0);
-        col += sunColor * pow(sunAmt, 350.0) * 1.6 * sunGlow;
-        col += sunColor * pow(sunAmt, 18.0) * 0.32 * sunGlow;
-        col += vec3(1.0, 0.75, 0.45) * pow(sunAmt, 3.5) * 0.12 * sunGlow;
+        float core = smoothstep(0.99860, 0.99955, sunAmt);
+        col += sunColor * core * 1.22 * sunGlow;
+        col += sunColor * pow(sunAmt, 24.0) * 0.28 * sunGlow;
+        col += sunColor * pow(sunAmt, 6.0) * 0.13 * sunGlow;
+        col += vec3(1.0, 0.75, 0.45) * pow(sunAmt, 2.6) * 0.09 * sunGlow;
+        col = mix(col, hazeColor, (1.0 - smoothstep(0.0, 0.16, h)) * 0.62);
         float stars = step(0.9993, fract(sin(dot(floor(vDir * 260.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453));
         col += stars * smoothstep(0.05, 0.4, h) * 0.55 * starBrightness;
         gl_FragColor = vec4(col, 1.0);
@@ -135,7 +140,7 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
   scene.add(sunLight);
   scene.add(sunLight.target);
 
-  const hemiLight = new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, 0.85);
+  const hemiLight = new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, theme.hemiIntensity);
   scene.add(hemiLight);
 
   const base = {
@@ -148,7 +153,7 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     fogNear: theme.fogNear,
     fogFar: theme.fogFar,
     sunIntensity: theme.sunIntensity,
-    hemiIntensity: 0.85,
+    hemiIntensity: theme.hemiIntensity,
     ground: new THREE.Color(theme.groundColor),
     mesa: new THREE.Color(theme.mesaColor),
     mesaFar: new THREE.Color(theme.mesaFarColor),
@@ -239,27 +244,75 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
   }
   group.add(rocks);
 
-  const cloudMat = new THREE.MeshBasicMaterial({ color: theme.cloudColor, transparent: true, opacity: theme.cloudOpacity, fog: false });
-  const clouds = new THREE.Group();
-  const cloudDirs: number[] = [];
-  for (let i = 0; i < 14; i++) {
-    const puffs: THREE.BufferGeometry[] = [];
-    const puffCount = 3 + Math.floor(rng() * 4);
-    for (let p = 0; p < puffCount; p++) {
-      const puffGeo = new THREE.SphereGeometry(26 + rng() * 34, 10, 8);
-      const puffPos = new THREE.Vector3((rng() - 0.5) * 90, (rng() - 0.5) * 16, (rng() - 0.5) * 50);
-      puffs.push(baked(puffGeo, puffPos, 0, 0.42));
-      puffGeo.dispose();
-    }
-    const mergedPuffs = mergeGeometries(puffs, false)!;
-    for (const p of puffs) p.dispose();
-    const cloud = new THREE.Mesh(mergedPuffs, cloudMat);
+  const cloudMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+    uniforms: {
+      uTime: { value: 0 },
+      uDrift: { value: 2.2 },
+      uColor: { value: new THREE.Color(theme.cloudColor) },
+      uOpacity: { value: theme.cloudOpacity },
+    },
+    vertexShader: `
+      attribute vec3 aBase;
+      attribute vec4 aPuff;
+      attribute float aSeed;
+      uniform float uTime;
+      uniform float uDrift;
+      varying vec2 vPuffUv;
+      void main() {
+        float span = 5200.0;
+        float x = mod(aBase.x + uTime * uDrift * (0.7 + 0.6 * aSeed) + span * 0.5, span) - span * 0.5;
+        vec4 mv = modelViewMatrix * vec4(x + aPuff.x, aBase.y + aPuff.y, aBase.z + aPuff.z, 1.0);
+        mv.xy += position.xy * aPuff.w;
+        vPuffUv = position.xy + 0.5;
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      varying vec2 vPuffUv;
+      void main() {
+        float r = length(vPuffUv - 0.5) * 2.0;
+        float a = smoothstep(1.0, 0.32, r);
+        a *= mix(0.5, 1.0, vPuffUv.y) * uOpacity;
+        vec3 col = uColor * mix(0.82, 1.1, vPuffUv.y);
+        gl_FragColor = vec4(col, a);
+      }
+    `,
+  });
+  const CLOUD_COUNT = 12;
+  const cloudBase: number[] = [];
+  const puffData: number[] = [];
+  const puffSeeds: number[] = [];
+  let puffTotal = 0;
+  for (let i = 0; i < CLOUD_COUNT; i++) {
     const a = rng() * Math.PI * 2;
     const dist = 900 + rng() * 1900;
-    cloud.position.set(Math.cos(a) * dist, 240 + rng() * 320, Math.sin(a) * dist);
-    cloudDirs.push(0.6 + rng() * 0.8);
-    clouds.add(cloud);
+    const cx = Math.cos(a) * dist;
+    const cy = 240 + rng() * 320;
+    const cz = Math.sin(a) * dist;
+    const puffCount = 3 + Math.floor(rng() * 3);
+    for (let p = 0; p < puffCount; p++) {
+      cloudBase.push(cx, cy, cz);
+      puffData.push((rng() - 0.5) * 110, (rng() - 0.5) * 18, (rng() - 0.5) * 60, 34 + rng() * 52);
+      puffSeeds.push(rng());
+      puffTotal++;
+    }
   }
+  const puffGeo = new THREE.InstancedBufferGeometry();
+  const puffQuad = new THREE.PlaneGeometry(1, 1);
+  puffGeo.index = puffQuad.index;
+  puffGeo.attributes.position = puffQuad.attributes.position;
+  puffGeo.setAttribute('aBase', new THREE.InstancedBufferAttribute(new Float32Array(cloudBase), 3));
+  puffGeo.setAttribute('aPuff', new THREE.InstancedBufferAttribute(new Float32Array(puffData), 4));
+  puffGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(new Float32Array(puffSeeds), 1));
+  puffGeo.instanceCount = puffTotal;
+  puffQuad.dispose();
+  const clouds = new THREE.Mesh(puffGeo, cloudMat);
+  clouds.frustumCulled = false;
   group.add(clouds);
 
   let fireflies: THREE.Points | null = null;
@@ -421,13 +474,14 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     fog.color.copy(scratch.copy(base.fog).multiplyScalar(d.fogColorMult));
     fog.near = base.fogNear * d.fogNearMult;
     fog.far = base.fogFar * d.fogFarMult;
+    (u.hazeColor.value as THREE.Color).copy(fog.color);
 
     groundMat.color.copy(scratch.copy(base.ground).multiplyScalar(d.ambientDim));
     mesaMat.color.copy(scratch.copy(base.mesa).multiplyScalar(d.ambientDim));
     mesaMatFar.color.copy(scratch.copy(base.mesaFar).multiplyScalar(d.ambientDim));
     rockMat.color.copy(scratch.copy(base.rock).multiplyScalar(d.ambientDim));
-    cloudMat.color.copy(scratch.copy(base.cloud).multiplyScalar(d.cloudColorMult));
-    cloudMat.opacity = Math.min(1, base.cloudOpacity * d.cloudOpacityMult);
+    (cloudMat.uniforms.uColor.value as THREE.Color).copy(scratch.copy(base.cloud).multiplyScalar(d.cloudColorMult));
+    cloudMat.uniforms.uOpacity.value = Math.min(1, base.cloudOpacity * d.cloudOpacityMult);
     reflectorMat.color.copy(scratch.copy(base.reflector).multiplyScalar(d.reflectorMult));
   };
 
@@ -451,10 +505,7 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
 
   const animate = (t: number, dt: number): void => {
     clock += dt;
-    clouds.children.forEach((c, i) => {
-      c.position.x += cloudDirs[i] * dt * 2.4;
-      if (c.position.x > 2600) c.position.x = -2600;
-    });
+    cloudMat.uniforms.uTime.value = clock;
     if (fireflies) {
       (fireflies.material as THREE.ShaderMaterial).uniforms.uTime.value = clock;
       fireflies.position.x = t;

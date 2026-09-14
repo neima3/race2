@@ -170,6 +170,7 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
     const geo = new THREE.PlaneGeometry(w * 2, 7);
     const mat = new THREE.MeshBasicMaterial({
       map: chevronTex.clone(),
+      color: new THREE.Color(1.7, 1.7, 1.7),
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -188,7 +189,7 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
   }
 
   const checkpointGates: TrackMeshes['checkpointGates'] = [];
-  const gateMat = new THREE.MeshBasicMaterial({ color: 0x7ef3ff, transparent: true, opacity: 0.9 });
+  const gateMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x7ef3ff).multiplyScalar(1.5), transparent: true, opacity: 0.9 });
   for (const c of def.checkpoints) {
     const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
     curve.frameAtDist(c.dist, f);
@@ -260,7 +261,7 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
     curve.frameAtDist(r.dist, f);
     const center = f.pos.clone().addScaledVector(f.binormal, r.lateral).addScaledVector(f.normal, r.height);
     const geo = new THREE.TorusGeometry(r.radius, 0.22, 10, 40);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x9df3ff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending });
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9df3ff).multiplyScalar(1.8), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending });
     const ring = new THREE.Mesh(geo, mat);
     ring.position.copy(center);
     ring.lookAt(center.clone().add(f.tangent));

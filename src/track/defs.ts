@@ -28,14 +28,14 @@ export interface VariantDef {
 export const VARIANTS: Record<TrackVariant, VariantDef> = {
   day: {
     skyTint: 0x000000, skyTintAmt: 0, sunTint: 0xffffff, sunTintAmt: 0, sunElev: null,
-    sunIntensityMult: 1, sunGlow: 1, starBrightness: 1, hemiMult: 1,
+    sunIntensityMult: 1, sunGlow: 1, starBrightness: 0, hemiMult: 1,
     fogColorMult: 1, fogNearMult: 1, fogFarMult: 1, ambientDim: 1,
     cloudColorMult: 1, cloudOpacityMult: 1, reflectorMult: 1,
     headlights: false, rain: false,
   },
   dusk: {
     skyTint: 0xff7a3a, skyTintAmt: 0.3, sunTint: 0xffa04a, sunTintAmt: 0.55, sunElev: 0.09,
-    sunIntensityMult: 0.8, sunGlow: 1.2, starBrightness: 1.1, hemiMult: 0.72,
+    sunIntensityMult: 0.8, sunGlow: 1.2, starBrightness: 0, hemiMult: 0.72,
     fogColorMult: 0.9, fogNearMult: 0.9, fogFarMult: 0.85, ambientDim: 0.86,
     cloudColorMult: 0.82, cloudOpacityMult: 1.1, reflectorMult: 1.35,
     headlights: false, rain: false,
@@ -74,36 +74,37 @@ export interface ThemeDef {
   sunIntensity: number;
   hemiSky: number;
   hemiGround: number;
+  hemiIntensity: number;
   ambientSound: 'birds' | 'wind' | 'synth' | 'waves';
 }
 
 export const THEMES: Record<ThemeId, ThemeDef> = {
   alpine: {
     skyTop: 0x2c4a7c, skyMid: 0x7fa8d8, skyHorizon: 0xffd9c4, sunColor: 0xfff2d8,
-    sunDir: [0.4, 0.35, -0.84], fogColor: 0xc4d4e8, fogNear: 320, fogFar: 2600,
+    sunDir: [0.4, 0.35, -0.84], fogColor: 0xc4d4e8, fogNear: 290, fogFar: 2600,
     groundColor: 0x5d7a52, mesaColor: 0x8a97a8, mesaFarColor: 0x64748e, rockColor: 0x9aa5b0,
-    cloudColor: 0xffffff, cloudOpacity: 0.75, sunIntensity: 2.4, hemiSky: 0xbdd4f0, hemiGround: 0x5a6a4a,
+    cloudColor: 0xffffff, cloudOpacity: 0.75, sunIntensity: 2.35, hemiSky: 0xbdd4f0, hemiGround: 0x5a6a4a, hemiIntensity: 0.95,
     ambientSound: 'birds',
   },
   canyon: {
-    skyTop: 0x1a2440, skyMid: 0x7a4a8c, skyHorizon: 0xff9a4d, sunColor: 0xffe9b0,
+    skyTop: 0x1a2440, skyMid: 0x7a4a8c, skyHorizon: 0xff9a4d, sunColor: 0xffc06a,
     sunDir: [-0.55, 0.28, -0.79], fogColor: 0xd88a5c, fogNear: 260, fogFar: 2400,
     groundColor: 0x7a4f34, mesaColor: 0x9c5a38, mesaFarColor: 0x6e4468, rockColor: 0x8a5638,
-    cloudColor: 0xffc9a0, cloudOpacity: 0.55, sunIntensity: 2.6, hemiSky: 0x8fb4ff, hemiGround: 0x8a5a3a,
+    cloudColor: 0xffc9a0, cloudOpacity: 0.55, sunIntensity: 3.4, hemiSky: 0x7a68d8, hemiGround: 0x54301e, hemiIntensity: 0.6,
     ambientSound: 'wind',
   },
   neon: {
     skyTop: 0x05060f, skyMid: 0x14082b, skyHorizon: 0x3b1a6e, sunColor: 0x8be9ff,
-    sunDir: [0.2, 0.12, -0.97], fogColor: 0x1a1038, fogNear: 220, fogFar: 2100,
+    sunDir: [0.2, 0.2, -0.97], fogColor: 0x1a1038, fogNear: 220, fogFar: 2100,
     groundColor: 0x141824, mesaColor: 0x1e2438, mesaFarColor: 0x252b4a, rockColor: 0x232a3e,
-    cloudColor: 0x40286a, cloudOpacity: 0.4, sunIntensity: 1.2, hemiSky: 0x4a5af0, hemiGround: 0x141824,
+    cloudColor: 0x40286a, cloudOpacity: 0.4, sunIntensity: 2.2, hemiSky: 0x5a6cf8, hemiGround: 0x2a3a5c, hemiIntensity: 2.6,
     ambientSound: 'synth',
   },
   mesa: {
-    skyTop: 0x2a1a3e, skyMid: 0xc4552e, skyHorizon: 0xffb347, sunColor: 0xffd080,
+    skyTop: 0x2a1a3e, skyMid: 0xc4552e, skyHorizon: 0xffb347, sunColor: 0xffd9a0,
     sunDir: [0.75, 0.2, 0.63], fogColor: 0xe0985c, fogNear: 280, fogFar: 2500,
     groundColor: 0x8a5232, mesaColor: 0xa85c30, mesaFarColor: 0x7a4050, rockColor: 0x96582f,
-    cloudColor: 0xffd9a8, cloudOpacity: 0.6, sunIntensity: 2.8, hemiSky: 0xffc490, hemiGround: 0x6a4028,
+    cloudColor: 0xffd9a8, cloudOpacity: 0.6, sunIntensity: 3.2, hemiSky: 0x9db4e0, hemiGround: 0x6a4028, hemiIntensity: 0.8,
     ambientSound: 'waves',
   },
 };

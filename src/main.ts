@@ -11,7 +11,7 @@ function curveLen(def: TrackDef): number {
 }
 import { buildTrackMeshes, type TrackMeshes } from './track/builder';
 import { CarPhysics, BODY_TUNING } from './physics/car';
-import { buildCarVisual, type CarVisual } from './render/car-model';
+import { buildCarVisual, contactShadowTexture, type CarVisual } from './render/car-model';
 import { SkidMarks } from './render/skidmarks';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -112,7 +112,6 @@ class Game {
   private boostKick = 0;
   private skidMarks: SkidMarks | null = null;
   private shadowBlob: THREE.Sprite | null = null;
-  private sunFlare: THREE.Sprite | null = null;
   private frameMsAvg = 16;
   private resScale = 1;
   private prevForwardSpeed = 0;
@@ -507,9 +506,9 @@ class Game {
         this.composer = new EffectComposer(this.renderer);
         this.bloomPass = new UnrealBloomPass(
           new THREE.Vector2(window.innerWidth, window.innerHeight),
+          0.32,
           0.42,
-          0.65,
-          0.82,
+          1.0,
         );
         this.composer.addPass(this.bloomPass);
       }
@@ -622,33 +621,10 @@ class Game {
     }
 
     if (!this.shadowBlob) {
-      const blobCanvas = document.createElement('canvas');
-      blobCanvas.width = 64;
-      blobCanvas.height = 64;
-      const bctx = blobCanvas.getContext('2d')!;
-      const grd = bctx.createRadialGradient(32, 32, 4, 32, 32, 30);
-      grd.addColorStop(0, 'rgba(0,0,0,0.55)');
-      grd.addColorStop(1, 'rgba(0,0,0,0)');
-      bctx.fillStyle = grd;
-      bctx.fillRect(0, 0, 64, 64);
-      this.shadowBlob = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(blobCanvas), transparent: true, depthWrite: false }));
+      this.shadowBlob = new THREE.Sprite(new THREE.SpriteMaterial({ map: contactShadowTexture(), transparent: true, depthWrite: false }));
       this.shadowBlob.scale.set(3.4, 3.4, 1);
     }
     this.trackGroup.add(this.shadowBlob);
-    if (!this.sunFlare) {
-      const flareCanvas = document.createElement('canvas');
-      flareCanvas.width = 128;
-      flareCanvas.height = 128;
-      const fctx = flareCanvas.getContext('2d')!;
-      const fgrd = fctx.createRadialGradient(64, 64, 6, 64, 64, 62);
-      fgrd.addColorStop(0, 'rgba(255,240,210,0.9)');
-      fgrd.addColorStop(0.35, 'rgba(255,200,140,0.28)');
-      fgrd.addColorStop(1, 'rgba(255,180,120,0)');
-      fctx.fillStyle = fgrd;
-      fctx.fillRect(0, 0, 128, 128);
-      this.sunFlare = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(flareCanvas), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-      this.scene.add(this.sunFlare);
-    }
 
     if (this.quality !== 'low') {
       this.meshes.group.traverse((o) => {

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CarPhysics, DEFAULT_TUNING } from '../physics/car';
 import type { TrackCurve } from '../track/curve';
 import type { TrackDef } from '../track/defs';
-import { buildCarVisual, type CarVisual, type CarBodyStyle } from '../render/car-model';
+import { buildCarVisual, contactShadowTexture, type CarVisual, type CarBodyStyle } from '../render/car-model';
 import type { ParticleSystem } from '../render/particles';
 import { autopilotDrive, type AutoPilotState } from '../systems/autopilot';
 import { updateBoostPads, computeOnSlick, moverOverlap, applyMoverScrub, resetPads, surfaceGripFor, type PadState } from './rules';
@@ -207,6 +207,10 @@ export class RivalManager {
       visual.group.traverse((o) => {
         if (o instanceof THREE.Mesh) o.castShadow = shadows;
       });
+      const blob = new THREE.Sprite(new THREE.SpriteMaterial({ map: contactShadowTexture(), transparent: true, depthWrite: false, opacity: 0.85 }));
+      blob.scale.set(3.4, 3.4, 1);
+      blob.position.y = -0.25;
+      visual.group.add(blob);
       parent.add(visual.group);
       this.rivals.push({
         skill: { name: preset.name, tier: preset.tier, ...TIER_PARAMS[preset.tier], paint: preset.paint, body: preset.body },
