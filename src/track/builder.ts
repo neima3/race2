@@ -26,6 +26,7 @@ function makeChevronTexture(accent: string): THREE.CanvasTexture {
     ctx.stroke();
   }
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.ClampToEdgeWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   return tex;
@@ -328,6 +329,7 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
   const postMat = new THREE.MeshStandardMaterial({ color: GANTRY_POST[def.theme], roughness: 0.55, metalness: 0.35 });
   const bannerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   bannerMat.map = new THREE.CanvasTexture(checkerBannerCanvas(accentHex));
+  bannerMat.map.colorSpace = THREE.SRGBColorSpace;
   const w0 = startF.halfWidth + 0.6;
   const banner = new THREE.Mesh(new THREE.BoxGeometry(w0 * 2, 1.8, 0.3), bannerMat);
   banner.position.copy(startF.pos).addScaledVector(startF.normal, 5.6);
@@ -379,7 +381,9 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
     px2.fillStyle = i % 2 === 0 ? '#ff7a3d' : '#1c1f2a';
     px2.fillRect(0, i * 8, 64, 8);
   }
-  const moverMat = new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(pillarCanvas), roughness: 0.6 });
+  const pillarTex = new THREE.CanvasTexture(pillarCanvas);
+  pillarTex.colorSpace = THREE.SRGBColorSpace;
+  const moverMat = new THREE.MeshStandardMaterial({ map: pillarTex, roughness: 0.6 });
   let mphase = 0;
   for (const m of def.movers ?? []) {
     const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };

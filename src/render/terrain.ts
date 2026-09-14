@@ -290,14 +290,19 @@ function mesaGeo(rng: () => number, r: number, h: number): THREE.BufferGeometry 
   const g = new THREE.CylinderGeometry(r * 0.88, r, h, 9, 1, false);
   g.translate(0, h / 2, 0);
   jitterRadial(g, 0.14 + rng() * 0.14, rng);
-  return stripUv(g.toNonIndexed());
+  const ni = g.toNonIndexed();
+  g.dispose();
+  return stripUv(ni);
 }
 
 function butteGeo(rng: () => number, r: number, h: number): THREE.BufferGeometry {
   const lower = mesaGeo(rng, r, h * (0.5 + rng() * 0.12));
   const upper = mesaGeo(rng, r * (0.55 + rng() * 0.15), h * (0.38 + rng() * 0.12));
   upper.translate(0, h * (0.52 + rng() * 0.1), 0);
-  return mergeGeometries([lower, upper], false)!;
+  const merged = mergeGeometries([lower, upper], false)!;
+  lower.dispose();
+  upper.dispose();
+  return merged;
 }
 
 function hillGeo(rng: () => number, r: number, h: number): THREE.BufferGeometry {
@@ -317,13 +322,17 @@ function hillGeo(rng: () => number, r: number, h: number): THREE.BufferGeometry 
     p.setY(i, y * (1 + 0.1 * Math.sin(3 * th + p2)));
   }
   g.scale(r, h, r * (0.8 + rng() * 0.35));
-  return stripUv(g.toNonIndexed());
+  const ni = g.toNonIndexed();
+  g.dispose();
+  return stripUv(ni);
 }
 
 function box(w: number, h: number, d: number, x: number, y: number, z: number): THREE.BufferGeometry {
   const g = new THREE.BoxGeometry(w, h, d);
   g.translate(x, y, z);
-  return stripUv(g.toNonIndexed());
+  const ni = g.toNonIndexed();
+  g.dispose();
+  return stripUv(ni);
 }
 
 const NEON_ACCENTS = [0x36f0ff, 0xff3dd2, 0xffd23d, 0x9dff3d, 0xff8a3d];
@@ -334,6 +343,7 @@ function towerGeos(rng: () => number, w: number, h: number): { body: THREE.Buffe
   if (rng() < 0.3) parts.push(box(w * 1.45, h * 0.1, w * 1.45, 0, h * 0.05, 0));
   if (rng() < 0.3) parts.push(box(w * 0.18, h * (0.18 + rng() * 0.22), w * 0.18, 0, h + h * 0.22, 0));
   const body = parts.length === 1 ? parts[0] : mergeGeometries(parts, false)!;
+  if (body !== parts[0]) for (const p of parts) p.dispose();
   const stripCount = 1 + Math.floor(rng() * 3);
   const strips: THREE.BufferGeometry[] = [];
   for (let i = 0; i < stripCount; i++) {
@@ -360,6 +370,7 @@ function towerGeos(rng: () => number, w: number, h: number): { body: THREE.Buffe
     strips.push(s);
   }
   const windows = strips.length ? mergeGeometries(strips, false)! : null;
+  if (windows) for (const s of strips) s.dispose();
   return { body, windows };
 }
 
