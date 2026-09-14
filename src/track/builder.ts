@@ -1,28 +1,11 @@
 import * as THREE from 'three';
-import { TrackCurve } from './curve';
-import type { TrackDef, TrackVariant } from './defs';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { TrackCurve, type TrackFrame } from './curve';
+import { THEMES, type TrackDef, type TrackVariant, type ThemeId } from './defs';
+import { GROUND_Y } from '../render/terrain';
+import { makeAsphaltTexture, makeCurbTexture, checkerBannerCanvas } from '../render/roadTextures';
 
-function makeRoadTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 128;
-  c.height = 128;
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#3a3f4c';
-  ctx.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 900; i++) {
-    const v = 45 + Math.random() * 30;
-    ctx.fillStyle = `rgba(${v},${v + 3},${v + 10},${0.25 + Math.random() * 0.3})`;
-    ctx.fillRect(Math.random() * 128, Math.random() * 128, 1.6, 1.6);
-  }
-  ctx.fillStyle = 'rgba(235,240,255,0.85)';
-  ctx.fillRect(61, 8, 6, 42);
-  ctx.fillRect(61, 72, 6, 42);
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.anisotropy = 4;
-  return tex;
-}
+const TAU = Math.PI * 2;
 
 function makeChevronTexture(accent: string): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -48,6 +31,79 @@ function makeChevronTexture(accent: string): THREE.CanvasTexture {
   return tex;
 }
 
+const CURB_KAPPA = 0.015;
+const CURB_MIN_LEN = 7;
+const CURB_DILATE_M = 4;
+const CURB_STRIPE_M = 2.4;
+
+interface CurbZone {
+  start: number;
+  end: number;
+  side: number;
+}
+
+export function computeCurbZones(frames: TrackFrame[], length: number): CurbZone[] {
+  const n = frames.length;
+  const step = length / n;
+  const kappa = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = frames[i];
+    const b = frames[(i + 1) % n];
+    if (Math.hypot(a.tangent.x, a.tangent.z) < 0.25 || Math.hypot(b.tangent.x, b.tangent.z) < 0.25) continue;
+    let d = Math.atan2(b.tangent.x, b.tangent.z) - Math.atan2(a.tangent.x, a.tangent.z);
+    while (d > Math.PI) d -= TAU;
+    while (d < -Math.PI) d += TAU;
+    kappa[i] = d / Math.max(0.001, b.dist - a.dist);
+  }
+  const win = Math.max(1, Math.round(4.5 / step));
+  const smooth = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    for (let k = -win; k <= win; k++) sum += kappa[(i + k + n * 4) % n];
+    smooth[i] = sum / (win * 2 + 1);
+  }
+  const on = new Uint8Array(n);
+  const dil = Math.max(1, Math.round(CURB_DILATE_M / step));
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(smooth[i]) <= CURB_KAPPA) continue;
+    for (let k = -dil; k <= dil; k++) on[(i + k + n * 4) % n] = 1;
+  }
+  const zones: CurbZone[] = [];
+  let i = 0;
+  while (i < n) {
+    if (!on[i]) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < n && on[j]) j++;
+    let sum = 0;
+    for (let k = i; k < j; k++) sum += smooth[k];
+    if ((j - i) * step >= CURB_MIN_LEN) {
+      zones.push({ start: frames[i].dist, end: j < n ? frames[j].dist : length, side: sum >= 0 ? -1 : 1 });
+    }
+    i = j;
+  }
+  if (zones.length > 1 && zones[0].start <= 0.001 && zones[zones.length - 1].end >= length - 0.001) {
+    const first = zones.shift()!;
+    zones[zones.length - 1].end = first.end + length;
+  }
+  return zones;
+}
+
+const GANTRY_POST: Record<ThemeId, number> = {
+  alpine: 0x2e3648,
+  mesa: 0x4a3a28,
+  canyon: 0x453122,
+  neon: 0x1e2540,
+};
+
+function lineAccentColor(def: TrackDef): THREE.Color {
+  const c = new THREE.Color(def.accent);
+  if (def.theme === 'neon') c.multiplyScalar(2.2);
+  return c;
+}
+
 export interface TrackMeshes {
   group: THREE.Group;
   boostPads: { mesh: THREE.Mesh; dist: number; lateral: number; strength: number; mat: THREE.MeshBasicMaterial }[];
@@ -61,27 +117,40 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
   const group = new THREE.Group();
   const frames = curve.frames;
   const n = frames.length;
+  const length = curve.length;
   const accentHex = '#' + def.accent.toString(16).padStart(6, '0');
+  const theme = THEMES[def.theme];
 
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
-  const skirtPositions: number[] = [];
-  const skirtNormals: number[] = [];
-  const skirtUvs: number[] = [];
-  const skirtIndices: number[] = [];
+  const underPositions: number[] = [];
+  const underColors: number[] = [];
+  const bankPositions: number[] = [];
+  const bankColors: number[] = [];
+  const bankIndices: number[] = [];
+  const linePositions: number[] = [];
+  const lineColors: number[] = [];
+  const lineIndices: number[] = [];
 
-  const roadHalfScale = 1;
   const uvVScale = 0.14;
+
+  let halfWidthAvg = 0;
+  for (const f of frames) halfWidthAvg += f.halfWidth;
+  halfWidthAvg /= n;
+
+  const groundTone = new THREE.Color(theme.groundColor).multiplyScalar(def.theme === 'neon' ? 1.15 : 0.94);
+  const edgeTone = groundTone.clone().lerp(new THREE.Color(0x2a2d36), 0.55);
+  const midTone = edgeTone.clone().lerp(groundTone, 0.45);
+  const underTone = edgeTone.clone().multiplyScalar(0.82);
+  const accentCol = lineAccentColor(def);
 
   for (let i = 0; i <= n; i++) {
     const f = frames[i % n];
     const v = f.dist * uvVScale;
-    const l = f.binormal.clone().multiplyScalar(-f.halfWidth * roadHalfScale);
-    const r = f.binormal.clone().multiplyScalar(f.halfWidth * roadHalfScale);
-    const lp = f.pos.clone().add(l);
-    const rp = f.pos.clone().add(r);
+    const lp = f.pos.clone().addScaledVector(f.binormal, -f.halfWidth);
+    const rp = f.pos.clone().addScaledVector(f.binormal, f.halfWidth);
     positions.push(lp.x, lp.y, lp.z, rp.x, rp.y, rp.z);
     normals.push(f.normal.x, f.normal.y, f.normal.z, f.normal.x, f.normal.y, f.normal.z);
     uvs.push(0, v, 1, v);
@@ -89,24 +158,48 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
       const a = i * 2;
       indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
     }
+    const ul = lp.clone().addScaledVector(f.normal, -0.06);
+    const ur = rp.clone().addScaledVector(f.normal, -0.06);
+    underPositions.push(ul.x, ul.y, ul.z, ur.x, ur.y, ur.z);
+    underColors.push(underTone.r, underTone.g, underTone.b, underTone.r, underTone.g, underTone.b);
 
-    const skirtDrop = 0.65;
-    const lipOut = 0.12;
-    const lb = lp.clone().addScaledVector(f.binormal, -lipOut).addScaledVector(f.normal, -skirtDrop);
-    const rb = rp.clone().addScaledVector(f.binormal, lipOut).addScaledVector(f.normal, -skirtDrop);
-    skirtPositions.push(lp.x, lp.y, lp.z, lb.x, lb.y, lb.z, rp.x, rp.y, rp.z, rb.x, rb.y, rb.z);
-    const nl = f.binormal.clone().multiplyScalar(-1);
-    const nr = f.binormal.clone();
-    skirtNormals.push(nl.x, nl.y, nl.z, nl.x, nl.y, nl.z, nr.x, nr.y, nr.z, nr.x, nr.y, nr.z);
-    skirtUvs.push(0, v, 0, v - skirtDrop * uvVScale, 0, v, 0, v - skirtDrop * uvVScale);
-    if (i < n) {
-      const a = i * 4;
-      skirtIndices.push(a, a + 4, a + 1, a + 1, a + 4, a + 5);
-      skirtIndices.push(a + 2, a + 3, a + 6, a + 3, a + 6, a + 7);
+    const groundDrop = f.pos.y - GROUND_Y;
+    const drop = Math.min(Math.max(0.3, groundDrop), 2.4);
+    const outset = 0.55 + drop * 1.3;
+    for (const side of [-1, 1]) {
+      const e = side === -1 ? lp : rp;
+      const shelf = e.clone().addScaledVector(f.binormal, side * 0.55);
+      const foot = e.clone().addScaledVector(f.binormal, side * outset);
+      foot.y = Math.max(GROUND_Y, e.y - drop);
+      const base = (i % n) * 6 + (side === -1 ? 0 : 3);
+      bankPositions.push(e.x, e.y, e.z, shelf.x, shelf.y, shelf.z, foot.x, foot.y, foot.z);
+      bankColors.push(edgeTone.r, edgeTone.g, edgeTone.b, midTone.r, midTone.g, midTone.b, groundTone.r, groundTone.g, groundTone.b);
+      if (i < n) {
+        const nb = ((i + 1) % n) * 6 + (side === -1 ? 0 : 3);
+        bankIndices.push(base, nb, base + 1, base + 1, nb, nb + 1);
+        bankIndices.push(base + 1, nb + 1, base + 2, base + 2, nb + 1, nb + 2);
+      }
+    }
+
+    for (const side of [-1, 1]) {
+      for (const line of [0, 1]) {
+        const inLat = line === 0 ? f.halfWidth - 0.3 : f.halfWidth + 0.1;
+        const outLat = line === 0 ? f.halfWidth - 0.05 : f.halfWidth + 0.45;
+        const a = f.pos.clone().addScaledVector(f.binormal, side * inLat).addScaledVector(f.normal, 0.02);
+        const b = f.pos.clone().addScaledVector(f.binormal, side * outLat).addScaledVector(f.normal, 0.02);
+        const base = (i % n) * 8 + (side === -1 ? 0 : 4) + line * 2;
+        linePositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        if (line === 0) lineColors.push(1, 1, 1, 1, 1, 1);
+        else lineColors.push(accentCol.r, accentCol.g, accentCol.b, accentCol.r, accentCol.g, accentCol.b);
+        if (i < n) {
+          const nb = ((i + 1) % n) * 8 + (side === -1 ? 0 : 4) + line * 2;
+          lineIndices.push(base, nb, base + 1, base + 1, nb, nb + 1);
+        }
+      }
     }
   }
 
-  const roadTex = makeRoadTexture();
+  const roadTex = makeAsphaltTexture(def.theme, halfWidthAvg);
   const wet = variant === 'rain';
   const roadMat = new THREE.MeshStandardMaterial({
     map: roadTex,
@@ -119,47 +212,68 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
   roadGeo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   roadGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   roadGeo.setIndex(indices);
-  const roadMesh = new THREE.Mesh(roadGeo, roadMat);
-  group.add(roadMesh);
+  group.add(new THREE.Mesh(roadGeo, roadMat));
 
-  const skirtMat = new THREE.MeshBasicMaterial({ color: 0x14181f, side: THREE.DoubleSide });
-  const skirtGeo = new THREE.BufferGeometry();
-  skirtGeo.setAttribute('position', new THREE.Float32BufferAttribute(skirtPositions, 3));
-  skirtGeo.setAttribute('normal', new THREE.Float32BufferAttribute(skirtNormals, 3));
-  skirtGeo.setAttribute('uv', new THREE.Float32BufferAttribute(skirtUvs, 2));
-  skirtGeo.setIndex(skirtIndices);
-  group.add(new THREE.Mesh(skirtGeo, skirtMat));
+  const bankGeo = new THREE.BufferGeometry();
+  bankGeo.setAttribute('position', new THREE.Float32BufferAttribute(bankPositions, 3));
+  bankGeo.setAttribute('color', new THREE.Float32BufferAttribute(bankColors, 3));
+  bankGeo.setIndex(bankIndices);
+  bankGeo.computeVertexNormals();
+  const bankMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide });
+  group.add(new THREE.Mesh(bankGeo, bankMat));
 
-  const stripePositions: number[] = [];
-  const stripeNormals: number[] = [];
-  const stripeUvs: number[] = [];
-  const stripeIndices: number[] = [];
-  for (let i = 0; i <= n; i++) {
-    const f = frames[i % n];
-    const v = f.dist * uvVScale * 4;
-    for (const side of [-1, 1]) {
-      const inner = f.pos.clone().addScaledVector(f.binormal, side * (f.halfWidth - 0.55));
-      const outer = f.pos.clone().addScaledVector(f.binormal, side * (f.halfWidth - 0.05));
-      stripePositions.push(inner.x, inner.y + 0.02, inner.z, outer.x, outer.y + 0.02, outer.z);
-      stripeNormals.push(f.normal.x, f.normal.y, f.normal.z, f.normal.x, f.normal.y, f.normal.z);
-      stripeUvs.push(0, v, 0.18, v);
-    }
-    if (i < n) {
-      const aL = i * 4;
-      stripeIndices.push(aL, aL + 4, aL + 1, aL + 1, aL + 4, aL + 5);
-      const aR = i * 4 + 2;
-      stripeIndices.push(aR, aR + 4, aR + 1, aR + 1, aR + 4, aR + 5);
-    }
+  const underMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const underGeo = new THREE.BufferGeometry();
+  underGeo.setAttribute('position', new THREE.Float32BufferAttribute(underPositions, 3));
+  underGeo.setAttribute('color', new THREE.Float32BufferAttribute(underColors, 3));
+  const underIdx: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = i * 2;
+    const b = ((i + 1) % n) * 2;
+    underIdx.push(a, b, a + 1, a + 1, b, b + 1);
   }
-  const stripeMat = new THREE.MeshBasicMaterial({
-    color: def.theme === 'neon' ? new THREE.Color(def.accent).multiplyScalar(2.2) : def.accent,
-  });
-  const stripeGeo = new THREE.BufferGeometry();
-  stripeGeo.setAttribute('position', new THREE.Float32BufferAttribute(stripePositions, 3));
-  stripeGeo.setAttribute('normal', new THREE.Float32BufferAttribute(stripeNormals, 3));
-  stripeGeo.setAttribute('uv', new THREE.Float32BufferAttribute(stripeUvs, 2));
-  stripeGeo.setIndex(stripeIndices);
-  group.add(new THREE.Mesh(stripeGeo, stripeMat));
+  underGeo.setIndex(underIdx);
+  underGeo.computeVertexNormals();
+  group.add(new THREE.Mesh(underGeo, underMat));
+
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+  lineGeo.setAttribute('color', new THREE.Float32BufferAttribute(lineColors, 3));
+  lineGeo.setIndex(lineIndices);
+  const lineMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  group.add(new THREE.Mesh(lineGeo, lineMat));
+
+  const curbZones = computeCurbZones(frames, length);
+  if (curbZones.length) {
+    const cPos: number[] = [];
+    const cUv: number[] = [];
+    const cIdx: number[] = [];
+    const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
+    for (const z of curbZones) {
+      const span = z.end - z.start;
+      const count = Math.max(1, Math.ceil(span / 1.2));
+      const zBase = cPos.length / 3;
+      for (let s = 0; s <= count; s++) {
+        curve.frameAtDist(z.start + (span * s) / count, f);
+        const inner = f.pos.clone().addScaledVector(f.binormal, z.side * (f.halfWidth - 2.65)).addScaledVector(f.normal, 0.025);
+        const outer = f.pos.clone().addScaledVector(f.binormal, z.side * (f.halfWidth - 0.05)).addScaledVector(f.normal, 0.025);
+        cPos.push(inner.x, inner.y, inner.z, outer.x, outer.y, outer.z);
+        const v = (z.start + (span * s) / count) / CURB_STRIPE_M;
+        cUv.push(0, v, 1, v);
+        if (s < count) {
+          const a = zBase + s * 2;
+          cIdx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+        }
+      }
+    }
+    const curbGeo = new THREE.BufferGeometry();
+    curbGeo.setAttribute('position', new THREE.Float32BufferAttribute(cPos, 3));
+    curbGeo.setAttribute('uv', new THREE.Float32BufferAttribute(cUv, 2));
+    curbGeo.setIndex(cIdx);
+    curbGeo.computeVertexNormals();
+    const curbMat = new THREE.MeshStandardMaterial({ map: makeCurbTexture(), roughness: 0.75, side: THREE.DoubleSide });
+    group.add(new THREE.Mesh(curbGeo, curbMat));
+  }
 
   const boostPads: TrackMeshes['boostPads'] = [];
   const chevronTex = makeChevronTexture('#7ef3ff');
@@ -211,33 +325,19 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
   const startF = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
   curve.frameAtDist(0.01, startF);
   const gateGroup = new THREE.Group();
-  const pillarMat = new THREE.MeshStandardMaterial({ color: 0x1a2032, roughness: 0.6, metalness: 0.3 });
+  const postMat = new THREE.MeshStandardMaterial({ color: GANTRY_POST[def.theme], roughness: 0.55, metalness: 0.35 });
   const bannerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const bannerCanvas = document.createElement('canvas');
-  bannerCanvas.width = 512;
-  bannerCanvas.height = 96;
-  const bctx = bannerCanvas.getContext('2d')!;
-  bctx.fillStyle = '#0d1222';
-  bctx.fillRect(0, 0, 512, 96);
-  bctx.fillStyle = accentHex;
-  bctx.fillRect(0, 0, 512, 10);
-  bctx.fillRect(0, 86, 512, 10);
-  bctx.font = '700 56px Rajdhani, sans-serif';
-  bctx.textAlign = 'center';
-  bctx.textBaseline = 'middle';
-  bctx.fillStyle = '#ffffff';
-  bctx.fillText('START / FINISH', 256, 50);
-  const bannerTex = new THREE.CanvasTexture(bannerCanvas);
-  bannerMat.map = bannerTex;
-  bannerMat.color.set(0xffffff);
+  bannerMat.map = new THREE.CanvasTexture(checkerBannerCanvas(accentHex));
   const w0 = startF.halfWidth + 0.6;
   const banner = new THREE.Mesh(new THREE.BoxGeometry(w0 * 2, 1.8, 0.3), bannerMat);
   banner.position.copy(startF.pos).addScaledVector(startF.normal, 5.6);
-  const pl = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.6, 0.8), pillarMat);
-  pl.position.copy(startF.pos).addScaledVector(startF.binormal, -w0).addScaledVector(startF.normal, 2.8);
-  const pr = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.6, 0.8), pillarMat);
-  pr.position.copy(startF.pos).addScaledVector(startF.binormal, w0).addScaledVector(startF.normal, 2.8);
-  gateGroup.add(banner, pl, pr);
+  const postL = new THREE.BoxGeometry(0.8, 5.6, 0.8);
+  postL.translate(-w0, 2.8, 0);
+  const postR = new THREE.BoxGeometry(0.8, 5.6, 0.8);
+  postR.translate(w0, 2.8, 0);
+  const posts = new THREE.Mesh(mergeGeometries([postL, postR], false)!, postMat);
+  posts.position.copy(startF.pos);
+  gateGroup.add(banner, posts);
   gateGroup.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(startF.normal, startF.tangent).normalize(), startF.normal, startF.tangent));
   group.add(gateGroup);
 

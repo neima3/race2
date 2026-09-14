@@ -3,7 +3,7 @@
 ## Progress tracker
 - [x] Phase 1: Lighting, sky & atmosphere overhaul
 - [x] Phase 2: Ground & landforms — kill the floating black diamonds
-- [ ] Phase 3: Road & trackside quality
+- [x] Phase 3: Road & trackside quality
 - [ ] Phase 4: Props density, clusters & scatter
 - [ ] Phase 5: Track geometry audit + full gameplay QA sweep (subagents)
 - [ ] Phase 6: Title/menu polish + v2.2.0 + deploy + live verify

@@ -78,6 +78,7 @@ export interface ThemeDef {
   hemiSky: number;
   hemiGround: number;
   hemiIntensity: number;
+  reflectorColor: number;
   ambientSound: 'birds' | 'wind' | 'synth' | 'waves';
 }
 
@@ -88,6 +89,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     groundColor: 0x5d7a52, mesaColor: 0x5e7c58, mesaFarColor: 0x607592, rockColor: 0x9aa5b0,
     terrainStyle: 'meadow',
     cloudColor: 0xffffff, cloudOpacity: 0.75, sunIntensity: 2.35, hemiSky: 0xbdd4f0, hemiGround: 0x5a6a4a, hemiIntensity: 0.95,
+    reflectorColor: 0xd9e8ff,
     ambientSound: 'birds',
   },
   canyon: {
@@ -96,6 +98,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     groundColor: 0x8a5238, mesaColor: 0x9c5a38, mesaFarColor: 0x6e4468, rockColor: 0x8a5638,
     terrainStyle: 'terracotta',
     cloudColor: 0xffc9a0, cloudOpacity: 0.55, sunIntensity: 3.4, hemiSky: 0x7a68d8, hemiGround: 0x54301e, hemiIntensity: 0.6,
+    reflectorColor: 0xffc890,
     ambientSound: 'wind',
   },
   neon: {
@@ -104,6 +107,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     groundColor: 0x141824, mesaColor: 0x1e2438, mesaFarColor: 0x252b4a, rockColor: 0x232a3e,
     terrainStyle: 'city',
     cloudColor: 0x40286a, cloudOpacity: 0.4, sunIntensity: 2.2, hemiSky: 0x5a6cf8, hemiGround: 0x2a3a5c, hemiIntensity: 2.6,
+    reflectorColor: 0x9defff,
     ambientSound: 'synth',
   },
   mesa: {
@@ -112,6 +116,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     groundColor: 0xa26a3c, mesaColor: 0xb4643a, mesaFarColor: 0x9a5c46, rockColor: 0x96582f,
     terrainStyle: 'sand',
     cloudColor: 0xffd9a8, cloudOpacity: 0.6, sunIntensity: 3.2, hemiSky: 0x9db4e0, hemiGround: 0x6a4028, hemiIntensity: 0.8,
+    reflectorColor: 0xffe0a8,
     ambientSound: 'waves',
   },
 };

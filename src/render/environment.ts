@@ -119,7 +119,7 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     rock: new THREE.Color(theme.rockColor),
     cloud: new THREE.Color(theme.cloudColor),
     cloudOpacity: theme.cloudOpacity,
-    reflector: new THREE.Color(theme.hemiSky).lerp(new THREE.Color(0xffffff), 0.5),
+    reflector: new THREE.Color(theme.reflectorColor),
   };
 
   const groundSurface: GroundSurface = buildGround(theme);
@@ -300,11 +300,10 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
 
   const reflectorMat = new THREE.MeshBasicMaterial({ color: base.reflector.clone() });
   const reflectors = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.12, 6, 5),
+    new THREE.SphereGeometry(0.14, 6, 5),
     reflectorMat,
     260,
   );
-  reflectors.visible = false;
   {
     const d = new THREE.Object3D();
     let n = 0;

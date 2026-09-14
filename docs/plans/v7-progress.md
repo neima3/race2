@@ -74,3 +74,33 @@ Deviations:
 - Window strips on neon towers use HDR vertex colors (≤3.0) — they bloom on High quality by design ("distant lit towers"); Medium unchanged behavior verified.
 
 Notes for Phase 3+: ridge tint plumbing lives in `RidgeRings.setTint(fog, dim)` — road palette work should keep fog + hazeColor + ridge tints coherent. Neon asphalt lift (Phase 3) will further separate road from the new dark city plain. Scatter (Phase 4) can reuse `terrain.ts` placement helpers (`minRoadDistance`, seeded rng convention).
+
+## Phase 3 — Road & trackside quality (2026-09-13) ✅
+
+Shipped (rewrote `src/track/builder.ts` road-side + new `src/render/roadTextures.ts`):
+
+- **Asphalt texture** (roadTextures.ts): 512² canvas, per-theme base (alpine `0x767c88`, mesa `0x857462`, canyon `0x7d6a5c`, neon `0x555e74` — cooler/darker for neon, all much lighter than the old `#3a3f4c`), per-pixel grain ±18, periodic tonal banding along V (3+7 sine cycles/tile, seam-free), ~2800 speckles, baked **tire-wear band** at u=0.5 (≈2m wide core + soft feather, α .15, dark `rgba(8,10,14)`). SRGB, repeat, aniso 4, mipmaps. **Gotcha fixed en route:** `new THREE.Color(hex)` returns *linear* components — deriving canvas bytes from `.r*255` yields near-black; must use `getHexString()` (sRGB), the terrain.ts convention.
+- **Edge lines**: one 4-strip ribbon mesh (MeshBasic, vertexColors, DoubleSide): white inner line (`hw−0.30..hw−0.05`, +0.02) + theme-accent outer stripe on the embankment shelf (`hw+0.10..hw+0.45`); neon accent stays HDR ×2.2. 1 draw call.
+- **Apex curbs**: `computeCurbZones` (exported for harness) — heading-κ per frame (vertical-loop sections excluded), 9m box smooth, threshold **κ>0.015 (r<67m)**, ±4m dilation, ≥7m runs, inside side = −sign(κ). One merged BufferGeometry, red/white 2.4m-period canvas texture, flush +0.025, DoubleSide. Coverage 4.5% (salt-flats) → 50% (serpent's-tail), 119 zones total (`test/tmp/curbs.ts` harness, committed). Wrap-at-start-line zones merge into span>length (UVs from unwrapped dist).
+- **Embankments** (replaces black skirts): per-side 3-vertex cross-section — road edge → 0.55m flush shelf → slope to `max(GROUND_Y, edgeY−min(drop,2.4))`, outset = 0.55+1.3·drop; vertex-colored edgeTone→midTone→groundColor, MeshStandard + computeVertexNormals, DoubleSide. Road sits "in" the landscape; elevated sections get a capped shoulder.
+- **Road-base underlay** (new, unlit): road ribbon cloned at −0.06 along normal, MeshBasic vertexColors (soil tone) — see deviations for why.
+- **Start gantry**: checkered banner canvas (512×96: checker rows top/bottom, accent trim, START/FINISH) + two posts **merged into 1 mesh**, themed per-theme post colors (`GANTRY_POST` table). 2 draw calls.
+- **Reflectors**: were permanently `visible=false` since an old build — re-enabled, theme-accent colors via new `ThemeDef.reflectorColor` (alpine `0xd9e8ff`, mesa `0xffe0a8`, canyon `0xffc890`, neon `0x9defff`), sphere 0.12→0.14, same reflectorMult variant plumbing (night ×2.4 pops).
+- Pads/slicks/rings/movers/gates untouched (materials only where shared already).
+
+Verification:
+
+- Gates at HEAD: typecheck ✅ build ✅ (1008.91 kB / 378.87 kB gzip, +3.3 kB vs P2) `laps.ts` **11/14** (same 3 STRICT-exempt; **byte-identical**: sunrise 17.47, dune-rush 23.52, volt-alley 27.90, salt-flats 22.18, harbor 24.23) — physics untouched (harness never imports builder). `rivals` **20/20**, `career` **119/119**, `share` **34/34**, `knockout` **50/50**, `daily` **59/59**, `probe` **24/24**, `allocs` **PASS** (±0.000MB).
+- Perf census (headless Medium `?debug`, salt-flats rivals, 60fps): day 141–189 calls / 48–54k tris; **rain rivals peak 202 calls ≤ 220 budget** ✅ (P2: 182–196). Road-side draw calls: road 1 + underlay 1 + embankment 1 + lines 1 + curbs ≤1 + gantry 2 = **≤7 ≤ 10 budget** ✅.
+- Gameplay evidence (muted, `qa/v7-phase3/`, real races, car visible/moving): `01` alpine gantry countdown (checkers + curbs wrap the start bend), `02` alpine straight @133-136 km/h (crest base visible), `03` alpine embankment close-up, `04` canyon serpent's-tail corner @88 with **apex curbs inside** ✓, `05` neon day volt-alley lines+curbs, `06` **neon night** — edge lines + HDR stripes carry readability ✓, `07` **rain** salt-flats wet road @171 ✓, `08` mesa salt-flats close-up @162, no shimmer/moiré at speed anywhere (mipmapped 512² tile).
+- Honest verdicts vs P2 baselines: alpine **YES** (asphalt reads as asphalt; crest void gone), mesa **YES** (warm asphalt + sand embankments), canyon **YES** (curbs+lines in sunset grade — standout shot 04), neon day **YES** (dark cool asphalt + HDR stripes), neon night **YES** (lines carry the road), rain **YES** (wet tint readable). Crest underside = flat soil tone (unlit) — slightly flat but coherent; future polish candidate.
+
+Deviations:
+
+- **Pre-existing bug fixed: see-through road at crests.** The road was single-sided; on climbs/crests the chase camera sits below the road plane ahead → backface culled → meadow visible through the road (visible in `qa/v7-ground`/P2 baselines once you know what to look for). My crisp DoubleSide lines made it glaring. Final fix: unlit soil-toned **underlay ribbon** (−0.06 along normal) renders the road's underside as embankment cross-section; road stays FrontSide. DoubleSide road alone was rejected: backface = sun-flipped normal → black slab. +1 draw call, within budget.
+- **Two real bugs found & fixed during QA**: (1) accent-stripe latitudes missing the `halfWidth` offset (rendered as center double-yellow); (2) asphalt canvas bytes derived from linear-space `THREE.Color` → near-black texture (use `getHexString()`).
+- `ThemeDef.reflectorColor` added (additive palette field, same pattern as P2 `terrainStyle`); environment.ts reflector base from it.
+- New files: `src/render/roadTextures.ts`, `test/tmp/curbs.ts` (harness, committed like prior tmp harnesses).
+- Long QA detour honest note: mid-phase "black road" panics were partly QA-churn artifacts (mutations applied to a stale mesh reference, results-panel dimming, photo-mode camera) — the albedo lift + underlay are the only lasting changes; all final evidence re-taken pristine.
+
+Notes for Phase 4+: scatter should keep `minRoadDistance` discipline (props hug the shoulder in places — P4 scope); crest-underside tone could take a subtle vertical gradient later; curbs+underlay add ~10k tris — budget headroom still comfortable.
