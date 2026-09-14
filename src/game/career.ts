@@ -12,6 +12,7 @@ export interface CupDef {
   tiers: RivalTier[];
   trackIds: string[];
   variants?: TrackVariant[];
+  paceBias?: number;
 }
 
 export const CUP_POINTS = [25, 18, 15, 12];
@@ -39,6 +40,7 @@ export const CUPS: CupDef[] = [
     tiers: ['mid', 'pro', 'pro'],
     trackIds: ['sky-loop', 'serpents-tail', 'twilight-gauntlet', 'volt-alley'],
     variants: ['night', 'rain', 'day', 'night'],
+    paceBias: 0.996,
   },
   {
     id: 'gauntlet-cup',
@@ -80,7 +82,7 @@ export function cupRaceTrack(cup: CupDef, raceIndex: number): TrackDef {
 }
 
 export function cupLineup(cup: CupDef, raceIndex: number): RivalPreset[] {
-  return pickLineup(cup.trackIds[raceIndex], raceIndex + 1, cup.tiers);
+  return pickLineup(cup.trackIds[raceIndex], raceIndex + 1, cup.tiers).map((p) => (cup.paceBias ? { ...p, paceBias: cup.paceBias } : p));
 }
 
 export function cupRaceVariant(cup: CupDef, raceIndex: number): TrackVariant {

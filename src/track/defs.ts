@@ -197,9 +197,9 @@ const TRACK_2: TrackDef = {
     cp(0, 0, 0, 8),
     cp(0, 0, -55, 8),
     cp(-6, 0, -105, 8, 22),
-    cp(-40, 1, -145, 8, 26),
-    cp(-95, 2, -150, 8, -24),
-    cp(-140, 4, -115, 7.5, -28),
+    cp(-40, 5.5, -145, 8, 26),
+    cp(-95, 6.5, -150, 8, -24),
+    cp(-140, 7.5, -115, 7.5, -28),
     cp(-158, 8, -60, 7.5, 18),
     cp(-150, 14, -5, 7.5, 14),
     cp(-118, 20, 38, 8, 8),
@@ -211,8 +211,10 @@ const TRACK_2: TrackDef = {
     cp(-140, 1, -100, 8, 12),
     cp(-120, 0, -150, 8, 16),
     cp(-70, 0, -172, 8, 14),
-    cp(-25, 0, -160, 8, 10),
-    cp(-4, 0, -112, 8.5, 2),
+    cp(-48, 0, -160, 8, 10),
+    cp(-40, 0, -112, 8.5, 2),
+    cp(-32, 0, -56, 8.5, 0),
+    cp(-8, 0, 2, 8.5, 0),
   ],
   checkpoints: [{ dist: 300 }, { dist: 620 }, { dist: 900 }],
   boosts: [
@@ -249,15 +251,15 @@ const TRACK_3: TrackDef = {
     cp(-100, 2, 12, 7, 45),
     cp(-65, 1, 18, 8, 22),
     cp(-35, 0.5, 28, 8, 10),
-    cp(-8, 0.5, 52, 8, 0),
-    cp(8, 0.5, 85, 8, 0),
-    cp(12, 0.5, 120, 8, 0),
-    cp(8, 0.5, 150, 8, 0),
+    cp(-8, 5.5, 52, 8, 0),
+    cp(8, 6, 85, 8, 0),
+    cp(12, 5, 120, 8, 0),
+    cp(8, 2, 150, 8, 0),
     cp(-8, 0.5, 165, 8, 0),
     cp(-25, 0.5, 155, 8, 0),
     cp(-32, 0.5, 130, 8, 0),
-    cp(-28, 0.5, 105, 8, 0),
-    cp(-14, 0, 92, 9, 0),
+    cp(-36, 0.5, 102, 8, 0),
+    cp(-52, 0, 72, 9, 0),
   ],
   checkpoints: [{ dist: 250 }, { dist: 520 }, { dist: 800 }],
   slicks: [
@@ -269,7 +271,7 @@ const TRACK_3: TrackDef = {
     { dist: 380, lateral: 0, strength: 10 },
     { dist: 640, lateral: 0, strength: 11 },
   ],
-  medals: { author: 22500, gold: 25000, silver: 29000, bronze: 38000 },
+  medals: { author: 24900, gold: 27700, silver: 32100, bronze: 42100 },
 };
 
 const TRACK_4: TrackDef = {
@@ -298,7 +300,9 @@ const TRACK_4: TrackDef = {
     cp(-126, 0, -168, 8, 18),
     cp(-78, 0, -184, 8, 16),
     cp(-32, 0, -172, 8, 12),
-    cp(-8, 0, -128, 8, 6),
+    cp(-36, 0, -120, 8, 6),
+    cp(-30, 0, -56, 8, 2),
+    cp(-7, 0, 2, 8, 0),
   ],
   checkpoints: [{ dist: 340 }, { dist: 700 }, { dist: 1050 }],
   boosts: [
@@ -398,15 +402,18 @@ const TRACK_7: TrackDef = {
     cp(-155, 9, 25, 7.5, 50),
     cp(-100, 6, 48, 8, 35),
     cp(-48, 3, 40, 8, 18),
-    cp(-15, 1, 5, 8, 6),
-    cp(-6, 0, -40, 8, 0),
+    cp(-52, 1, 8, 8, 6),
+    cp(-58, 0, -54, 8, 0),
+    cp(-36, 0, -26, 8, 0),
+    cp(-30, 0, 30, 8, 0),
+    cp(-14, 0, 74, 8, 0),
   ],
   checkpoints: [{ dist: 230 }, { dist: 470 }, { dist: 700 }],
   boosts: [
     { dist: 30, lateral: 0, strength: 8 },
     { dist: 460, lateral: 0, strength: 8 },
   ],
-  medals: { author: 24000, gold: 26500, silver: 31000, bronze: 39000 },
+  medals: { author: 26000, gold: 28700, silver: 33600, bronze: 42300 },
 };
 
 const TRACK_8: TrackDef = {
@@ -435,8 +442,10 @@ const TRACK_8: TrackDef = {
     cp(-155, 0, -195, 8, 18),
     cp(-105, 0, -215, 8, 16),
     cp(-55, 0, -200, 8, 12),
-    cp(-25, 0, -155, 8, 6),
-    cp(-14, 0, -105, 8, 0),
+    cp(-48, 0, -152, 8, 6),
+    cp(-42, 0, -104, 8, 0),
+    cp(-32, 0, -52, 8, 0),
+    cp(-8, 0, 2, 8, 0),
   ],
   checkpoints: [{ dist: 360 }, { dist: 740 }, { dist: 1100 }],
   boosts: [
@@ -480,15 +489,13 @@ const TRACK_9: TrackDef = {
     cp(58, 0, -60, 8, 0),
     cp(52, 0, -12, 8, 0),
     cp(28, 0, 28, 8, 0),
-    cp(-6, 0, 52, 8, 0),
-    cp(-18, 0, 58, 8, 0),
   ],
   checkpoints: [{ dist: 330 }, { dist: 680 }, { dist: 1020 }],
   boosts: [
     { dist: 330, lateral: 0, strength: 8 },
     { dist: 1000, lateral: 0, strength: 9 },
   ],
-  medals: { author: 37500, gold: 41500, silver: 48000, bronze: 60000 },
+  medals: { author: 34800, gold: 38500, silver: 44500, bronze: 55700 },
 };
 
 const TRACK_10: TrackDef = {
@@ -541,8 +548,10 @@ const TRACK_11: TrackDef = {
     cp(-195, 3, -250, 9, 6),
     cp(-150, 4, -235, 9, 0),
     cp(-110, 3, -255, 9, -4),
-    cp(-75, 1, -290, 9, -6),
-    cp(-60, 0, -345, 9, 0),
+    cp(-84, 1, -300, 9, -6),
+    cp(-42, 0, -376, 9, 0),
+    cp(-24, 0, -158, 9, 0),
+    cp(-20, 0, 28, 9, 0),
   ],
   checkpoints: [{ dist: 300 }, { dist: 620 }, { dist: 930 }],
   boosts: [
@@ -585,8 +594,9 @@ const TRACK_12: TrackDef = {
     cp(50, 0, -148, 8, 0),
     cp(62, 0, -100, 8, 0),
     cp(52, 0, -55, 8, 0),
-    cp(25, 0, -28, 8, 4),
-    cp(-4, 0, -5, 8, 0),
+    cp(28, 0, -20, 8, 4),
+    cp(24, 0, 34, 8, 0),
+    cp(-6, 0, 44, 8, 0),
   ],
   checkpoints: [{ dist: 260 }, { dist: 620 }],
   boosts: [{ dist: 480, lateral: 0, strength: 7 }],
@@ -598,7 +608,7 @@ const TRACK_12: TrackDef = {
     { dist: 320, lateral: 0, w: 4, l: 24 },
     { dist: 560, lateral: -2, w: 3.5, l: 18 },
   ],
-  medals: { author: 28500, gold: 32000, silver: 37000, bronze: 46000 },
+  medals: { author: 31500, gold: 35400, silver: 40900, bronze: 50800 },
 };
 
 const TRACK_13: TrackDef = {

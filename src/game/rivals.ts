@@ -14,6 +14,7 @@ export interface RivalPreset {
   tier: RivalTier;
   paint: number;
   body: CarBodyStyle;
+  paceBias?: number;
 }
 
 export const RIVAL_ROSTER: RivalPreset[] = [
@@ -213,7 +214,7 @@ export class RivalManager {
       visual.group.add(blob);
       parent.add(visual.group);
       this.rivals.push({
-        skill: { name: preset.name, tier: preset.tier, ...TIER_PARAMS[preset.tier], paint: preset.paint, body: preset.body },
+        skill: { name: preset.name, tier: preset.tier, ...TIER_PARAMS[preset.tier], pace: TIER_PARAMS[preset.tier].pace * (preset.paceBias ?? 1), paint: preset.paint, body: preset.body },
         car: new CarPhysics(curve, {
           accel: DEFAULT_TUNING.accel * TIER_TUNING[preset.tier].accel,
           maxSpeed: DEFAULT_TUNING.maxSpeed * TIER_TUNING[preset.tier].maxSpeed,

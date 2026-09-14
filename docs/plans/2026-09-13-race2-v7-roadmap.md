@@ -5,7 +5,7 @@
 - [x] Phase 2: Ground & landforms — kill the floating black diamonds
 - [x] Phase 3: Road & trackside quality
 - [x] Phase 4: Props density, clusters & scatter
-- [ ] Phase 5: Track geometry audit + full gameplay QA sweep (subagents)
+- [x] Phase 5: Track geometry audit + full gameplay QA sweep (subagents)
 - [ ] Phase 6: Title/menu polish + v2.2.0 + deploy + live verify
 
 **Goal statement (full ambition):** Make RACE2 look like a premium, art-directed arcade racer: warm contrasty lighting, themed living ground instead of a placeholder disc, grounded well-lit landforms with depth layers, quality asphalt with edge lines and apex curbs, dense varied props, a neon theme that reads as a night city — verified by subagents actually playing every theme and mode in the browser (muted), harness green, perf budgets held, shipped as v2.2.0 and live-verified.

@@ -109,3 +109,78 @@ Notes for Phase 4+: scatter should keep `minRoadDistance` discipline (props hug 
 - props.ts rewritten: cluster placement (jittered anchors + gaussian scatter), 2-3 geometry variants per family, ±8% palette jitter, min road distance (solid ≥ halfWidth+6m, scatter ≥ +2.5m), per-theme instanced ground scatter (tufts/scrub/pebbles/light dots), deterministic seeding.
 - Evidence captured by the subagent before the limit: qa/v7-phase4/01-21 (all 4 themes day + neon night + rain + dusk, wide/corner/close-up/chase) — lead reviewed mesa-wide + neon-night-wide: cluster density reads well, signage/poles placed on straights, nothing floating.
 - Lead verified all gates green post-hoc (see gates above) + steering/lateral untouched (render-only diff).
+
+## Phase 5 — Track geometry audit + full gameplay QA sweep (2026-09-14) ✅
+
+Executed by a fresh agent continuing a partially-done audit (previous session had built geo harnesses + a first pass of CP fixes that was left uncommitted and unverified; two of its fixes were regressions and were redesigned from scratch).
+
+### Geometry audit (data-only defs.ts + minimap + autopilot lap, all muted)
+
+Harnesses added in `test/tmp/`: `geo-audit.ts` (top-down ribbon overlap / pinch / kink / grade / bank / CP-spacing), `geo-folds.ts` (overlap cluster metrics + seam CPs), `geo-where.ts` (localizes worst same-level pairs to world positions), `geo-seam.ts` (seam headings + final-CP report), `lapshots.sh` (autopilot lap → screenshots at target arc distances). A "same-level pair" = two road frames ≥25m apart along the arc whose 16-18m-wide ribbons overlap (gap<0.5m) with |dy|<3m — i.e. road interpenetrating road at driving height.
+
+| # | Track | Verdict | Detail |
+|---|-------|---------|--------|
+| 1 | sunrise-sprint | CLEAN | 0 same-level pairs; kink 2°. Baseline 17.47s byte-identical. |
+| 2 | canyon-twist | FIXED | Was: 96.8° kink at line, seam fold (edges overlapped 9m), TWO same-height strand crossings (worst −15.7m, dy≈1 — road-over-road z-fight, confirmed in-game pre-fix `qa/v7-phase5/fold-confirm-*`). Now: final CPs re-laid as parallel merge (kink 27.8°), outbound CP3/4/5 raised +4.5m → both crossings are real overpasses (dy 5.4/6.7, return leg passes underneath). In-game: `laps/ct2-d160/d255/d1055`. |
+| 3 | sky-loop | FIXED | Was: return loop passed within 2m of its own start straight (−16.5, dy 0.5) twice per lap; any lateral reroute provably impossible (corridor math). Now: return loop becomes a 5.5-6m bridge over the start zone; final approach re-aimed (CP27 −52,72) so the lap **dives under the bridge into the finish**. 848→4 pairs (residual 0.03 = touching, invisible). In-game: `laps/sl2-d600/d838`. |
+| 4 | grand-gauntlet | FIXED | Was: 74° seam kink + seam fold −9.2 (+ a Catmull wobble at CP17 introduced by the first fix attempt, 83° kink). Now: original south sweep CP restored, merge CPs appended. Worst residual −6.6 = junction-class merge fan ≤26m from line. In-game: `laps/gg2-d1048`. |
+| 5 | dune-rush | MINOR — left | Seam kiss −6.0 at dy≈1.0 in the last 20m before the line; in-game reads as a junction (`laps/dr-d905`), no z-fight seen. Baseline track, untouched per "unsure → leave". |
+| 6 | serpents-tail | MINOR — left | Seam kiss −3.5 + small mid-fold −2.25 (dy 1.1); in-game fine (`laps/st-d613`). Untouched. |
+| 7 | neon-vertical | FIXED | Was: 97° seam kink + 180° needle at the south end (legs overlapped −9.1). Now: wide hairpin (tip −58,−54) with the exit threaded through the corridor between hairpin leg and start straight (3 CPs), final CP obeys the mirror rule (tangent at the line now aligns with the straight; was 90° off). 394→231 pairs, worst −4.2 at the tip apron; kink 18°. In-game: `laps/nv2-d655/d785`. |
+| 8 | gauntlet-ii | FIXED | Was: 50° kink + seam fold −8.5. Now: parallel merge CPs (42/32/8m west offsets). 1721→228 pairs (all junction fan). In-game: `laps/gi2-d1180`. |
+| 9 | twilight-gauntlet | FIXED | Was: 39° needle hook at the line; the first fix attempt (wider hook) made it WORSE (−8.9 self-overlap). Final fix: hook deleted, return merges straight off CP21 (28,28) — heading matches the straight (Catmull blends 15° across 50m), 0 same-level pairs, kink 6.1°. Len 1341→1243 (−7.2% → medals rescaled). |
+| 10 | neon-circuit | CLEAN | 0 pairs. |
+| 11 | ring-runner | FIXED | Was: seam overlap −12.3 + 43° kink (first fix attempt cleaned the seam but created a hairpin tip fold of −9..−5.5 at the south tip). Final fix: tip widened (−84,−300)/(−42,−376) + west guide CPs (−24,−158)/(−20,28) so the return runs up its own corridor. Tip residual −3.3 = hairpin-apron class, verified no z-fight in-game (`laps/rr3-d975`); merge apron reads as painted junction (`laps/rr2-d1395`). Lap 39.0-39.3s ≈ orig 39.4 (−0.3%). |
+| 12 | volt-alley | FIXED | Was: start-line teardrop knot (fold −0.6); the first fix attempt replaced it with a needle overshooting 60m past the line (140° kink, −14.9 self-overlap — visually broken minimap `geo-fix1/12`). Final fix: wide hairpin sweep in free space south/east of the line (CP 28,−20 → 24,34 → −6,44 → merge), legs 9-29m apart, 0 same-level pairs, kink 10.8°. Lap 27.90→30.82s (+10.5% — sweep is longer but fold-free → medals rescaled). In-game: `laps/va2-d990`. |
+| 13 | salt-flats | CLEAN | near-pass only. Baseline 22.18 byte-identical. |
+| 14 | harbor-nine | CLEAN | Baseline 24.23 byte-identical. |
+
+Pre-existing and left alone: volt-alley S-weir overpass (675 stacked pairs, dy≥4.6 — verified identical in shipped v2.1.0, it's a real bridge); twilight stacked pairs (dy up to 13, elevated S-weir over the y=0 return — same character); sky-loop's 98% grade / 80° bank on its vertical loop = the track's identity.
+
+Geometry-adjacent findings: **the folds were what wedged the headless bot** — laps went from 11/14 (canyon-twist/grand-gauntlet/gauntlet-ii STRICT-exempt "bot wedges") to **14/14 with zero respawns needed on the repaired tails**. Baselines on untouched tracks byte-identical: sunrise 17.47 / dune 23.52 / salt 22.18 / harbor 24.23.
+
+### Time shifts on repaired tracks (>2% → dev ghosts regenerated; >5% → medals rescaled)
+
+- sky-loop 24.72→27.37s (+10.7%) — medals 22500/25000/29000/38000 → **24900/27700/32100/42100**
+- neon-vertical 23.18→25.14s (+8.5%) — **26000/28700/33600/42300**
+- volt-alley 27.90→30.82s (+10.5%) — **31500/35400/40900/50800**
+- twilight-gauntlet 36.58→33.94s (−7.2%) — **34800/38500/44500/55700**
+- ring-runner 39.38→39.28s (−0.3%) ✓ no recalibration. Medals scaled by the measured shift, ladder shape preserved, rounded to 100ms.
+- `devghosts.gen.ts` regenerated (14 fresh — includes the 3 newly-finishing tracks, whose carried ghosts were for the old folded geometry).
+
+### Career balance (disclosed gameplay-adjacent data change)
+
+`test/career.ts` pin "street cup = autopilot silver" regressed to bronze (P3,P2,P3,P3) — mechanism: the repaired seams replaced slow crawl zones (needles/teardrops) with flowing full-throttle sections, which scales the pro-tier advantage (accel ×1.05, top ×1.025). Tier-mix knobs cliff between bronze ([mid,pro,pro]) and gold ([mid,mid,pro]). Fix: added optional per-cup `paceBias` (default 1.0, applied in `cupLineup` → `RivalPreset.paceBias` → tier pace) — street cup ships **paceBias 0.996** with the original [mid,pro,pro] grid → silver (P2/P1-equivalent mix), never P4, "does not run the table" pins all pass. Other cups/knockout/daily untouched (bias defaults 1).
+
+### Gameplay QA sweep (all muted `?mute=1`, real races, `qa/v7-phase5/` not committed)
+
+| Theme / track | Mode & variant | Verdict | Evidence (qa/v7-phase5/) |
+|---|---|---|---|
+| alpine / sunrise-sprint | time-trial day | PASS — meadow+forest+ridge read well, HUD crisp on sky | laps/qa-tt-sunrise-d200/d420 |
+| mesa / salt-flats | time-trial day | PASS — warm key, grounded mesas, curb/lines crisp @speed | laps/qa-tt-salt-d300/d700 |
+| canyon / serpents-tail | time-trial day | PASS — sunset grade, curbs visible in corners | laps/qa-tt-serpent-d250/d500 |
+| neon / neon-circuit | time-trial day | PASS — night-city plain reads, stripes carry | laps/qa-tt-neonday-d150/d350 |
+| neon / neon-circuit | time-trial `?variant=night` | PASS — stars only here, signage glows, road fully readable, HUD contrast good | laps/qa-tt-neonnight-d150/d350 |
+| neon / harbor-nine | time-trial `?variant=rain` | PASS — rain streaks + wet road read, skid marks visible, HUD readable @189-220 km/h | laps/qa-tt-harborrain-d300/d650 |
+| alpine / sunrise-sprint | rival race, 2 laps | PASS — standings (P2 +38m), FINAL LAP badge, P2/4 marker, pack racing | modes/rival-sunrise-mid1/mid2 |
+| alpine / dune-rush | knockout | PASS — HALCYON eliminated at lap-1 boundary; greyed "OUT" row pinned; LAP 2/3 + ▼P2 markers | modes/knockout-boundary1/after1 |
+| mesa / salt-flats (daily 20260914) | daily | PASS — correct lineup (APEX/VESPER + JUNO), 2 laps, finish recorded P3 streak 1 | modes/daily-1/2 |
+| neon / neon-circuit | drift attack | PASS — DRIFT ATTACK chip + drift HUD render over new night-city/mesa bgs; live chain needs a human-quality slide (scripted inputs couldn't hold one) | modes/drift-1/2/3/4, drift-mesa |
+| 4 themes | photo mode | PASS — orbit/filter/snap UI works; canyon & mesa shots flattering, alpine tight, neon moody | modes/photo-alpine/mesa/canyon/neon |
+| alpine (portrait 390×844) | touch `?touch=1` | PASS — steer/brake/gas + camera/respawn buttons, compact HUD, readable | modes/touch-portrait |
+| (settings) | reduced-motion | PASS — `settings.reducedMotion` kills speed-FOV (`rig.speedFovEnabled=false` verified) | (flag check) |
+| mesa / salt-flats | perf: rain rivals, Medium | PASS — **148 draw calls** (≤220 budget), ~16.7ms headless frame ≈ 60fps, no regression vs v2.1.0 (was 185-195 calls) | modes/perf-rain-rivals |
+
+Honest verdicts: no z-fighting/floating/popping/shimmer found in any mode on any theme post-fix; HUD readable in every variant including neon-night and rain; camera never clips landforms (elevated sections pass overhead with clearance); the ring-runner final-merge curb apron is wide but reads as painted junction; alpine asphalt keeps its greenish hemi/fog tint (pre-existing P3 palette character, not touched).
+
+### Deviations / notes
+
+- Career `paceBias` touches gameplay-adjacent data/code (7 lines) — required to hold the roadmap's own career pin after mandated geometry shifts; every other gate re-run green.
+- dune-rush/serpents-tail seam kisses intentionally left (minor, baseline-protected, read as junctions).
+- The roadmap's optional "Grok scoped review" was skipped (not in this phase's execution scope; timebox).
+- QA-hook quirk (not a game bug): `__race2.start()` does not clear an active `dailyRace`/drift state, so hook-driven mode switches can produce hybrid races + record a daily result; the real menu flow resets these. Worth an additive guard someday.
+- One headless-Chrome relaunch mid-sweep (documented QA-tooling family); affected shots re-taken in fresh sessions.
+
+**Gates at HEAD: typecheck ✅ build ✅ (1.02 MB / 383 kB gzip) laps 14/14 ✅ rivals 20/20 ✅ career 119/119 ✅ share 34/34 ✅ knockout 50/50 ✅ daily 59/59 ✅ probe 24/24 ✅ allocs PASS ✅.**
+
+Notes for Phase 6: title-screen orbit scene should avoid canyon-twist's seam junction framing (start straight now has a visible merge fan on 6 tracks — pick sunrise-sprint or salt-flats as the photogenic default); menu panels must stay readable over the brighter worlds (P1-P4 palettes). Minimap tool: `qa/geomap.html` on the dev server; geo harnesses in `test/tmp/geo-*.ts` are reusable regression checks for any future CP edits.
