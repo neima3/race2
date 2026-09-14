@@ -1,7 +1,16 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { VARIANTS, type ThemeDef, type TrackVariant } from '../track/defs';
 import type { TrackCurve } from '../track/curve';
+import {
+  buildGround,
+  buildLandformMeshes,
+  buildRidges,
+  placeLandforms,
+  placeRocks,
+  seededRandom,
+  type GroundSurface,
+  type RidgeRings,
+} from './terrain';
 
 function makeSkyMaterial(theme: ThemeDef): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -52,54 +61,6 @@ function makeSkyMaterial(theme: ThemeDef): THREE.ShaderMaterial {
       }
     `,
   });
-}
-
-function seededRandom(seed: number): () => number {
-  let s = seed;
-  return () => {
-    s = (s * 16807) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-}
-
-function makeMesa(rng: () => number, radius: number, height: number): THREE.BufferGeometry {
-  const segments = 9;
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const verts: THREE.Vector3[] = [];
-  for (let i = 0; i < segments; i++) {
-    const a = (i / segments) * Math.PI * 2;
-    const rr = radius * (0.75 + rng() * 0.5);
-    verts.push(new THREE.Vector3(Math.cos(a) * rr, height * (0.55 + rng() * 0.3), Math.sin(a) * rr));
-  }
-  positions.push(0, 0, 0);
-  for (const v of verts) positions.push(v.x, v.y, v.z);
-  positions.push(0, height, 0);
-  const topIdx = positions.length / 3 - 1;
-  for (let i = 0; i < segments; i++) {
-    const a = 1 + i;
-    const b = 1 + ((i + 1) % segments);
-    indices.push(0, b, a);
-    indices.push(a, b, topIdx);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setIndex(indices);
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function baked(geo: THREE.BufferGeometry, pos: THREE.Vector3, rotY = 0, scaleY = 1): THREE.BufferGeometry {
-  const g = geo.clone();
-  g.deleteAttribute('uv');
-  const m = new THREE.Matrix4().compose(
-    pos.clone(),
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rotY, 0)),
-    new THREE.Vector3(1, scaleY, 1),
-  );
-  g.applyMatrix4(m);
-  if (!g.getAttribute('normal')) g.computeVertexNormals();
-  return g;
 }
 
 export interface Environment {
@@ -154,8 +115,6 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     fogFar: theme.fogFar,
     sunIntensity: theme.sunIntensity,
     hemiIntensity: theme.hemiIntensity,
-    ground: new THREE.Color(theme.groundColor),
-    mesa: new THREE.Color(theme.mesaColor),
     mesaFar: new THREE.Color(theme.mesaFarColor),
     rock: new THREE.Color(theme.rockColor),
     cloud: new THREE.Color(theme.cloudColor),
@@ -163,87 +122,37 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     reflector: new THREE.Color(theme.hemiSky).lerp(new THREE.Color(0xffffff), 0.5),
   };
 
-  let groundMat: THREE.MeshStandardMaterial;
-  if (theme.ambientSound === 'synth') {
-    const gc = document.createElement('canvas');
-    gc.width = 256;
-    gc.height = 256;
-    const gx = gc.getContext('2d')!;
-    gx.fillStyle = '#10131f';
-    gx.fillRect(0, 0, 256, 256);
-    gx.strokeStyle = 'rgba(54, 240, 255, 0.16)';
-    gx.lineWidth = 2;
-    for (let i = 0; i <= 256; i += 32) {
-      gx.beginPath();
-      gx.moveTo(i, 0);
-      gx.lineTo(i, 256);
-      gx.moveTo(0, i);
-      gx.lineTo(256, i);
-      gx.stroke();
-    }
-    const gtex = new THREE.CanvasTexture(gc);
-    gtex.wrapS = THREE.RepeatWrapping;
-    gtex.wrapT = THREE.RepeatWrapping;
-    gtex.repeat.set(60, 60);
-    groundMat = new THREE.MeshStandardMaterial({ map: gtex, color: theme.groundColor, roughness: 0.8, emissive: 0x0a1a24, emissiveIntensity: 0.6 });
-  } else {
-    groundMat = new THREE.MeshStandardMaterial({ color: theme.groundColor, roughness: 1 });
-  }
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(3600, 48), groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.35;
-  group.add(ground);
+  const groundSurface: GroundSurface = buildGround(theme);
+  group.add(groundSurface.mesh);
 
-  const rng = seededRandom(1337);
-  const mesaMat = new THREE.MeshStandardMaterial({ color: theme.mesaColor, roughness: 0.95, flatShading: true });
-  const mesaMatFar = new THREE.MeshStandardMaterial({ color: theme.mesaFarColor, roughness: 1, flatShading: true });
-  const mesaGeoCache = new Map<string, THREE.BufferGeometry>();
-  const mesaNear: THREE.BufferGeometry[] = [];
-  const mesaFar: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < 26; i++) {
-    const a = rng() * Math.PI * 2;
-    const dist = 700 + rng() * 2300;
-    const x = Math.cos(a) * dist;
-    const z = Math.sin(a) * dist;
-    const radius = 90 + rng() * 260;
-    const height = radius * (0.5 + rng() * 0.9);
-    const key = `${Math.round(radius)}-${Math.round(height)}`;
-    let geo = mesaGeoCache.get(key);
-    if (!geo) {
-      geo = makeMesa(rng, radius, height);
-      mesaGeoCache.set(key, geo);
-    }
-    const far = dist > 1600;
-    const bakedGeo = baked(geo, new THREE.Vector3(x, height * 0.18 - 2, z), rng() * Math.PI * 2);
-    (far ? mesaFar : mesaNear).push(bakedGeo);
-  }
-  const mergeOrEmpty = (list: THREE.BufferGeometry[]): THREE.BufferGeometry | null => {
-    if (list.length === 0) return null;
-    const merged = mergeGeometries(list, false)!;
-    for (const g of list) g.dispose();
-    return merged;
-  };
-  const mesaNearMesh = mergeOrEmpty(mesaNear);
-  if (mesaNearMesh) group.add(new THREE.Mesh(mesaNearMesh, mesaMat));
-  const mesaFarMesh = mergeOrEmpty(mesaFar);
-  if (mesaFarMesh) group.add(new THREE.Mesh(mesaFarMesh, mesaMatFar));
+  const landRng = seededRandom(90217);
+  const landformSpecs = placeLandforms(landRng, theme, curveRef);
+  const { meshes: landformMeshes, landMat } = buildLandformMeshes(theme, landformSpecs);
+  for (const m of landformMeshes) group.add(m);
+
+  const ridgeRings: RidgeRings = buildRidges(seededRandom(7101), theme);
+  group.add(ridgeRings.group);
 
   const rockMat = new THREE.MeshStandardMaterial({ color: theme.rockColor, roughness: 1, flatShading: true });
   const rockGeo = new THREE.DodecahedronGeometry(1, 0);
   const rocks = new THREE.InstancedMesh(rockGeo, rockMat, 140);
   const dummy = new THREE.Object3D();
-  for (let i = 0; i < 140; i++) {
-    const a = rng() * Math.PI * 2;
-    const dist = 60 + rng() * 500;
-    dummy.position.set(Math.cos(a) * dist, -1.2 + rng() * 0.8, Math.sin(a) * dist);
-    dummy.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
-    const sc = 0.8 + rng() * 5;
-    dummy.scale.set(sc * (0.7 + rng() * 0.6), sc * (0.5 + rng() * 0.5), sc);
+  const rockTransforms = placeRocks(seededRandom(3313), curveRef, 140);
+  const rockTint = new THREE.Color();
+  for (let i = 0; i < rockTransforms.length; i++) {
+    const t = rockTransforms[i];
+    dummy.position.set(t.x, t.y, t.z);
+    dummy.rotation.set(t.rx, t.ry, t.rz);
+    dummy.scale.set(t.sx, t.sy, t.sz);
     dummy.updateMatrix();
     rocks.setMatrixAt(i, dummy.matrix);
+    rocks.setColorAt(i, rockTint.setScalar(t.tint));
   }
+  rocks.count = rockTransforms.length;
+  if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
   group.add(rocks);
 
+  const rng = seededRandom(1337);
   const cloudMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -265,6 +174,11 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
         float span = 5200.0;
         float x = mod(aBase.x + uTime * uDrift * (0.7 + 0.6 * aSeed) + span * 0.5, span) - span * 0.5;
         vec4 mv = modelViewMatrix * vec4(x + aPuff.x, aBase.y + aPuff.y, aBase.z + aPuff.z, 1.0);
+        if (mv.z > -4.0) {
+          vPuffUv = vec2(0.0);
+          gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+          return;
+        }
         mv.xy += position.xy * aPuff.w;
         vPuffUv = position.xy + 0.5;
         gl_Position = projectionMatrix * mv;
@@ -476,9 +390,9 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
     fog.far = base.fogFar * d.fogFarMult;
     (u.hazeColor.value as THREE.Color).copy(fog.color);
 
-    groundMat.color.copy(scratch.copy(base.ground).multiplyScalar(d.ambientDim));
-    mesaMat.color.copy(scratch.copy(base.mesa).multiplyScalar(d.ambientDim));
-    mesaMatFar.color.copy(scratch.copy(base.mesaFar).multiplyScalar(d.ambientDim));
+    groundSurface.dim(d.ambientDim);
+    landMat.color.setScalar(d.ambientDim);
+    ridgeRings.setTint(fog.color, d.ambientDim);
     rockMat.color.copy(scratch.copy(base.rock).multiplyScalar(d.ambientDim));
     (cloudMat.uniforms.uColor.value as THREE.Color).copy(scratch.copy(base.cloud).multiplyScalar(d.cloudColorMult));
     cloudMat.uniforms.uOpacity.value = Math.min(1, base.cloudOpacity * d.cloudOpacityMult);
@@ -490,8 +404,8 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
   let clock2 = 0;
   const update = (cameraPos: THREE.Vector3): void => {
     sky.position.copy(cameraPos);
-    ground.position.x = cameraPos.x;
-    ground.position.z = cameraPos.z;
+    groundSurface.anchor(cameraPos.x, cameraPos.z);
+    ridgeRings.group.position.set(cameraPos.x, 0, cameraPos.z);
     sunLight.target.position.copy(cameraPos);
     sunLight.position.copy(cameraPos).add(sunOffset);
     const w = waterRef.mesh;
@@ -527,8 +441,9 @@ export function buildEnvironment(scene: THREE.Scene, theme: ThemeDef, quality: '
       if (anyO.geometry) anyO.geometry.dispose();
       const m = anyO.material as THREE.Material | THREE.Material[] | undefined;
       const kill = (mm: THREE.Material) => {
-        const map = (mm as THREE.MeshStandardMaterial).map;
-        if (map) map.dispose();
+        const std = mm as THREE.MeshStandardMaterial;
+        if (std.map) std.map.dispose();
+        if (std.emissiveMap) std.emissiveMap.dispose();
         mm.dispose();
       };
       if (Array.isArray(m)) m.forEach(kill);

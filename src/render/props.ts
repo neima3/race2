@@ -192,7 +192,7 @@ export function buildTrackProps(curve: TrackCurve, theme: ThemeId, quality: 'low
     const side = rng() > 0.5 ? 1 : -1;
     const lateral = side * (f.halfWidth + 5 + rng() * 30);
     const pos = f.pos.clone().addScaledVector(f.binormal, lateral);
-    pos.y -= 0.4;
+    pos.y -= 0.5;
 
     if (theme === 'neon' && rng() < 0.12) {
       const im = meshes[1];
