@@ -5,7 +5,7 @@
 - `npm run build` — production build → `dist/`
 - `npm run typecheck` — `tsc --noEmit` (strict; run before committing)
 - `node scripts/make-icons.mjs` — regenerate PWA icons
-- `npx tsx test/laps.ts` — headless time-trial harness (11/14; canyon-twist, grand-gauntlet, gauntlet-ii are STRICT-exempt; `--body=aero|tank` runs the same roster with that body's tuning)
+- `npx tsx test/laps.ts` — headless time-trial harness (14/14 since the v7 geometry repairs — canyon-twist/grand-gauntlet/gauntlet-ii used to wedge on seam folds, now fixed; `--body=aero|tank` runs the same roster with that body's tuning, `--emit-ghosts` regenerates dev ghosts)
 - `npx tsx test/rivals.ts` — headless rival-race gate (20 checks: steering sign, lateral sign, 2-lap races on sunrise-sprint + dune-rush, slow-mo accumulator integrity, rubber-band gap <120m)
 - `npx tsx test/career.ts` — career gate (119 checks incl. difficulty-curve pins: street cup = autopilot silver, never P4; roster-capacity guard on cup tier mixes; rival-era stats migration)
 - `npx tsx test/share.ts` — ghost-share codec gate (34 checks)
@@ -29,10 +29,11 @@
 - `systems/autopilot.ts` — pure-pursuit + curvature lookahead; optional `skill` param for rivals (identical behavior when omitted)
 - `game/share.ts` — compact ghost codec (15Hz, 16-bit bbox-relative pos, smallest-three quat, transposed planes + deflate) → `#g=v1.<track>.<time>.<code>` URL share/import
 - Offline PWA: `dist/sw.js` is generated at build time by the `race2ServiceWorker` plugin in `vite.config.ts` (asset list inlined, cache name = content hash of the asset list → any content change = new cache, old cache deleted on activate). Network-first navigations, cache-first assets, same-origin GET only. Registered in `main.ts` (PROD only — dev never registers). First-run onboarding overlay + once-per-mode contextual HUD hints (`hud.ts showContextHint`, `settings.onboarded/hintRival/hintKnockout` — optional flags, old saves default-merge)
-- Version string: `v2.1.0` lives in `menus.ts` title credits + `package.json`; the sw cache name needs no version constant (content-hash-derived). Title shows on the credits line only
+- Version string: `v2.2.0` lives in `menus.ts` title credits + `package.json`; the sw cache name needs no version constant (content-hash-derived). Title shows on the credits line only
 - Car bodies: standard/aero/tank = real `CarTuning` deltas (aero +5% top −4% grip; tank +6% grip −4% top +8% boostKick); aero unlock 12★, tank unlock any cup trophy; single car-agnostic PB ledger
 - Weather variants (`dusk|night|rain`) via uniform swaps + `rules.ts` grip plumbing (`RAIN_GRIP_MULT 0.82`, floor 0.32× combined); cups assign variants, free-play stays day; `?variant=` dev override
-- `render/` — environment (sky shader, mesas), car model, particles, camera rig
+- `render/` — environment (per-theme lighting rig, sky shader w/ soft sun + haze + night-only stars, instanced soft clouds, ground/landform disposal patterns), `terrain.ts` (themed ground textures, grounded 2-tone landforms, ridge silhouette rings, GROUND_Y), `roadTextures.ts` (asphalt/wear/curb/banner canvases — keep colorSpace SRGB on any new CanvasTexture), props (clustered placement + variants + palette jitter), car model, particles, camera rig (speed FOV)
+- Track geometry (v7 repairs): control-point seam folds/kinks on 8 tracks fixed (canyon-twist, sky-loop over/underpass bridge, grand-gauntlet, neon-vertical hairpin, gauntlet-ii, twilight-gauntlet, ring-runner, volt-alley) — harness is 14/14; geometry conventions: strands must not fold below dy −3 near the seam, keep tangent continuity at the wrap point (`test/tmp/geo-*.ts` harnesses)
 - `ui/` — HUD, menus, touch controls; DOM only, no framework
 
 ## Conventions gotchas
@@ -45,7 +46,7 @@
 `start(i, rivals?)` (`true` = rivals, `'knockout'` = knockout), `auto(bool)` (pure-pursuit autopilot), `drive({steer,throttle,brake,drift})`, `state()` telemetry, `skipCountdown()`, `respawn()`, `mute()`, `rivals()` (per-rival telemetry), `standings()` (live order; rows carry `eliminated`), `finishLine()` (teleport-to-line QA cheat — defeated by the 92%-per-lap anti-cheat mid-lap), `startDaily()`, `daily()`, `audioProbe()`. URL: `?mute=1`, `?touch=1`, `?alltracks` (unlock override), `?variant=`. Audio auto-mutes under `navigator.webdriver`.
 
 ## Known QA baselines (autopilot, mute=1)
-Track laps: T1 ≈ 17.5s, T2 ≈ 30.8s, T3 ≈ 21.7s, T4 ≈ 28.4s; salt-flats ≈ 22.2s, harbor-nine ≈ 24.3s (browser ≈ headless, deterministic). Medal times in defs.ts are calibrated to these. Knockout pacing (3-lap, default e/m/p grid): autopilot reaches the duel on 4/4 probed tracks, elimination margins 0.3–35m (balance harness: `npx tsx test/tmp/ko-balance.ts [easy,mid,mid]`). Daily difficulty (10 seeded days): autopilot P1×3 / P3×5, P4 only on the 2 headless-exempt wedge tracks (`npx tsx test/tmp/daily-balance.ts 10`).
+Track laps: T1 ≈ 17.5s, T2 ≈ 30.8s, T3 ≈ 21.7s, T4 ≈ 28.4s; salt-flats ≈ 22.2s, harbor-nine ≈ 24.3s (browser ≈ headless, deterministic). Medal times in defs.ts are calibrated to these. Knockout pacing (3-lap, default e/m/p grid): autopilot reaches the duel on 4/4 probed tracks, elimination margins 0.3–35m (balance harness: `npx tsx test/tmp/ko-balance.ts [easy,mid,mid]`). Daily difficulty (10 seeded days): autopilot P1×3 / P3×5, P4 only on the 2 headless-exempt wedge tracks (`npx tsx test/tmp/daily-balance.ts 10`). NOTE: v7 road/curb/embankment geometry is visual-only — road collision surface unchanged; curbs sit +0.025 flush with no grip effect.
 
 ## Deploy
 Static build in Docker (nginx) → Coolify `cool.neima.me` → race2.neima.me. App UUID `qgpdmafn677kx6aoiahrlfyy`; deploy = POST `https://cool.neima.me/api/v1/deploy?uuid=<uuid>` (token in 1Password "cool.neima.me coolify api" — do NOT `source` it, `|` breaks shell). Builds from git main, so push first. Verify live with `?mute=1` + autopilot + a rival race (`standings()`).

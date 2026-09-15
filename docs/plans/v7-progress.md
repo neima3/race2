@@ -190,3 +190,8 @@ Notes for Phase 6: title-screen orbit scene should avoid canyon-twist's seam jun
 - P5 lead follow-up (grok findings): disposed merge/toNonIndexed source geometries in terrain.ts; sRGB colorSpace on banner/chevron/pillar canvas textures (builder.ts).
 - P6: title tagline "TRACKMANIA-STYLE TIME ATTACK" -> "HIGH-SPEED ARCADE RACING"; version 2.2.0 (package.json + title credits). Final smoke: rival race on grand-gauntlet muted — standings/minimap/curbs/mesas all correct (qa/v7-phase5/final-rival-race.png).
 - Grok CLI: scoped review of terrain.ts/roadTextures.ts delivered 5 findings (4 real, fixed; 1 false positive — window material IS disposed via group traverse). Earlier full-diff reviews timed out; scoped-file prompts work.
+
+## v7 final wrap (2026-09-13)
+- All 6 phases complete; pushed `9340a8e..9d21d29` + follow-ups, deployed (deployment rs3bs0ivhfvzv5axgwiljdha, finished on 9d21d299), **v2.2.0 live**.
+- Live verification (muted): v2.2.0 + "HIGH-SPEED ARCADE RACING" tagline in served bundle; sw controlling page; prod gameplay shots — dune-rush (alpine-authored, green by design), ring-runner meadow, neon-circuit night city with lit towers/poles/curbs (`qa/v7-live/01-04`).
+- Headline outcomes: floating black diamonds gone; themed ground + grounded lit landforms; asphalt w/ edge lines + 119 apex curb zones + checkered gantry; clustered props + instanced scatter; per-theme lighting; neon reads as night city; **harness 9/12 → 14/14** (8 real geometry repairs); draw calls ≤220 budget held (148 rain rivals); all 10 gates green at HEAD.
