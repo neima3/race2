@@ -335,11 +335,29 @@ export class MenuManager {
     );
     row(
       'CAMERA',
-      select(s.camera, [
+      select(s.cam, [
         { value: 'chase', label: 'Chase' },
+        { value: 'close', label: 'Close' },
         { value: 'hood', label: 'Hood' },
-      ], (v) => this.patchSettings({ camera: v })),
+      ], (v) => this.patchSettings({ cam: v })),
     );
+
+    const fovWrap = el('div', 'setting-range-wrap');
+    const fov = el('input', 'setting-range') as HTMLInputElement;
+    fov.type = 'range';
+    fov.min = '60';
+    fov.max = '100';
+    fov.step = '1';
+    fov.value = String(s.fov);
+    const fovVal = el('div', 'setting-range-val', `${s.fov}°`);
+    fov.addEventListener('input', () => {
+      const v = parseFloat(fov.value);
+      fovVal.textContent = `${Math.round(v)}°`;
+      this.patchSettings({ fov: v });
+    });
+    fovWrap.append(fov, fovVal);
+    row('FIELD OF VIEW', fovWrap);
+
     row(
       'TOUCH STEERING',
       select(s.touchSteer, [

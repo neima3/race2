@@ -7,6 +7,7 @@ import { RivalManager, pickLineup } from '../src/game/rivals';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
 import { ParticleSystem, RainSystem } from '../src/render/particles';
+import { CameraRig } from '../src/render/camera';
 import { computeOnSlick, surfaceGripFor } from '../src/game/rules';
 
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
@@ -41,6 +42,7 @@ rivals.totalLaps = 2;
 rivals.rain = rain;
 
 const camPos = new THREE.Vector3();
+const rig = new CameraRig(16 / 9);
 const moverSnap: { dist: number; lat: number }[] = [];
 const input = { steer: 0, throttle: 0, brake: 0, drift: false };
 
@@ -64,6 +66,8 @@ race.start();
 // warm-up (shader-free; steady-state allocation)
 for (let i = 0; i < 3600; i++) {
   race.update(simDt * 1000, input);
+  rig.setMode(i % 3600 < 1200 ? 'chase' : i % 3600 < 2400 ? 'close' : 'hood');
+  rig.update(simDt, player.state);
   rivals.update(simDt * 1000, 'racing', race.totalProgress, moverSnap);
   player.state.surfaceGrip = surfaceGripFor(rain);
   player.state.onSlick = computeOnSlick(def.slicks, player.state.trackDist, player.state.lateral);
@@ -79,6 +83,8 @@ const t0 = performance.now();
 for (let i = 0; i < 60 * 120; i++) {
   wallMs += simDt * 1000;
   race.update(simDt * 1000, input);
+  rig.setMode(i % 3600 < 1200 ? 'chase' : i % 3600 < 2400 ? 'close' : 'hood');
+  rig.update(simDt, player.state);
   const mode = race.phase === 'countdown' ? 'countdown' : 'racing';
   rivals.update(simDt * 1000, mode, race.totalProgress, moverSnap);
   player.state.surfaceGrip = surfaceGripFor(rain);
@@ -103,6 +109,8 @@ const h1 = heap();
 for (let i = 0; i < 30 * 120; i++) {
   race.update(simDt * 1000, input);
   if (race.phase === 'finished') break;
+  rig.setMode(i % 3600 < 1200 ? 'chase' : i % 3600 < 2400 ? 'close' : 'hood');
+  rig.update(simDt, player.state);
   rivals.update(simDt * 1000, 'racing', race.totalProgress, moverSnap);
   particles.update(simDt);
 }

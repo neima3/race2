@@ -166,6 +166,8 @@ class Game {
     this.renderer.toneMappingExposure = 1.06;
 
     this.rig = new CameraRig(canvas.clientWidth / Math.max(1, canvas.clientHeight));
+    this.rig.fovPref = this.save.settings.fov;
+    this.rig.setMode(this.save.settings.cam);
     this.applyQualitySettings();
 
     this.touch = new TouchControls(this.input);
@@ -227,6 +229,8 @@ class Game {
         }
       }
       if (this.ghostVisual) this.ghostVisual.group.visible = s.showGhost;
+      this.rig.fovPref = s.fov;
+      this.rig.setMode(s.cam);
       this.touch.root.classList.toggle('touch-lefty', s.leftyTouch);
     };
     this.touch.onPause = () => {
@@ -733,12 +737,19 @@ class Game {
     this.race!.useExternalGhost(friendActive ? this.friendGhost!.samples : null);
     this.friendRaceActive = friendActive;
     this.hud.setGhostTag(friendActive ? 'FRIEND' : null);
+    let modeHinted = false;
     if (this.knockoutMode && !this.save.settings.hintKnockout) {
       this.save.updateSettings({ hintKnockout: true });
       this.hud.showContextHint('LAST PLACE EACH LAP IS ELIMINATED');
+      modeHinted = true;
     } else if (this.rivalMode && !this.knockoutMode && !this.save.settings.hintRival) {
       this.save.updateSettings({ hintRival: true });
       this.hud.showContextHint('FINISH P2 OR BETTER TO SCORE POINTS');
+      modeHinted = true;
+    }
+    if (!modeHinted && !this.save.settings.hintCam) {
+      this.save.updateSettings({ hintCam: true });
+      this.hud.showContextHint('C — CAMERA');
     }
     this.race!.start();
     this.hud.setLapCounter(this.rivalMode ? `LAP ${this.race!.lapNumber}/${this.race!.totalLaps}` : null);
@@ -1252,6 +1263,11 @@ class Game {
 
     const input = this.input.sample(this.save.settings.steeringSensitivity);
 
+    if (this.carVisual) {
+      const pov = this.rig.mode === 'hood' && this.state !== 'photo' && !this.podium && this.state !== 'menu' && this.state !== 'replay';
+      this.carVisual.bodyGroup.visible = !pov;
+    }
+
     if (input.pause) {
       if (this.podium) {
         this.exitPodium();
@@ -1270,8 +1286,10 @@ class Game {
 
     if (input.cameraToggle) {
       if (this.state === 'racing' || this.state === 'photo') {
-        if (this.state === 'racing') this.rig.toggleMode();
-        else this.exitPhoto();
+        if (this.state === 'racing') {
+          const mode = this.rig.cycleMode();
+          this.save.updateSettings({ cam: mode });
+        } else this.exitPhoto();
       }
     }
 
@@ -1491,7 +1509,11 @@ class Game {
       const liveDelta = this.race!.ghostActive ? this.race!.liveGhostDelta(s.trackDist, this.race!.elapsedMs) : null;
       const speedRatio = Math.min(1, Math.abs(s.forwardSpeed) / 58);
       const sl = document.getElementById('speedlines');
-      if (sl) sl.style.opacity = this.save.settings.reducedMotion ? '0' : String(Math.max(0, (speedRatio - 0.62) / 0.38) * 0.85);
+      if (sl) {
+        const hood = this.rig.mode === 'hood';
+        const start = hood ? 0.45 : 0.62;
+        sl.style.opacity = this.save.settings.reducedMotion ? '0' : String(Math.min(1, Math.max(0, (speedRatio - start) / 0.38) * (hood ? 1 : 0.85)));
+      }
       const vg = document.getElementById('vignette');
       if (vg) vg.style.opacity = this.save.settings.reducedMotion ? '0.2' : String(0.25 + speedRatio * 0.45);
       this.hud.driftPoints = this.driftScore;
@@ -1609,6 +1631,7 @@ declare global {
       startDaily: () => object;
       daily: () => object;
       audioProbe: () => object;
+      cam: (mode?: 'chase' | 'close' | 'hood') => 'chase' | 'close' | 'hood';
     };
   }
 }
@@ -1766,5 +1789,12 @@ window.__race2 = {
     return { today: todayKey(), save: save.daily, lastFinish: game['lastFinish']?.daily ?? null };
   },
   audioProbe: () => game['audio'].audioProbe(),
+  cam: (mode?: 'chase' | 'close' | 'hood') => {
+    if (mode === 'chase' || mode === 'close' || mode === 'hood') {
+      game['rig'].setMode(mode);
+      game['save'].updateSettings({ cam: mode });
+    }
+    return game['rig'].mode;
+  },
 };
 

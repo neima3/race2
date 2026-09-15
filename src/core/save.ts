@@ -2,6 +2,7 @@ import { prevDateKey } from '../game/daily';
 
 export type QualityTier = 'low' | 'medium' | 'high';
 export type TouchSteerMode = 'buttons' | 'tilt';
+export type CameraMode = 'chase' | 'close' | 'hood';
 
 export interface TrackSave {
   bestTimeMs: number | null;
@@ -12,7 +13,9 @@ export interface TrackSave {
 
 export interface Settings {
   quality: 'auto' | QualityTier;
-  camera: 'chase' | 'hood';
+  cam: CameraMode;
+  /** FOV preference 60-100 (slider value; CHASE/CLOSE base = fov - 10, HOOD forces 70). */
+  fov: number;
   music: boolean;
   sfx: boolean;
   steeringSensitivity: number;
@@ -24,6 +27,7 @@ export interface Settings {
   onboarded?: boolean;
   hintRival?: boolean;
   hintKnockout?: boolean;
+  hintCam?: boolean;
 }
 
 const SAVE_KEY = 'race2.save.v1';
@@ -120,7 +124,8 @@ const DEFAULT_PROFILE: PlayerProfile = { paint: 0x29e6ff, body: 'standard' };
 
 const DEFAULT_SETTINGS: Settings = {
   quality: 'auto',
-  camera: 'chase',
+  cam: 'chase',
+  fov: 72,
   music: true,
   sfx: true,
   steeringSensitivity: 1.0,
@@ -327,9 +332,20 @@ export class SaveManager {
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as Stored<Partial<Settings>>;
+        const parsed = JSON.parse(raw) as Stored<Partial<Settings>> & { camera?: unknown };
         this.noteSchemaVersion(parsed.schemaVersion);
-        return { ...DEFAULT_SETTINGS, ...parsed };
+        const merged: Settings = { ...DEFAULT_SETTINGS, ...parsed };
+        // v2.2 stored a 'camera' select ('chase'|'hood') — migrate it into `cam` once.
+        if (parsed.cam === undefined && parsed.camera !== undefined) {
+          merged.cam = parsed.camera === 'hood' ? 'hood' : 'chase';
+        }
+        if (merged.cam !== 'chase' && merged.cam !== 'close' && merged.cam !== 'hood') merged.cam = 'chase';
+        merged.fov =
+          typeof merged.fov === 'number' && Number.isFinite(merged.fov)
+            ? Math.min(100, Math.max(60, Math.round(merged.fov)))
+            : DEFAULT_SETTINGS.fov;
+        delete (merged as { camera?: unknown }).camera;
+        return merged;
       }
     } catch {
       /* corrupted — defaults */
