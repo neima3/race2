@@ -136,15 +136,41 @@ export function weeklyVariant(def: WeeklyDef, raceIndex: number): TrackVariant {
 export function weeklyRaceTrack(def: WeeklyDef, raceIndex: number): TrackDef {
   const base = def.tracks[Math.max(0, Math.min(WEEKLY_RACES - 1, raceIndex))];
   if (def.modifier.id === 'slick-mayhem') {
-    return {
-      ...base,
-      slicks: (base.slicks ?? []).map((sl) => ({ dist: sl.dist, lateral: sl.lateral, w: sl.w * 2, l: sl.l * 2 })),
-    };
+    const doubled = (base.slicks ?? []).map((sl) => ({ dist: sl.dist, lateral: sl.lateral, w: sl.w * 2, l: sl.l * 2 }));
+    // Most tracks ship without base slicks — a mayhem week on one of them would be a
+    // no-op. Synthesize deterministic patches at 25/50/75% of the lap (alternating
+    // lateral) so every mayhem race actually plays slick.
+    const slicks = doubled.length > 0 ? doubled : synthSlicks(base);
+    return { ...base, slicks };
   }
   if (def.modifier.id === 'boost-fest') {
     return { ...base, boosts: base.boosts.map((b) => ({ ...b, strength: b.strength * 1.5 })) };
   }
   return base;
+}
+
+/** Deterministic slick patches for slick-less tracks (slick-mayhem weeks only). */
+function synthSlicks(base: TrackDef): NonNullable<TrackDef['slicks']> {
+  const len = trackCurveLength(base);
+  const w = 4;
+  const l = 24;
+  return [0.25, 0.5, 0.75].map((f, i) => ({
+    dist: Math.round(len * f),
+    lateral: i % 2 === 0 ? -2 : 2,
+    w,
+    l,
+  }));
+}
+
+/** Curve length without instantiating a full TrackCurve (control-point polyline estimate). */
+function trackCurveLength(base: TrackDef): number {
+  let total = 0;
+  for (let i = 0; i < base.points.length; i++) {
+    const a = base.points[i].pos;
+    const b = base.points[(i + 1) % base.points.length].pos;
+    total += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  }
+  return Math.max(200, total * 0.95);
 }
 
 export function startWeeklyRun(weekKey: string): WeeklyRun {

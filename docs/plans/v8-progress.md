@@ -227,3 +227,10 @@
 1. PREV/NEXT scope to the CURRENT track's buffer entries (spec says "cycles the buffer") — cycling into another track's replay would render it against the wrong scene; the 5-entry ring buffer itself stays global per spec, and same-track repeat laps (the realistic flow) get full cycling.
 2. Photo-from-replay exit restores the theater instead of unconditionally returning to 'racing' (v2.2 would have dead-ended); racing photo flow unchanged.
 3. Director hint fix + snap-on-far-seek + RAF-driven cut-fade clear are small behavior repairs to the v2.2 director made necessary by scrubbing (all covered above); no physics, save, or rival-mode changes anywhere in this phase.
+
+## Phase 9 (completed by lead after subagent hit usage limit mid-phase)
+- Subagent WIP finished: 5 new achievements wired (GHOSTBUSTER >2s friend-ghost busts, THREAD THE NEEDLE 5-nm traffic run, WEEKLY WARRIOR weekly gold, FRESH GRAD tutorial, PAINT COLLECTOR all locked paints) + save stats (friendGhostBusts, trafficNeedles) + panel rows.
+- Traffic balance (subagent's tuning, lead-verified): pack 10-14 (was 8-12), speed band 0.50-0.65 (was 0.55-0.70), contact lat 1.5 (squeeze corridor [1.5,2.2)), contact cooldown 3s (episode not bump), near-miss bar 10 m/s, respawn gap 28m + train gap 24m. Harness: 14/14 finish, nm 3-8 on 11/14 (serpents-tail/neon-circuit below = short laps, fewer pass events — natural, not tuned to avoid overfitting; gauntlet-ii/twilight col 7-8 = non-dodging bot on twisty tracks, humans weave).
+- Lead fix: SLICK MAYHEM on slick-less tracks was a no-op (only 3/14 tracks ship base slicks) — weeklyRaceTrack now synthesizes deterministic patches at 25/50/75% lap (alternating lateral, 4×24) when base has none; doubled zones unchanged on slick tracks.
+- Traffic test pin 8-12 → 10-14 (additive, reflects balance).
+- All 16 gates green post-changes (traffic 16/16, weekly 116/116, rest unchanged).

@@ -204,7 +204,7 @@ for (const r of results) {
   if (!r.finished) fail(`${r.track}: autopilot did not finish the traffic race`);
   if (r.nan) fail(`${r.track}: NaN in player state`);
   if (r.nearMisses < 1) fail(`${r.track}: no natural near-miss occurred (expected ≥1 on a clean autopilot run)`);
-  if (r.countStart < 8 || r.countStart > 12) fail(`${r.track}: traffic count ${r.countStart} outside 8-12`);
+  if (r.countStart < 10 || r.countStart > 14) fail(`${r.track}: traffic count ${r.countStart} outside 10-14`);
   if (r.countStart !== r.countEnd) fail(`${r.track}: traffic count changed over time (${r.countStart}→${r.countEnd}) — respawn leaks`);
 }
 

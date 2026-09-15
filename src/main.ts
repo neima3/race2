@@ -70,7 +70,7 @@ import {
 import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
 import { TrafficManager, NEAR_MISS_BONUS_MS, NEAR_MISS_MAX_CREDITED, type TrafficFinishData } from './systems/traffic';
 import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
-import { achievementPops, rivalAchievementState, type RivalAchievementState } from './game/achievements';
+import { achievementPops, achievementList, rivalAchievementState, GHOSTBUST_MARGIN_MS, NEEDLE_NEAR_MISSES, type RivalAchievementState } from './game/achievements';
 import { driverStats } from './game/stats';
 import { checkPaintUnlocks, PAINT_LOCK_INFO, paintUnlockState } from './game/unlocks';
 import { PAINT_LOCK_IDS, type PaintLockId } from './render/car-model';
@@ -1237,12 +1237,14 @@ class Game {
   }
 
   private finishTutorial(skippedAny: boolean): void {
+    const achvBefore = rivalAchievementState(this.save);
     this.save.updateSettings({
       tutorialDone: true,
       tutorialSkipped: skippedAny || this.save.settings.tutorialSkipped === true,
     });
     // FRESH GRAD placeholder — P9 wires the achievement; emit + persist the event now.
     window.dispatchEvent(new CustomEvent('race2:tutorial-complete', { detail: { completed: !skippedAny } }));
+    this.announceAchievementPops(achvBefore);
     this.hud.showSplash('NOW SET A TIME!', 'splash-tut');
     // Hold the (inert, status=complete) tutorial visuals under the banner, then drop
     // into the time-trial — startTrack's teardown removes everything before the rebuild.
@@ -1428,7 +1430,7 @@ class Game {
         } else if (this.trafficMode) {
           // traffic is a standalone time mode — only the per-track traffic-best ledger
           const nm = this.traffic?.nearMisses ?? 0;
-          this.save.addStats({ nearMisses: nm });
+          this.save.addStats({ nearMisses: nm, trafficNeedles: nm >= NEEDLE_NEAR_MISSES ? 1 : 0 });
           const credited = Math.min(nm, NEAR_MISS_MAX_CREDITED);
           const bonusMs = credited * NEAR_MISS_BONUS_MS;
           const scoreMs = Math.max(0, r.timeMs - bonusMs);
@@ -1449,7 +1451,12 @@ class Game {
           for (const name of beaten) winsBy[name] = (winsBy[name] ?? 0) + 1;
           this.save.addStats({ rivalWins: pos === 1 ? 1 : 0, rivalsBeaten: beaten, rivalWinsBy: winsBy });
         } else if (!this.rivalMode && this.friendRaceActive) {
-          this.save.addStats({ friendGhostRaces: 1 });
+          // v8 P9 GHOSTBUSTER: the FRIEND finish row's delta is player − ghost (negative = beat)
+          const friendRow = (r.ghostResults ?? []).find((g) => g.label === 'FRIEND');
+          this.save.addStats({
+            friendGhostRaces: 1,
+            friendGhostBusts: friendRow && friendRow.deltaMs <= -GHOSTBUST_MARGIN_MS ? 1 : 0,
+          });
         }
         this.friendRaceActive = false;
         let careerPanel: CareerPanelData | null = null;
@@ -1488,10 +1495,13 @@ class Game {
 
   /** Paint unlock sweep: fires at the trigger events AND on boot (migrated stats). Idempotent per lock id. */
   private announcePaintUnlocks(): void {
+    const achvBefore = rivalAchievementState(this.save);
     for (const id of checkPaintUnlocks(this.save)) {
       this.menu.showToast(`NEW PAINT UNLOCKED — ${PAINT_LOCK_INFO[id].label}`);
       this.audio.unlockChime();
     }
+    // the sweep can complete PAINT COLLECTOR (e.g. a knockout win earning the 4th paint)
+    this.announceAchievementPops(achvBefore);
   }
 
   private onKnockoutEvent(ev: KnockoutEvent): void {
@@ -2321,6 +2331,7 @@ declare global {
       ghosts: () => object;
       cam: (mode?: 'chase' | 'close' | 'hood') => 'chase' | 'close' | 'hood';
       stats: () => object;
+      achievements: () => object;
       paints: () => object;
       unlockPaint: (id?: string) => object;
       startTutorial: () => object;
@@ -2528,6 +2539,7 @@ window.__race2 = {
     return game['rig'].mode;
   },
   stats: () => driverStats(game['save']),
+  achievements: () => achievementList(game['save']),
   paints: () => {
     const save = game['save'];
     return {

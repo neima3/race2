@@ -10,21 +10,32 @@ import { hashSeed } from '../game/rivals';
 // frame; collisions scrub the player only. Deterministic per track (seeded).
 
 export const TRAFFIC_REFERENCE_SPEED = 40; // m/s baseline player pace
-export const TRAFFIC_SPEED_MIN = 0.55; // fraction of reference
-export const TRAFFIC_SPEED_MAX = 0.7;
-export const TRAFFIC_COUNT_MIN = 8;
-export const TRAFFIC_COUNT_MAX = 12;
+export const TRAFFIC_SPEED_MIN = 0.5; // fraction of reference — P9 balance: a lower band
+// raises closing speeds so passes clear the 12 m/s near-miss credit bar even where the
+// player is off-throttle mid-corner, and spends less time inside the contact band
+export const TRAFFIC_SPEED_MAX = 0.65;
+export const TRAFFIC_COUNT_MIN = 10; // P9 balance: 10-14 pack (was 8-12) — more pass
+export const TRAFFIC_COUNT_MAX = 14; // events per lap, the sparse side of 3-8 near misses
 export const TRAFFIC_RESPAWN_BEHIND = 80; // m behind player -> loop-respawn ahead
 export const TRAFFIC_RESPAWN_AHEAD = 120; // m ahead of player after respawn
+export const TRAFFIC_RESPAWN_GAP = 28; // P9: min spacing to the next traffic car at respawn
+// (kills the passed-together convoys that produced chain rear-end contacts)
+export const TRAFFIC_TRAIN_GAP = 24; // P9: continuous following distance — traffic holds
+// this gap behind the car ahead instead of clumping at speed differentials
 export const TRAFFIC_HIT_DIST = 3.2; // contact band: |Δdist|
-export const TRAFFIC_HIT_LAT = 1.7; // contact band: |Δlateral| — car-width touch; the
-// 1.7→2.2 corridor is the clean-squeeze band that earns NEAR MISS (a 2.2 contact
-// band would make near misses unreachable: every pass crosses Δdist≈0)
-export const TRAFFIC_CONTACT_COOLDOWN = 0.8; // s per car between hit effects
+export const TRAFFIC_HIT_LAT = 1.5; // contact band: |Δlateral| — P9 widened the squeeze
+// corridor: the [1.5, 2.2) clean-pass annulus is what separates near misses from
+// contacts (a 1.7 band left only a 0.5 m window and both counts move the wrong way)
+export const TRAFFIC_CONTACT_COOLDOWN = 3; // P9: s per car between counted contacts (was
+// 0.8 for effect-spam control only) — a scrubbed player bump-following a slow cork
+// re-contacts every ~2 s; a 3 s non-overlap re-arm counts the EPISODE, not each bump.
+// Effects still fire per contact, collisions increment at most once per window.
 export const TRAFFIC_SCRUB_RATE = 6; // strong slowdown while overlapping (mover scrub is 3.5)
 export const TRAFFIC_NUDGE_TIME = 1; // s of nudged lane offset, then ease back
 export const NEAR_MISS_LAT = 2.2;
-export const NEAR_MISS_REL_SPEED = 12; // m/s closing speed
+export const NEAR_MISS_REL_SPEED = 10; // m/s closing speed — P9: recalibrated to the
+// lower pace band (12 was set against the 0.55-0.7 band; corner passes at the current
+// 0.5-0.65 band were dying one step under the old bar)
 export const NEAR_MISS_WINDOW = 0.4; // s around the Δdist crossing
 export const NEAR_MISS_CROSS_MAX = 10; // guard: real crossings happen within ~10m
 export const NEAR_MISS_BONUS_MS = 150;
@@ -54,6 +65,8 @@ interface TrafficCar {
   nudgeDir: number;
   nudgeT: number;
   contactT: number;
+  /** inside the contact band this step (rising-edge collision counting) */
+  wasOver: boolean;
   wasAhead: boolean;
   passT: number;
   passMinLat: number;
@@ -158,16 +171,25 @@ export class TrafficManager {
   place(playerDist: number): void {
     const len = this.curve.length;
     const rng = mulberry32(hashSeed('traffic:' + this.def.id));
-    const count = TRAFFIC_COUNT_MIN + Math.floor(rng() * (TRAFFIC_COUNT_MAX - TRAFFIC_COUNT_MIN + 1));
+    // P9: count scales inversely with how many passes a run offers — short laps get
+    // denser packs (more squeeze passes), long wild laps get relief (~one car per 60 m
+    // of racing room, clamped to 10-14; deterministic, no per-track seed lottery)
+    const count = Math.max(TRAFFIC_COUNT_MIN, Math.min(TRAFFIC_COUNT_MAX, Math.round(len / 60)));
     this.cars.length = 0;
     for (let i = 0; i < count; i++) {
       const spread = (len - 160) / count;
       let dist = (playerDist + 50 + (i + 0.35 + rng() * 0.3) * spread) % len;
       if (dist < 0) dist += len;
-      const side = i % 2 === 0 ? -1 : 1;
       this.curve.frameAtDist(dist, this.frame);
-      // edge-biased lanes keep the racing line (center-ish) open for clean squeezes
-      const lane = side * Math.min(1.8 + rng() * 1.4, Math.max(0.5, this.frame.halfWidth - 1.2));
+      // P9 lane plan, deterministic per car: most of the pack takes the SQUEEZE band
+      // (1.75-2.15 — hugs the [1.5, 2.2) near-miss annulus from inside), the rest the
+      // EDGE band (2.4-3.2 — scenery that never corks the line). Sparse short-track
+      // packs lean 2/3 squeeze so a 1-lap run still offers enough passes; long wild-
+      // line tracks hold 1/2 (their excursions find squeeze lanes without help).
+      // Band and side use independent index bits so squeeze lanes sit on BOTH sides.
+      const side = i % 2 === 0 ? -1 : 1;
+      const squeeze = count <= 12 ? i % 3 !== 2 : Math.floor(i / 2) % 2 === 0;
+      const lane = side * Math.min(squeeze ? 1.75 + rng() * 0.4 : 2.4 + rng() * 0.8, Math.max(0.5, this.frame.halfWidth - 1.2));
       // low-biased pace (55-70% band, weighted down) keeps closing speeds >12 m/s so
       // passes resolve as near misses rather than slow chases
       const speed = TRAFFIC_REFERENCE_SPEED * (TRAFFIC_SPEED_MIN + rng() * rng() * (TRAFFIC_SPEED_MAX - TRAFFIC_SPEED_MIN));
@@ -180,6 +202,7 @@ export class TrafficManager {
         nudgeDir: 0,
         nudgeT: 0,
         contactT: 0,
+        wasOver: false,
         wasAhead: true,
         passT: 0,
         passMinLat: 99,
@@ -206,9 +229,22 @@ export class TrafficManager {
     const playerSpeed = Math.abs(s.forwardSpeed);
     for (let i = 0; i < this.cars.length; i++) {
       const c = this.cars[i];
-      c.dist = (c.dist + c.speed * dt) % len;
+      // P9 following distance: never close on the car ahead inside TRAFFIC_TRAIN_GAP
+      // (differential speeds clump the pack into trains that produce chain rear-end
+      // contacts when the player threads them). Speed identity is kept — only the
+      // step movement is clamped, so trains dissolve naturally once space opens.
+      let v = c.speed;
+      for (let j = 0; j < this.cars.length; j++) {
+        if (j === i) continue;
+        const gap = wrapDelta(this.cars[j].dist, c.dist, len); // + = j ahead of c
+        if (gap > 0 && gap < TRAFFIC_TRAIN_GAP) v = Math.min(v, this.cars[j].speed);
+      }
+      c.dist = (c.dist + v * dt) % len;
       if (c.dist < 0) c.dist += len;
-      if (c.contactT > 0) c.contactT -= dt;
+      // contact cooldown only decays OUTSIDE the band, so one continuous overlap
+      // counts as ONE collision (a scrubbed player sitting beside a cork used to
+      // re-count every 0.8 s cooldown expiry)
+      if (c.contactT > 0 && !c.wasOver) c.contactT -= dt;
       let nudgeOffset = 0;
       if (c.nudgeT > 0) {
         c.nudgeT -= dt;
@@ -225,11 +261,14 @@ export class TrafficManager {
       if (overlap) {
         // strong slowdown on the player only (mover-scrub pattern, stronger rate)
         s.vel.multiplyScalar(Math.max(0, 1 - TRAFFIC_SCRUB_RATE * dt));
+        c.passHit = true;
         if (c.contactT <= 0) {
           c.contactT = TRAFFIC_CONTACT_COOLDOWN;
-          c.passHit = true;
           this.collisions++;
-          c.nudgeDir = Math.sign(dLat) || Math.sign(c.lane) || 1;
+          // P9: nudge toward the car's OWN road edge, not blindly away from the
+          // player — when contact happens out wide, sign(dLat) shoved the cork
+          // toward the center and back into the player's path for a second hit
+          c.nudgeDir = Math.sign(c.lane) || Math.sign(dLat) || 1;
           c.nudgeT = TRAFFIC_NUDGE_TIME;
           this.contactPos
             .copy(this.frame.pos)
@@ -238,6 +277,7 @@ export class TrafficManager {
           this.onContact(this.contactPos);
         }
       }
+      c.wasOver = overlap;
       if (c.passT > 0) {
         c.passT -= dt;
         if (overlap) c.passHit = true;
@@ -259,12 +299,29 @@ export class TrafficManager {
       c.wasAhead = ahead;
       // constant density: loop-respawn cars that fall far behind
       if (wrapDelta(s.trackDist, c.dist, len) > TRAFFIC_RESPAWN_BEHIND) {
-        c.dist = (s.trackDist + TRAFFIC_RESPAWN_AHEAD) % len;
-        if (c.dist < 0) c.dist += len;
+        // P9 anti-convoy spacing: cars passed together respawn together and form a
+        // clump the player then rear-ends in a chain of contacts — push the respawn
+        // point forward until it clears every other car by TRAFFIC_RESPAWN_GAP
+        let dist = (s.trackDist + TRAFFIC_RESPAWN_AHEAD) % len;
+        for (let k = 0; k < TRAFFIC_COUNT_MAX; k++) {
+          let clear = true;
+          for (let j = 0; j < this.cars.length; j++) {
+            if (j === i) continue;
+            if (Math.abs(wrapDelta(dist, this.cars[j].dist, len)) < TRAFFIC_RESPAWN_GAP) {
+              clear = false;
+              break;
+            }
+          }
+          if (clear) break;
+          dist = (dist + TRAFFIC_RESPAWN_GAP) % len;
+        }
+        if (dist < 0) dist += len;
+        c.dist = dist;
         c.wasAhead = true;
         c.passT = 0;
         c.passHit = false;
         c.contactT = 0;
+        c.wasOver = false;
         c.nudgeT = 0;
         c.lat = c.lane;
       }

@@ -9,7 +9,7 @@
 - [x] Phase 6: Interactive tutorial — guided steer/boost/drift drills
 - [x] Phase 7: Audio 2.0 — per-body engines, slip screech, near-miss whoosh
 - [x] Phase 8: Replay theater — scrub, speeds, camera cycling
-- [ ] Phase 9: Achievements 3.0 + mode balance pass
+- [x] Phase 9: Achievements 3.0 + mode balance pass
 - [ ] Phase 10: QA sweep + accessibility + v2.3.0 + deploy + live verify
 
 **Goal statement (full ambition):** Multiply the reasons to come back: a camera for every taste, racing your own PB and a friend's ghost side by side, threading traffic for near-miss bonuses, a seeded weekly championship with modifiers, visible progression (paints to earn, stats to brag about), a tutorial that actually teaches the drift, engines that sound like the car you picked, and a replay theater worth sharing — shipped as v2.3.0 with every gate green, verified live and muted.

@@ -10,7 +10,7 @@ import { WEEKLY_RACES, isValidWeekKey, weeklyFor, weekKeyFor, weekIsLive, weekly
 import { rivalAchievementState } from '../game/achievements';
 import { driverStats } from '../game/stats';
 import { paintUnlockState } from '../game/unlocks';
-import { PAINTS, type CarBodyStyle } from '../render/car-model';
+import { PAINTS, PAINT_LOCK_IDS, type CarBodyStyle } from '../render/car-model';
 import { bodyUnlocks, bodyStatRatios, hasCupTrophy } from '../systems/garage';
 
 function cssHex(paint: number): string {
@@ -687,6 +687,11 @@ export class MenuManager {
       { name: 'Social Climber', desc: 'Import a friend ghost and race it', done: ra.friendGhostRaces >= 1, progress: `${Math.min(ra.friendGhostRaces, 1)}/1` },
       { name: 'Full House', desc: 'Beat all 8 roster rivals across races', done: ra.rivalsBeaten >= 8, progress: `${ra.rivalsBeaten}/8` },
       { name: 'Tourist', desc: 'Trophy in the Grand Tour', done: ra.tourist >= 1, progress: `${Math.min(ra.tourist, 1)}/1` },
+      { name: 'Ghostbuster', desc: 'Beat a friend ghost by 2s or more', done: ra.friendGhostBusts >= 1, progress: `${Math.min(ra.friendGhostBusts, 1)}/1` },
+      { name: 'Thread the Needle', desc: `5 near misses in one traffic run`, done: ra.trafficNeedles >= 1, progress: `${Math.min(ra.trafficNeedles, 1)}/1` },
+      { name: 'Weekly Warrior', desc: 'Gold trophy in a weekly event', done: ra.weeklyGold >= 1, progress: `${ra.weeklyGold}/1` },
+      { name: 'Fresh Grad', desc: 'Complete the tutorial', done: ra.tutorialDone >= 1, progress: `${ra.tutorialDone}/1` },
+      { name: 'Paint Collector', desc: `Unlock all ${PAINT_LOCK_IDS.length} locked paints`, done: ra.paintsUnlocked >= PAINT_LOCK_IDS.length, progress: `${Math.min(ra.paintsUnlocked, PAINT_LOCK_IDS.length)}/${PAINT_LOCK_IDS.length}` },
     ];
     const list = el('div', 'achv-list');
     for (const a of defs) {

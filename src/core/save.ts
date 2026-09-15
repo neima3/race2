@@ -173,6 +173,10 @@ export interface LifetimeStats {
   knockoutWins: number;
   /** Head-to-head wins per rival name: player finished above that rival (v8 P5). Additive. */
   rivalWinsBy: Record<string, number>;
+  /** Friend-ghost races won by >2s (v8 P9 GHOSTBUSTER). Additive. */
+  friendGhostBusts: number;
+  /** Traffic runs finished with >= 5 near misses (v8 P9 THREAD THE NEEDLE). Additive. */
+  trafficNeedles: number;
 }
 
 const DEFAULT_STATS: LifetimeStats = {
@@ -188,6 +192,8 @@ const DEFAULT_STATS: LifetimeStats = {
   distanceKm: 0,
   knockoutWins: 0,
   rivalWinsBy: {},
+  friendGhostBusts: 0,
+  trafficNeedles: 0,
 };
 
 function sanitizeWinBy(v: unknown): Record<string, number> {
@@ -221,6 +227,8 @@ function sanitizeStats(v: Stored<Partial<LifetimeStats>>): LifetimeStats {
     distanceKm: num(v.distanceKm),
     knockoutWins: num(v.knockoutWins),
     rivalWinsBy: sanitizeWinBy(v.rivalWinsBy),
+    friendGhostBusts: num(v.friendGhostBusts),
+    trafficNeedles: num(v.trafficNeedles),
   };
 }
 
@@ -435,6 +443,8 @@ export class SaveManager {
       distanceKm: this._stats.distanceKm + (delta.distanceKm ?? 0),
       knockoutWins: this._stats.knockoutWins + (delta.knockoutWins ?? 0),
       rivalWinsBy: winsBy,
+      friendGhostBusts: this._stats.friendGhostBusts + (delta.friendGhostBusts ?? 0),
+      trafficNeedles: this._stats.trafficNeedles + (delta.trafficNeedles ?? 0),
     };
     try {
       localStorage.setItem(STATS_KEY, JSON.stringify({ ...this._stats, schemaVersion: SCHEMA_VERSION }));
