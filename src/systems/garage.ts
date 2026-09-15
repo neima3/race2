@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { buildCarVisual, type CarBodyStyle, type CarVisual } from '../render/car-model';
+import { buildCarVisual, PAINTS, type CarBodyStyle, type CarVisual } from '../render/car-model';
 import { BODY_TUNING, DEFAULT_TUNING } from '../physics/car';
 import type { SaveManager } from '../core/save';
+import { paintUnlockState } from '../game/unlocks';
 
 export const AERO_UNLOCK_STARS = 12;
 
@@ -25,6 +26,24 @@ export function hasCupTrophy(save: SaveManager): boolean {
     if (c.finishes.some((f) => f.trophy)) return true;
   }
   return false;
+}
+
+export interface PaintSelectState {
+  allowed: boolean;
+  name: string;
+  req: string;
+}
+
+/**
+ * Garage selection gate for a paint color. Free paints always pass; locked
+ * paints pass only once their lock id sits in unlocks.paints.
+ */
+export function paintSelectState(save: SaveManager, color: number): PaintSelectState {
+  const paint = PAINTS.find((p) => p.color === color);
+  if (!paint) return { allowed: false, name: 'UNKNOWN', req: '' };
+  if (!paint.lock) return { allowed: true, name: paint.name, req: '' };
+  const state = paintUnlockState(save)[paint.lock];
+  return { allowed: state.unlocked, name: paint.name, req: state.req };
 }
 
 export interface BodyStatRatios {

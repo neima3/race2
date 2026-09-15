@@ -35,17 +35,29 @@ export function contactShadowTexture(): THREE.Texture {
   return contactShadowTex;
 }
 
-export const PAINTS: { name: string; color: number }[] = [
+/** Earnable paints; requirements live in src/game/unlocks.ts, persistence in save.unlocks.paints. */
+export type PaintLockId = 'knockout-win' | 'daily-streak' | 'near-miss' | 'weekly-gold';
+
+export const PAINT_LOCK_IDS: PaintLockId[] = ['knockout-win', 'daily-streak', 'near-miss', 'weekly-gold'];
+
+export interface PaintDef {
+  name: string;
+  color: number;
+  /** Set on earnable paints; absence = free. */
+  lock?: PaintLockId;
+}
+
+export const PAINTS: PaintDef[] = [
   { name: 'Cyan Flux', color: 0x29e6ff },
   { name: 'Solar', color: 0xffb52e },
   { name: 'Rose Rush', color: 0xff4d6d },
   { name: 'Volt', color: 0x7dff6e },
-  { name: 'Ultra', color: 0xb44dff },
-  { name: 'Magma', color: 0xff5c39 },
+  { name: 'Ultraviolet', color: 0xb44dff, lock: 'near-miss' },
+  { name: 'Sunburst', color: 0xff5c39, lock: 'daily-streak' },
   { name: 'Frost', color: 0xe8f2ff },
-  { name: 'Midnight', color: 0x223055 },
+  { name: 'Midnight', color: 0x223055, lock: 'knockout-win' },
   { name: 'Lime Pop', color: 0xc8ff2e },
-  { name: 'Copper', color: 0xd78a4a },
+  { name: 'Gold Leaf', color: 0xd78a4a, lock: 'weekly-gold' },
 ];
 
 // ---- shared resource caches: one GPU copy of every static geometry/material across all cars ----

@@ -49,6 +49,9 @@ import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from '.
 import { TrafficManager, NEAR_MISS_BONUS_MS, NEAR_MISS_MAX_CREDITED, type TrafficFinishData } from './systems/traffic';
 import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
 import { achievementPops, rivalAchievementState, type RivalAchievementState } from './game/achievements';
+import { driverStats } from './game/stats';
+import { checkPaintUnlocks, PAINT_LOCK_INFO, paintUnlockState } from './game/unlocks';
+import { PAINT_LOCK_IDS, type PaintLockId } from './render/car-model';
 import type { TrophyKind } from './core/save';
 import { HUD } from './ui/hud';
 import { MenuManager } from './ui/menus';
@@ -307,6 +310,7 @@ class Game {
     requestAnimationFrame(this.frame);
     void this.checkShareHash();
     this.decodeSavedFriendGhosts();
+    this.announcePaintUnlocks();
   }
 
   /** Persisted friend ghosts decode async (deflate); populate the cache so ghost battles survive reloads. */
@@ -1109,6 +1113,7 @@ class Game {
             totalAir: Math.round(this.lapAir * 100) / 100,
             wallHits: this.lapWalls,
             cleanLaps: this.lapWalls === 0 ? 1 : 0,
+            distanceKm: this.curve ? this.curve.length / 1000 : 0,
           });
           this.lapDrift = 0;
           this.lapAir = 0;
@@ -1127,10 +1132,18 @@ class Game {
         let trafficPanel: TrafficFinishData | null = null;
         let weeklyPanel: WeeklyPanelData | null = null;
         if (this.knockoutMode) {
-          // knockout is a standalone mode — never writes PB/ghost/rival/lifetime stats
+          // knockout writes no PB/ghost records; v8 P5 adds win + head-to-head lifetime stats
+          if (rivalStandings && !r.knockout) {
+            const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
+            const beaten = rivalStandings.slice(Math.max(0, pos)).filter((s) => !s.isPlayer && !s.eliminated).map((s) => s.name);
+            const winsBy: Record<string, number> = {};
+            for (const name of beaten) winsBy[name] = (winsBy[name] ?? 0) + 1;
+            this.save.addStats({ knockoutWins: pos === 1 ? 1 : 0, rivalWinsBy: winsBy });
+          }
         } else if (this.trafficMode) {
           // traffic is a standalone time mode — only the per-track traffic-best ledger
           const nm = this.traffic?.nearMisses ?? 0;
+          this.save.addStats({ nearMisses: nm });
           const credited = Math.min(nm, NEAR_MISS_MAX_CREDITED);
           const bonusMs = credited * NEAR_MISS_BONUS_MS;
           const scoreMs = Math.max(0, r.timeMs - bonusMs);
@@ -1147,7 +1160,9 @@ class Game {
         } else if (this.rivalMode && rivalStandings) {
           const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
           const beaten = rivalStandings.slice(Math.max(0, pos)).filter((s) => !s.isPlayer).map((s) => s.name);
-          this.save.addStats({ rivalWins: pos === 1 ? 1 : 0, rivalsBeaten: beaten });
+          const winsBy: Record<string, number> = {};
+          for (const name of beaten) winsBy[name] = (winsBy[name] ?? 0) + 1;
+          this.save.addStats({ rivalWins: pos === 1 ? 1 : 0, rivalsBeaten: beaten, rivalWinsBy: winsBy });
         } else if (!this.rivalMode && this.friendRaceActive) {
           this.save.addStats({ friendGhostRaces: 1 });
         }
@@ -1157,6 +1172,7 @@ class Game {
           careerPanel = this.applyCareerResult(rivalStandings);
         }
         this.announceAchievementPops(achvBefore);
+        this.announcePaintUnlocks();
         const hasNext = !careerPanel && !r.knockout && !this.dailyRace && !this.weeklyRace && idx < TRACKS.length - 1;
         const playerPosInRace = rivalStandings ? rivalStandings.findIndex((s) => s.isPlayer) + 1 : -1;
         let podiumEligible =
@@ -1179,6 +1195,14 @@ class Game {
   private announceAchievementPops(before: RivalAchievementState): void {
     for (const pop of achievementPops(before, rivalAchievementState(this.save))) {
       this.menu.showToast(`ACHIEVEMENT UNLOCKED — ${pop.name}`);
+    }
+  }
+
+  /** Paint unlock sweep: fires at the trigger events AND on boot (migrated stats). Idempotent per lock id. */
+  private announcePaintUnlocks(): void {
+    for (const id of checkPaintUnlocks(this.save)) {
+      this.menu.showToast(`NEW PAINT UNLOCKED — ${PAINT_LOCK_INFO[id].label}`);
+      this.audio.unlockChime();
     }
   }
 
@@ -1900,6 +1924,9 @@ declare global {
       audioProbe: () => object;
       ghosts: () => object;
       cam: (mode?: 'chase' | 'close' | 'hood') => 'chase' | 'close' | 'hood';
+      stats: () => object;
+      paints: () => object;
+      unlockPaint: (id?: string) => object;
     };
   }
 }
@@ -2100,6 +2127,21 @@ window.__race2 = {
       game['save'].updateSettings({ cam: mode });
     }
     return game['rig'].mode;
+  },
+  stats: () => driverStats(game['save']),
+  paints: () => {
+    const save = game['save'];
+    return {
+      profilePaint: save.profile.paint,
+      unlocked: [...save.unlocks.paints],
+      state: paintUnlockState(save),
+    };
+  },
+  unlockPaint: (id?: string) => {
+    const ids = PAINT_LOCK_IDS;
+    const targets = id && (ids as string[]).includes(id) ? [id as PaintLockId] : ids;
+    for (const lock of targets) game['save'].unlockPaint(lock);
+    return paintUnlockState(game['save']);
   },
 };
 

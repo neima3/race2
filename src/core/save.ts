@@ -1,5 +1,6 @@
 import { prevDateKey } from '../game/daily';
 import { prevWeekKey } from '../game/weekly';
+import { PAINT_LOCK_IDS, type PaintLockId } from '../render/car-model';
 
 export type QualityTier = 'low' | 'medium' | 'high';
 export type TouchSteerMode = 'buttons' | 'tilt';
@@ -86,6 +87,8 @@ export interface DailyResult {
 export interface DailySave {
   lastFinishDate: string | null;
   streak: number;
+  /** Highest streak ever reached (v8 P5, drives SUNBURST + stats page). Additive. */
+  bestStreak: number;
   results: Record<string, DailyResult>;
 }
 
@@ -105,10 +108,12 @@ export interface WeeklySave {
   run: WeeklyRun | null;
   best: Record<string, WeeklyBestEntry>;
   streak: number;
+  /** Highest streak ever reached (v8 P5, stats page). Additive. */
+  bestStreak: number;
   lastWeek: string | null;
 }
 
-const DEFAULT_WEEKLY: WeeklySave = { run: null, best: {}, streak: 0, lastWeek: null };
+const DEFAULT_WEEKLY: WeeklySave = { run: null, best: {}, streak: 0, bestStreak: 0, lastWeek: null };
 
 function sanitizeWeeklyRun(v: unknown): WeeklyRun | null {
   if (!v || typeof v !== 'object') return null;
@@ -120,7 +125,7 @@ function sanitizeWeeklyRun(v: unknown): WeeklyRun | null {
 }
 
 function sanitizeWeekly(v: unknown): WeeklySave {
-  if (!v || typeof v !== 'object') return { run: null, best: {}, streak: 0, lastWeek: null };
+  if (!v || typeof v !== 'object') return { run: null, best: {}, streak: 0, bestStreak: 0, lastWeek: null };
   const r = v as Partial<WeeklySave>;
   const best: Record<string, WeeklyBestEntry> = {};
   const src = (r.best && typeof r.best === 'object' ? r.best : {}) as Record<string, unknown>;
@@ -136,8 +141,10 @@ function sanitizeWeekly(v: unknown): WeeklySave {
   }
   const streak =
     typeof r.streak === 'number' && Number.isFinite(r.streak) && r.streak >= 0 ? Math.min(9999, Math.round(r.streak)) : 0;
+  const bestStreakRaw = typeof r.bestStreak === 'number' && Number.isFinite(r.bestStreak) && r.bestStreak >= 0 ? Math.min(9999, Math.round(r.bestStreak)) : 0;
+  const bestStreak = Math.max(streak, bestStreakRaw);
   const lastWeek = typeof r.lastWeek === 'string' && /^\d{4}W\d{2}$/.test(r.lastWeek) ? r.lastWeek : null;
-  return { run: sanitizeWeeklyRun(r.run), best, streak, lastWeek };
+  return { run: sanitizeWeeklyRun(r.run), best, streak, bestStreak, lastWeek };
 }
 
 export interface PlayerProfile {
@@ -154,9 +161,43 @@ export interface LifetimeStats {
   rivalWins: number;
   friendGhostRaces: number;
   rivalsBeaten: string[];
+  /** Traffic-mode near misses over the career (v8 P5). Additive. */
+  nearMisses: number;
+  /** Lifetime distance driven on stat-counted laps, km (v8 P5). Additive. */
+  distanceKm: number;
+  /** Knockout races won (v8 P5). Additive. */
+  knockoutWins: number;
+  /** Head-to-head wins per rival name: player finished above that rival (v8 P5). Additive. */
+  rivalWinsBy: Record<string, number>;
 }
 
-const DEFAULT_STATS: LifetimeStats = { laps: 0, totalDrift: 0, totalAir: 0, wallHits: 0, cleanLaps: 0, rivalWins: 0, friendGhostRaces: 0, rivalsBeaten: [] };
+const DEFAULT_STATS: LifetimeStats = {
+  laps: 0,
+  totalDrift: 0,
+  totalAir: 0,
+  wallHits: 0,
+  cleanLaps: 0,
+  rivalWins: 0,
+  friendGhostRaces: 0,
+  rivalsBeaten: [],
+  nearMisses: 0,
+  distanceKm: 0,
+  knockoutWins: 0,
+  rivalWinsBy: {},
+};
+
+function sanitizeWinBy(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!v || typeof v !== 'object') return out;
+  const r = v as Record<string, unknown>;
+  for (const key of Object.keys(r)) {
+    const n = r[key];
+    if (key.length > 0 && key.length <= 24 && typeof n === 'number' && Number.isFinite(n) && n >= 0) {
+      out[key] = Math.round(n);
+    }
+  }
+  return Object.keys(out).length > 32 ? Object.fromEntries(Object.entries(out).slice(0, 32)) : out;
+}
 
 function sanitizeStats(v: Stored<Partial<LifetimeStats>>): LifetimeStats {
   const beaten = Array.isArray(v.rivalsBeaten)
@@ -172,6 +213,10 @@ function sanitizeStats(v: Stored<Partial<LifetimeStats>>): LifetimeStats {
     rivalWins: num(v.rivalWins),
     friendGhostRaces: num(v.friendGhostRaces),
     rivalsBeaten: beaten,
+    nearMisses: num(v.nearMisses),
+    distanceKm: num(v.distanceKm),
+    knockoutWins: num(v.knockoutWins),
+    rivalWinsBy: sanitizeWinBy(v.rivalWinsBy),
   };
 }
 
@@ -200,6 +245,23 @@ function emptyTrackSave(): TrackSave {
   return { bestTimeMs: null, history: [], ghost: null };
 }
 
+/** Earned unlocks ledger (v8 P5). Additive key. */
+export interface UnlockSave {
+  /** Earned paint lock ids (see PAINT_LOCK_IDS in render/car-model). */
+  paints: PaintLockId[];
+}
+
+const DEFAULT_UNLOCKS: UnlockSave = { paints: [] };
+
+function sanitizeUnlocks(v: unknown): UnlockSave {
+  if (!v || typeof v !== 'object') return { paints: [] };
+  const raw = (v as Partial<UnlockSave>).paints;
+  const paints = Array.isArray(raw)
+    ? Array.from(new Set(raw.filter((id): id is PaintLockId => typeof id === 'string' && (PAINT_LOCK_IDS as string[]).includes(id))))
+    : [];
+  return { paints };
+}
+
 export interface AllSaves {
   tracks: Record<string, TrackSave>;
   cups: Record<string, CupSave>;
@@ -210,6 +272,8 @@ export interface AllSaves {
   trafficBest: Record<string, number>;
   /** Weekly Event: mid-week run resume + best ledger + streak. Additive key. */
   weekly: WeeklySave;
+  /** Earned paints + future unlock ledgers. Additive key. */
+  unlocks: UnlockSave;
 }
 
 function emptyCupSave(): CupSave {
@@ -249,10 +313,10 @@ function sanitizeTrafficBest(v: unknown): Record<string, number> {
   return out;
 }
 
-const DEFAULT_DAILY: DailySave = { lastFinishDate: null, streak: 0, results: {} };
+const DEFAULT_DAILY: DailySave = { lastFinishDate: null, streak: 0, bestStreak: 0, results: {} };
 
 function sanitizeDaily(v: unknown): DailySave {
-  if (!v || typeof v !== 'object') return { lastFinishDate: null, streak: 0, results: {} };
+  if (!v || typeof v !== 'object') return { lastFinishDate: null, streak: 0, bestStreak: 0, results: {} };
   const r = v as Partial<DailySave>;
   const results: Record<string, DailyResult> = {};
   const src = (r.results && typeof r.results === 'object' ? r.results : {}) as Record<string, unknown>;
@@ -270,8 +334,14 @@ function sanitizeDaily(v: unknown): DailySave {
     typeof r.streak === 'number' && Number.isFinite(r.streak) && r.streak >= 0
       ? Math.min(9999, Math.round(r.streak))
       : 0;
+  const bestStreak = Math.max(
+    streak,
+    typeof r.bestStreak === 'number' && Number.isFinite(r.bestStreak) && r.bestStreak >= 0
+      ? Math.min(9999, Math.round(r.bestStreak))
+      : 0,
+  );
   const lastFinishDate = typeof r.lastFinishDate === 'string' && /^\d{8}$/.test(r.lastFinishDate) ? r.lastFinishDate : null;
-  return { lastFinishDate, streak, results };
+  return { lastFinishDate, streak, bestStreak, results };
 }
 
 export class SaveManager {
@@ -344,6 +414,10 @@ export class SaveManager {
   addStats(delta: Partial<LifetimeStats>): void {
     const beaten = new Set(this._stats.rivalsBeaten);
     for (const n of delta.rivalsBeaten ?? []) beaten.add(n);
+    const winsBy = { ...this._stats.rivalWinsBy };
+    for (const [name, wins] of Object.entries(delta.rivalWinsBy ?? {})) {
+      winsBy[name] = (winsBy[name] ?? 0) + wins;
+    }
     this._stats = {
       laps: this._stats.laps + (delta.laps ?? 0),
       totalDrift: this._stats.totalDrift + (delta.totalDrift ?? 0),
@@ -353,6 +427,10 @@ export class SaveManager {
       rivalWins: this._stats.rivalWins + (delta.rivalWins ?? 0),
       friendGhostRaces: this._stats.friendGhostRaces + (delta.friendGhostRaces ?? 0),
       rivalsBeaten: Array.from(beaten).slice(0, 32),
+      nearMisses: this._stats.nearMisses + (delta.nearMisses ?? 0),
+      distanceKm: this._stats.distanceKm + (delta.distanceKm ?? 0),
+      knockoutWins: this._stats.knockoutWins + (delta.knockoutWins ?? 0),
+      rivalWinsBy: winsBy,
     };
     try {
       localStorage.setItem(STATS_KEY, JSON.stringify({ ...this._stats, schemaVersion: SCHEMA_VERSION }));
@@ -393,13 +471,14 @@ export class SaveManager {
             daily: sanitizeDaily(parsed.daily),
             trafficBest: sanitizeTrafficBest(parsed.trafficBest),
             weekly: sanitizeWeekly(parsed.weekly),
+            unlocks: sanitizeUnlocks(parsed.unlocks),
           };
         }
       }
     } catch {
       /* corrupted — start fresh */
     }
-    return { tracks: {}, cups: {}, careerRun: null, friendGhosts: {}, daily: { ...DEFAULT_DAILY, results: {} }, trafficBest: {}, weekly: { ...DEFAULT_WEEKLY, best: {} } };
+    return { tracks: {}, cups: {}, careerRun: null, friendGhosts: {}, daily: { ...DEFAULT_DAILY, results: {} }, trafficBest: {}, weekly: { ...DEFAULT_WEEKLY, best: {} }, unlocks: { ...DEFAULT_UNLOCKS, paints: [] } };
   }
 
   private loadSettings(): Settings {
@@ -527,6 +606,7 @@ export class SaveManager {
     if (d.lastFinishDate !== dateKey) {
       d.streak = d.lastFinishDate !== null && d.lastFinishDate === prevDateKey(dateKey) ? d.streak + 1 : 1;
       d.lastFinishDate = dateKey;
+      if (d.streak > d.bestStreak) d.bestStreak = d.streak;
     }
     this.persistSaves();
     return { streak: d.streak, improved };
@@ -569,9 +649,26 @@ export class SaveManager {
     if (w.lastWeek !== weekKey) {
       w.streak = w.lastWeek !== null && w.lastWeek === prevWeekKey(weekKey) ? w.streak + 1 : 1;
       w.lastWeek = weekKey;
+      if (w.streak > w.bestStreak) w.bestStreak = w.streak;
     }
     this.persistSaves();
     return { streak: w.streak, improved };
+  }
+
+  get unlocks(): UnlockSave {
+    return this.saves.unlocks;
+  }
+
+  isPaintUnlocked(lock: PaintLockId): boolean {
+    return this.saves.unlocks.paints.includes(lock);
+  }
+
+  /** Records an earned paint. Returns false when it was already unlocked (idempotent). */
+  unlockPaint(lock: PaintLockId): boolean {
+    if (this.isPaintUnlocked(lock)) return false;
+    this.saves.unlocks.paints.push(lock);
+    this.persistSaves();
+    return true;
   }
 
   get settings(): Settings {

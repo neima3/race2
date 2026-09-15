@@ -1066,6 +1066,89 @@ button {
 
 .body-card.locked .stat-fill { background: rgba(242, 245, 255, 0.25); }
 
+/* ---------- Paint unlocks (v8 P5) ---------- */
+
+.paint-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.paint-grid { grid-auto-rows: auto; align-items: start; }
+
+.paint-swatch.locked {
+  opacity: 0.4;
+  filter: saturate(0.35) brightness(0.75);
+  cursor: not-allowed;
+}
+
+.paint-swatch.locked:hover { transform: none; }
+
+.paint-swatch.deny { animation: paint-deny 240ms ease; }
+
+@keyframes paint-deny {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  65% { transform: translateX(4px); }
+}
+
+.paint-req {
+  max-width: 68px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- Driver stats panel (v8 P5) ---------- */
+
+.stats-list {
+  width: min(560px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stats-section {
+  margin: 14px 0 2px;
+  font-size: 12px;
+  color: var(--gold);
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+}
+
+.stats-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.stats-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 #speedlines {
   position: absolute;
   inset: 0;

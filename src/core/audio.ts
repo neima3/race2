@@ -251,6 +251,13 @@ export class AudioEngine {
     this.blip(1318, 0.16, 'sine', 0.17, 0.07, undefined, 'overtake');
   }
 
+  /** Paint-unlock moment (v8 P5); P7 audio pass may revoice this bus. */
+  unlockChime(): void {
+    this.blip(784, 0.12, 'sine', 0.2, 0, undefined, 'unlock');
+    this.blip(988, 0.12, 'sine', 0.2, 0.09, undefined, 'unlock');
+    this.blip(1319, 0.22, 'sine', 0.2, 0.18, undefined, 'unlock');
+  }
+
   goStinger(): void {
     this.noiseBurst(0.35, 0.38, 240, 2600, 'go');
     this.blip(150, 0.3, 'sawtooth', 0.22, 0, 70, 'go');

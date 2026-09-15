@@ -8,6 +8,8 @@ import { CUPS, cupUnlock, cupTracks, cupStandings, startCupRun, type CupDef, typ
 import { dailyFor, dailyIsLive, todayKey, type DailyShareLink } from '../game/daily';
 import { WEEKLY_RACES, isValidWeekKey, weeklyFor, weekKeyFor, weekIsLive, weeklyStandings, type WeeklyDef, type WeeklyPanelData, type WeeklyShareLink } from '../game/weekly';
 import { rivalAchievementState } from '../game/achievements';
+import { driverStats } from '../game/stats';
+import { paintUnlockState } from '../game/unlocks';
 import { PAINTS, type CarBodyStyle } from '../render/car-model';
 import { bodyUnlocks, bodyStatRatios, hasCupTrophy } from '../systems/garage';
 
@@ -30,7 +32,7 @@ function finishGap(s: Standing, leader: Standing): string {
   return `DNF +${Math.round(s.gapMeters)}m`;
 }
 
-export type MenuScreen = 'title' | 'tracks' | 'settings' | 'garage' | 'achievements' | 'career' | 'none';
+export type MenuScreen = 'title' | 'tracks' | 'settings' | 'garage' | 'achievements' | 'stats' | 'career' | 'none';
 
 interface MedalState {
   author: boolean;
@@ -94,6 +96,7 @@ export class MenuManager {
   private finishScreen: HTMLElement;
   private garageScreen: HTMLElement;
   private achievementsScreen: HTMLElement;
+  private statsScreen: HTMLElement;
   private careerScreen: HTMLElement;
   private friendScreen: HTMLElement;
   private dailyScreen: HTMLElement;
@@ -119,13 +122,14 @@ export class MenuManager {
     this.finishScreen = el('div', 'screen hidden');
     this.garageScreen = el('div', 'screen hidden');
     this.achievementsScreen = el('div', 'screen hidden');
+    this.statsScreen = el('div', 'screen hidden');
     this.careerScreen = el('div', 'screen hidden');
     this.friendScreen = el('div', 'screen overlay-screen hidden');
     this.dailyScreen = el('div', 'screen overlay-screen hidden');
     this.weeklyScreen = el('div', 'screen overlay-screen hidden');
     this.onboardScreen = this.buildOnboarding();
 
-    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.weeklyScreen, this.onboardScreen);
+    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.statsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.weeklyScreen, this.onboardScreen);
     this.buildTracksScreen();
   }
 
@@ -199,6 +203,8 @@ export class MenuManager {
       this.buildGarage();
       this.show('garage');
     });
+    const stats = el('button', 'menu-btn', 'STATS');
+    stats.addEventListener('click', () => this.show('stats'));
     const settings = el('button', 'menu-btn', 'SETTINGS');
     settings.addEventListener('click', () => {
       this.buildSettingsScreen();
@@ -210,7 +216,7 @@ export class MenuManager {
       this.buildAchievements();
       this.show('achievements');
     });
-    buttons.append(play, daily, weekly, career, garage, achievements, settings);
+    buttons.append(play, daily, weekly, career, garage, stats, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
     const credits = el('div', 'title-credits', `v2.2.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
@@ -516,19 +522,31 @@ export class MenuManager {
     wrap.append(this.garageCanvas);
 
     const profile = this.save.profile;
+    const lockState = paintUnlockState(this.save);
     const paints = el('div', 'paint-grid');
     for (const p of PAINTS) {
+      const lock = p.lock ? lockState[p.lock] : null;
+      const cell = el('div', 'paint-cell' + (lock && !lock.unlocked ? ' locked' : ''));
       const sw = el('button', 'paint-swatch');
       sw.style.background = '#' + p.color.toString(16).padStart(6, '0');
-      sw.title = p.name;
-      if (p.color === profile.paint) sw.classList.add('selected');
+      sw.title = lock && !lock.unlocked ? `${p.name.toUpperCase()} — ${lock.req}` : p.name;
+      if ((!lock || lock.unlocked) && p.color === profile.paint) sw.classList.add('selected');
       sw.addEventListener('click', () => {
+        if (lock && !lock.unlocked) {
+          sw.classList.remove('deny');
+          void sw.offsetWidth;
+          sw.classList.add('deny');
+          this.showToast(`LOCKED — ${lock.req}`);
+          return;
+        }
         this.save.updateProfile({ paint: p.color });
-        for (const s of paints.children) s.classList.remove('selected');
+        for (const s of Array.from(paints.querySelectorAll('.paint-swatch'))) s.classList.remove('selected');
         sw.classList.add('selected');
         this.onGarageChange(p.color, this.save.profile.body);
       });
-      paints.append(sw);
+      cell.append(sw);
+      if (lock && !lock.unlocked) cell.append(el('div', 'paint-req', lock.req));
+      paints.append(cell);
     }
     wrap.append(paints);
 
@@ -573,6 +591,47 @@ export class MenuManager {
     wrap.append(bodies);
 
     this.garageScreen.append(header, wrap);
+  }
+
+  private buildStats(): void {
+    const screen = this.statsScreen;
+    screen.replaceChildren();
+    const header = el('div', 'screen-header');
+    header.append(el('h2', 'screen-title', 'STATS'));
+    const back = el('button', 'menu-btn small', '&#8592; BACK');
+    back.addEventListener('click', () => this.show('title'));
+    header.append(back);
+
+    const st = driverStats(this.save);
+    const list = el('div', 'stats-list');
+    const section = (title: string) => list.append(el('div', 'fh-title stats-section', title));
+    const row = (label: string, value: string) => {
+      const r = el('div', 'stats-row');
+      r.append(el('span', 'stats-label', label), el('span', 'stats-value', value));
+      list.append(r);
+    };
+
+    section('CAREER');
+    row('LAPS', String(st.laps));
+    row('DISTANCE', `${st.distanceKm.toFixed(1)} KM`);
+    row('DRIFT POINTS', st.driftPoints.toLocaleString('en-US'));
+    row('AIR TIME', `${st.airSeconds.toFixed(1)}s`);
+    row('NEAR MISSES', String(st.nearMisses));
+    section('RACING');
+    row('RIVAL WINS', String(st.rivalWins));
+    row('KNOCKOUT WINS', String(st.knockoutWins));
+    section('TROPHIES');
+    row('GOLD', String(st.trophies.gold));
+    row('SILVER', String(st.trophies.silver));
+    row('BRONZE', String(st.trophies.bronze));
+    section('STREAKS');
+    row('BEST DAILY STREAK', `${st.bestDailyStreak} ${st.bestDailyStreak === 1 ? 'DAY' : 'DAYS'}`);
+    row('BEST WEEKLY STREAK', `${st.bestWeeklyStreak} ${st.bestWeeklyStreak === 1 ? 'WEEK' : 'WEEKS'}`);
+    if (st.headToHead.length > 0) {
+      section('HEAD TO HEAD');
+      for (const h of st.headToHead) row(h.name, `${h.wins} ${h.wins === 1 ? 'WIN' : 'WINS'}`);
+    }
+    screen.append(header, list);
   }
 
   private buildAchievements(): void {
@@ -1244,7 +1303,7 @@ export class MenuManager {
 
   hideAll(): void {
     this.isGarageOpen = false;
-    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.weeklyScreen, this.onboardScreen]) {
+    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.statsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.weeklyScreen, this.onboardScreen]) {
       s.classList.add('hidden');
     }
   }
@@ -1267,6 +1326,10 @@ export class MenuManager {
     else if (screen === 'garage') {
       this.isGarageOpen = true;
       this.garageScreen.classList.remove('hidden');
+    }
+    else if (screen === 'stats') {
+      this.buildStats();
+      this.statsScreen.classList.remove('hidden');
     }
     else if (screen === 'achievements') this.achievementsScreen.classList.remove('hidden');
     else if (screen === 'career') {
