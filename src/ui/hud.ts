@@ -49,6 +49,11 @@ export class HUD {
   private standRows: { root: HTMLElement; pos: HTMLElement; dot: HTMLElement; name: HTMLElement; gap: HTMLElement }[] = [];
   private ctxHintEl: HTMLElement;
   private ctxHintTimer: number | null = null;
+  private tutBannerEl: HTMLElement;
+  private tutTitleEl: HTMLElement;
+  private tutHintEl: HTMLElement;
+  private tutProgressEl: HTMLElement;
+  private tutSkipBtn: HTMLElement;
   private lastRivalPos = 0;
 
   constructor() {
@@ -125,7 +130,33 @@ export class HUD {
 
     this.ctxHintEl = el('div', 'hud-ctx-hint');
 
-    this.root.append(topBar, bottomBar, this.progressTrack, this.centerEl, this.splitToast, this.respawnHint, this.standingsEl, this.ctxHintEl, this.minimap.root);
+    this.tutBannerEl = el('div', 'hud-tut-banner hidden');
+    this.tutTitleEl = el('div', 'tut-title');
+    this.tutHintEl = el('div', 'tut-hint');
+    this.tutProgressEl = el('div', 'tut-progress');
+    this.tutBannerEl.append(this.tutTitleEl, this.tutHintEl, this.tutProgressEl);
+    this.tutSkipBtn = el('button', 'hud-tut-skip hidden', 'SKIP TUTORIAL');
+    this.tutSkipBtn.addEventListener('click', () => this.onSkipTutorial());
+
+    this.root.append(topBar, bottomBar, this.progressTrack, this.centerEl, this.splitToast, this.respawnHint, this.standingsEl, this.ctxHintEl, this.tutBannerEl, this.tutSkipBtn, this.minimap.root);
+  }
+
+  onSkipTutorial: () => void = () => {};
+
+  setTutorialBanner(title: string, hint: string): void {
+    this.tutTitleEl.textContent = title;
+    this.tutHintEl.textContent = hint;
+  }
+
+  setTutorialProgress(text: string | null): void {
+    this.tutProgressEl.textContent = text ?? '';
+    this.tutProgressEl.classList.toggle('hidden', text === null);
+  }
+
+  showTutorial(on: boolean): void {
+    this.tutBannerEl.classList.toggle('hidden', !on);
+    this.tutSkipBtn.classList.toggle('hidden', !on);
+    if (!on) this.setTutorialProgress(null);
   }
 
   showContextHint(text: string): void {

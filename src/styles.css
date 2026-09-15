@@ -1898,3 +1898,89 @@ button {
 .cup-race-pill b { color: var(--ink); }
 
 .career-standings { margin-top: 4px; }
+
+/* ---------- Interactive tutorial (v8 P6) ---------- */
+
+.hud-tut-banner {
+  position: absolute;
+  top: calc(150px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+}
+
+.hud-tut-banner.hidden { display: none; }
+
+.hud-tut-banner .tut-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(18px, 3vw, 30px);
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.hud-tut-banner .tut-hint {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.hud-tut-banner .tut-progress {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  color: var(--accent-2);
+  margin-top: 6px;
+}
+
+.hud-tut-banner .tut-progress.hidden { visibility: hidden; }
+
+.hud-tut-skip {
+  position: absolute;
+  top: calc(16px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  background: rgba(10, 14, 26, 0.72);
+  border: 1px solid var(--panel-border);
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.hud-tut-skip.hidden { display: none; }
+
+.hud-tut-skip:hover { color: var(--ink); border-color: rgba(120, 160, 255, 0.45); }
+.hud-tut-skip:active { color: var(--danger); border-color: var(--danger); }
+
+.finish-flash.splash-tut {
+  font-size: clamp(26px, 5vw, 54px);
+  color: var(--accent);
+  text-shadow: 0 0 50px rgba(41, 230, 255, 0.9), 0 4px 24px rgba(0, 0, 0, 0.5);
+  animation: countPop 1.4s ease-out forwards;
+}
+
+.finish-flash.splash-good {
+  font-size: clamp(26px, 5vw, 54px);
+  color: #35ff7a;
+  text-shadow: 0 0 50px rgba(53, 255, 122, 0.9), 0 4px 24px rgba(0, 0, 0, 0.5);
+  animation: countPop 1.4s ease-out forwards;
+}
+
+.finish-flash.splash-bad {
+  font-size: clamp(26px, 5vw, 54px);
+  color: var(--danger);
+  text-shadow: 0 0 50px rgba(255, 77, 109, 0.85), 0 4px 24px rgba(0, 0, 0, 0.5);
+  animation: countPop 1.4s ease-out forwards;
+}

@@ -7,7 +7,7 @@ import { makeAsphaltTexture, makeCurbTexture, checkerBannerCanvas } from '../ren
 
 const TAU = Math.PI * 2;
 
-function makeChevronTexture(accent: string): THREE.CanvasTexture {
+export function makeChevronTexture(accent: string): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 128;
   c.height = 256;
@@ -359,16 +359,9 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
   const rings: TrackMeshes['rings'] = [];
   const ringGroup = new THREE.Group();
   for (const r of def.rings ?? []) {
-    const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
-    curve.frameAtDist(r.dist, f);
-    const center = f.pos.clone().addScaledVector(f.binormal, r.lateral).addScaledVector(f.normal, r.height);
-    const geo = new THREE.TorusGeometry(r.radius, 0.22, 10, 40);
-    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9df3ff).multiplyScalar(1.8), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending });
-    const ring = new THREE.Mesh(geo, mat);
-    ring.position.copy(center);
-    ring.lookAt(center.clone().add(f.tangent));
-    ringGroup.add(ring);
-    rings.push({ pos: center, radius: r.radius });
+    const { mesh, pos } = makeGateRing(curve, r.dist, r.lateral, r.height, r.radius);
+    ringGroup.add(mesh);
+    rings.push({ pos, radius: r.radius });
   }
   if ((def.rings?.length ?? 0) > 0) group.add(ringGroup);
 
@@ -396,4 +389,70 @@ export function buildTrackMeshes(curve: TrackCurve, def: TrackDef, variant: Trac
   }
 
   return { group, boostPads, checkpointGates, roadMat, rings, movers };
+}
+
+/** Shared gate-ring constructor — one mesh family for track rings AND tutorial gates (v8 P6). */
+export function makeGateRing(
+  curve: TrackCurve,
+  dist: number,
+  lateral: number,
+  height: number,
+  radius: number,
+): { mesh: THREE.Mesh; pos: THREE.Vector3 } {
+  const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
+  curve.frameAtDist(dist, f);
+  const center = f.pos.clone().addScaledVector(f.binormal, lateral).addScaledVector(f.normal, height);
+  const geo = new THREE.TorusGeometry(radius, 0.22, 10, 40);
+  const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9df3ff).multiplyScalar(1.8), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(center);
+  mesh.lookAt(center.clone().add(f.tangent));
+  return { mesh, pos: center };
+}
+
+export interface TutorialRig {
+  group: THREE.Group;
+  rings: { id: string; mesh: THREE.Mesh; pos: THREE.Vector3; radius: number }[];
+  pads: { id: string; mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial }[];
+}
+
+/** Tutorial gates + orange pads (v8 P6): reuses the ring + chevron-pad mesh families, visual-only. */
+export function buildTutorialRig(
+  curve: TrackCurve,
+  rings: { id: string; dist: number; lateral: number; height: number; radius: number }[],
+  pads: { id: string; dist: number; lateral: number }[],
+): TutorialRig {
+  const group = new THREE.Group();
+  const out: TutorialRig = { group, rings: [], pads: [] };
+  for (const r of rings) {
+    const { mesh, pos } = makeGateRing(curve, r.dist, r.lateral, r.height, r.radius);
+    group.add(mesh);
+    out.rings.push({ id: r.id, mesh, pos, radius: r.radius });
+  }
+  const tex = makeChevronTexture('#ff9a3d');
+  for (const p of pads) {
+    const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
+    curve.frameAtDist(p.dist, f);
+    const w = Math.min(3.4, f.halfWidth * 0.7);
+    const geo = new THREE.PlaneGeometry(w * 2, 7);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex.clone(),
+      color: new THREE.Color(1.7, 1.7, 1.7),
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    mat.map!.wrapT = THREE.RepeatWrapping;
+    mat.map!.repeat.set(1, 1.6);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(f.pos).addScaledVector(f.binormal, p.lateral).addScaledVector(f.normal, 0.06);
+    mesh.quaternion.setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(f.normal, f.tangent).normalize(), f.normal, f.tangent),
+    );
+    mesh.rotateX(-Math.PI / 2);
+    group.add(mesh);
+    out.pads.push({ id: p.id, mesh, mat });
+  }
+  return out;
 }

@@ -33,6 +33,10 @@ export interface Settings {
   hintKnockout?: boolean;
   hintTraffic?: boolean;
   hintCam?: boolean;
+  /** Interactive tutorial finished (any path — completed or skipped) (v8 P6). Additive. */
+  tutorialDone?: boolean;
+  /** True when any tutorial drill was skipped via fails or the SKIP/ESC exit (v8 P6). Additive. */
+  tutorialSkipped?: boolean;
 }
 
 const SAVE_KEY = 'race2.save.v1';

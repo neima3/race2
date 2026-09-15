@@ -9,7 +9,7 @@ import { TRACKS, THEMES, VARIANTS, type TrackDef, type TrackVariant } from './tr
 function curveLen(def: TrackDef): number {
   return new TrackCurve(def.points, true, 6).length;
 }
-import { buildTrackMeshes, type TrackMeshes } from './track/builder';
+import { buildTrackMeshes, buildTutorialRig, type TrackMeshes, type TutorialRig } from './track/builder';
 import { CarPhysics, BODY_TUNING } from './physics/car';
 import { buildCarVisual, contactShadowTexture, type CarVisual } from './render/car-model';
 import { SkidMarks } from './render/skidmarks';
@@ -45,6 +45,17 @@ import {
   type WeeklyPanelData,
 } from './game/weekly';
 import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
+import {
+  TutorialRun,
+  TUTORIAL_TRACK_ID,
+  TUTORIAL_RINGS,
+  TUTORIAL_PADS,
+  DRILL_START_DIST,
+  DRIFT_ACTIVE_MIN_SPEED,
+  BRAKE_MAX_KMH,
+  DRIFT_MIN_SECONDS,
+  type TutorialEvent,
+} from './game/tutorial';
 import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
 import { TrafficManager, NEAR_MISS_BONUS_MS, NEAR_MISS_MAX_CREDITED, type TrafficFinishData } from './systems/traffic';
 import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
@@ -169,6 +180,13 @@ class Game {
   private ringsHit = new Set<string>();
   private driftScore = 0;
   private driftMode = false;
+  private tutorialMode = false;
+  private tutorial: TutorialRun | null = null;
+  private tutorialRig: TutorialRig | null = null;
+  private tutorialProgressText = '';
+  private tutorialSplashPending: string | null = null;
+  private tutorialDropTimer: number | null = null;
+  private tutorialSample = { dist: 0, lateral: 0, speedKmh: 0, drifting: false };
   private replayCar: CarVisual | null = null;
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
   private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean; daily: { dateKey: string; position: number; streak: number } | null; traffic: TrafficFinishData | null; weekly: WeeklyPanelData | null } | null = null;
@@ -250,6 +268,7 @@ class Game {
       this.hud.root.classList.add('practice');
       this.resume();
     };
+    this.menu.onStartTutorial = () => this.startTutorial();
     this.menu.onRestart = () => this.startTrack(this.track);
     this.menu.onQuitToMenu = () => this.quitToMenu(this.careerRace ? 'career' : 'tracks');
     this.menu.onTiltRequest = () => void this.input.requestTiltPermission();
@@ -869,6 +888,7 @@ class Game {
   }
 
   private startTrack(def: TrackDef): void {
+    this.teardownTutorial();
     this.knockoutMode = this.menu.knockoutMode && this.careerRace === null && this.dailyRace === null && this.weeklyRace === null;
     this.trafficMode = this.menu.trafficMode && this.careerRace === null && this.dailyRace === null && this.weeklyRace === null;
     this.rivalMode = this.menu.rivalsMode || this.knockoutMode || this.careerRace !== null || this.dailyRace !== null || this.weeklyRace !== null;
@@ -981,6 +1001,164 @@ class Game {
     this.hud.clearCenter();
   }
 
+  // ---------- Interactive tutorial (v8 P6) ----------
+
+  /** First PLAY on a fresh profile (or the settings REPLAY TUTORIAL button). */
+  private startTutorial(): void {
+    this.careerRace = null;
+    this.rivalLineup = null;
+    this.dailyRace = null;
+    this.weeklyRace = null;
+    this.menu.driftAttack = false;
+    this.menu.rivalsMode = false;
+    this.menu.knockoutMode = false;
+    this.menu.trafficMode = false;
+    this.driftMode = false;
+    this.startTrack(TRACKS.find((t) => t.id === TUTORIAL_TRACK_ID) ?? TRACKS[0]);
+    if (!this.race || !this.curve) return;
+    this.tutorialMode = true;
+    this.tutorial = new TutorialRun(this.curve.length, (ev) => this.onTutorialEvent(ev));
+    this.race.practice = true;
+    this.race.writesRecords = false;
+    this.race.maxGhosts = 0;
+    this.race.useExternalGhost(null);
+    this.race.start();
+    this.hud.root.classList.add('practice');
+    for (const gv of this.ghostVisuals) gv.group.visible = false;
+    this.hud.setGhostDeltaCount(0);
+    this.hud.setBattleRank(null);
+    this.hud.setGhostTag(null);
+    this.hud.setLapCounter(null);
+    this.hud.showNearMissCounter(false);
+    this.buildTutorialRigVisuals();
+    this.hud.showTutorial(true);
+    this.hud.onSkipTutorial = () => this.skipTutorial();
+    this.tutorialProgressText = '';
+  }
+
+  private buildTutorialRigVisuals(): void {
+    if (!this.curve || !this.trackGroup) return;
+    this.tutorialRig = buildTutorialRig(this.curve, TUTORIAL_RINGS, TUTORIAL_PADS);
+    this.trackGroup.add(this.tutorialRig.group);
+  }
+
+  /** Removes ALL tutorial state + visuals. Called from startTrack/quitToMenu so no
+   *  normal race (including the post-tutorial time-trial) ever keeps them. */
+  private teardownTutorial(): void {
+    if (this.tutorialDropTimer !== null) {
+      clearTimeout(this.tutorialDropTimer);
+      this.tutorialDropTimer = null;
+    }
+    if (!this.tutorialMode && !this.tutorialRig) return;
+    this.tutorialMode = false;
+    this.tutorial = null;
+    this.hud.showTutorial(false);
+    if (this.tutorialRig) {
+      this.trackGroup?.remove(this.tutorialRig.group);
+      this.tutorialRig.group.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          const kill = (m: THREE.Material) => {
+            const map = (m as THREE.MeshBasicMaterial).map;
+            if (map) map.dispose();
+            m.dispose();
+          };
+          if (Array.isArray(o.material)) o.material.forEach(kill);
+          else kill(o.material as THREE.Material);
+        }
+      });
+      this.tutorialRig = null;
+    }
+  }
+
+  private skipTutorial(): void {
+    this.tutorial?.skipAll();
+  }
+
+  private onTutorialEvent(ev: TutorialEvent): void {
+    switch (ev.type) {
+      case 'drill-start':
+        this.hud.setTutorialBanner(ev.banner, ev.hint);
+        if (this.tutorial && this.tutorial.drillIndex === 0) {
+          if (this.state === 'racing') this.hud.showSplash(ev.banner, 'splash-tut');
+          else this.tutorialSplashPending = ev.banner;
+        }
+        this.tutorialProgressText = '';
+        this.hud.setTutorialProgress(null);
+        break;
+      case 'hit':
+        this.flashTutorialTarget(ev.targetId);
+        this.audio.checkpoint();
+        break;
+      case 'fail':
+        this.hud.showSplash('TRY AGAIN', 'splash-bad');
+        this.audio.countdownBeep(false);
+        this.resetPlayerForTutorialDrill();
+        break;
+      case 'drill-clear':
+        this.hud.showSplash('DRILL CLEAR', 'splash-good');
+        this.audio.checkpoint();
+        break;
+      case 'drill-skipped':
+        this.hud.showSplash('SKIPPED', 'splash-bad');
+        break;
+      case 'complete':
+        this.finishTutorial(ev.skippedAny);
+        break;
+    }
+  }
+
+  private flashTutorialTarget(id: string): void {
+    const rig = this.tutorialRig;
+    if (!rig) return;
+    const ring = rig.rings.find((r) => r.id === id);
+    const pad = ring ? undefined : rig.pads.find((p) => p.id === id);
+    const mesh = ring ? ring.mesh : pad?.mesh;
+    if (!mesh) return;
+    const mat = mesh.material as THREE.MeshBasicMaterial;
+    mat.color.set(0x35ff7a).multiplyScalar(1.8);
+    mat.opacity = 1;
+    mesh.scale.set(1.22, 1.22, 1.22);
+    window.setTimeout(() => mesh.scale.set(1, 1, 1), 260);
+  }
+
+  private resetPlayerForTutorialDrill(): void {
+    const t = this.tutorial;
+    if (!t || !this.car) return;
+    this.car.placeAt(Math.max(8, DRILL_START_DIST[t.drill]), 0);
+    this.rig.snapBehind(this.car.state);
+  }
+
+  private updateTutorialProgressHud(): void {
+    const t = this.tutorial;
+    if (!t) return;
+    let text: string;
+    if (t.drill === 'steer') text = `GATES ${t.done}/${t.total}`;
+    else if (t.drill === 'boost') text = `PADS ${t.done}/${t.total}`;
+    else if (t.drill === 'drift') text = `DRIFT ${t.driftTime.toFixed(1)} / ${DRIFT_MIN_SECONDS.toFixed(1)}s`;
+    else text = `UNDER ${BRAKE_MAX_KMH} KM/H`;
+    if (text !== this.tutorialProgressText) {
+      this.tutorialProgressText = text;
+      this.hud.setTutorialProgress(text);
+    }
+  }
+
+  private finishTutorial(skippedAny: boolean): void {
+    this.save.updateSettings({
+      tutorialDone: true,
+      tutorialSkipped: skippedAny || this.save.settings.tutorialSkipped === true,
+    });
+    // FRESH GRAD placeholder — P9 wires the achievement; emit + persist the event now.
+    window.dispatchEvent(new CustomEvent('race2:tutorial-complete', { detail: { completed: !skippedAny } }));
+    this.hud.showSplash('NOW SET A TIME!', 'splash-tut');
+    // Hold the (inert, status=complete) tutorial visuals under the banner, then drop
+    // into the time-trial — startTrack's teardown removes everything before the rebuild.
+    this.tutorialDropTimer = window.setTimeout(() => {
+      this.tutorialDropTimer = null;
+      this.startTrack(this.track);
+    }, 1700);
+  }
+
   private pause(): void {
     if (this.state !== 'racing' && this.state !== 'countdown') return;
     this.state = 'paused';
@@ -998,6 +1176,7 @@ class Game {
 
   private quitToMenu(dest: 'tracks' | 'career' | 'title' = 'tracks'): void {
     this.state = 'menu';
+    this.teardownTutorial();
     this.dailyRace = null;
     this.weeklyRace = null;
     this.menu.hidePause();
@@ -1032,6 +1211,13 @@ class Game {
         this.rig.addPunch(this.rivalMode ? 13 : 8);
       }
       window.setTimeout(() => this.hud.clearCenter(), 900);
+      if (this.tutorialSplashPending) {
+        const banner = this.tutorialSplashPending;
+        this.tutorialSplashPending = null;
+        window.setTimeout(() => {
+          if (this.tutorialMode) this.hud.showSplash(banner, 'splash-tut');
+        }, 950);
+      }
     } else if (ev === 'checkpoint') {
       const cp = payload as RaceEvents['checkpoint'];
       this.audio.checkpoint();
@@ -1528,7 +1714,10 @@ class Game {
       this.carVisual.bodyGroup.visible = !pov;
     }
 
-    if (input.pause) {
+    if (input.pause && this.tutorialMode && (this.state === 'racing' || this.state === 'countdown')) {
+      // ESC during the tutorial = skip (completion-with-skips); P still pauses.
+      this.skipTutorial();
+    } else if (input.pause) {
       if (this.podium) {
         this.exitPodium();
       } else if (this.state === 'photo') {
@@ -1714,6 +1903,15 @@ class Game {
     }
 
     if (this.state === 'racing') {
+      if (this.tutorialMode && this.tutorial && this.car && this.curve) {
+        const cs = this.car.state;
+        this.tutorialSample.dist = cs.trackDist;
+        this.tutorialSample.lateral = cs.lateral;
+        this.tutorialSample.speedKmh = Math.abs(cs.forwardSpeed) * 3.6;
+        this.tutorialSample.drifting = input.drift && cs.grounded && cs.speed > DRIFT_ACTIVE_MIN_SPEED;
+        this.tutorial.observe(this.tutorialSample, dt);
+        this.updateTutorialProgressHud();
+      }
       const ghostN = this.race!.ghostCount();
       const elapsed = this.race!.elapsedMs;
       for (let i = 0; i < this.ghostVisuals.length; i++) {
@@ -1852,6 +2050,10 @@ class Game {
       const t = now * 0.002;
       pad.mat.map!.offset.y = -t % 1;
     }
+    if (this.tutorialRig) {
+      const t = now * 0.002;
+      for (const pad of this.tutorialRig.pads) pad.mat.map!.offset.y = -t % 1;
+    }
 
     for (let mi = 0; mi < this.meshes!.movers.length; mi++) {
       const m = this.meshes!.movers[mi];
@@ -1927,6 +2129,8 @@ declare global {
       stats: () => object;
       paints: () => object;
       unlockPaint: (id?: string) => object;
+      startTutorial: () => object;
+      tutorial: () => object;
     };
   }
 }
@@ -2142,6 +2346,35 @@ window.__race2 = {
     const targets = id && (ids as string[]).includes(id) ? [id as PaintLockId] : ids;
     for (const lock of targets) game['save'].unlockPaint(lock);
     return paintUnlockState(game['save']);
+  },
+  startTutorial: () => {
+    game['startTutorial']();
+    const t = game['tutorial'];
+    return t ? { active: true, drill: t.drill, drillIndex: t.drillIndex } : { active: false };
+  },
+  tutorial: () => {
+    const t = game['tutorial'];
+    const rig = game['tutorialRig'];
+    return {
+      mode: game['tutorialMode'],
+      active: !!t,
+      status: t?.status ?? 'off',
+      drill: t?.drill ?? null,
+      drillIndex: t?.drillIndex ?? -1,
+      tries: t?.tries ?? 0,
+      done: t?.done ?? 0,
+      total: t?.total ?? 0,
+      driftTime: +(t?.driftTime.toFixed(2) ?? 0),
+      skippedAny: t?.skippedAny ?? false,
+      rings: rig
+        ? rig.rings.map((r) => ({ id: r.id, pos: { x: +r.pos.x.toFixed(1), y: +r.pos.y.toFixed(1), z: +r.pos.z.toFixed(1) }, radius: r.radius }))
+        : [],
+      pads: rig ? rig.pads.map((p) => p.id) : [],
+      settings: {
+        done: game['save'].settings.tutorialDone === true,
+        skipped: game['save'].settings.tutorialSkipped === true,
+      },
+    };
   },
 };
 

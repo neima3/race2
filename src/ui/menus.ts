@@ -70,6 +70,7 @@ export class MenuManager {
   onQuitToMenu: () => void = () => {};
   onResume: () => void = () => {};
   onPractice: () => void = () => {};
+  onStartTutorial: () => void = () => {};
   onRestart: () => void = () => {};
   onSettingsChanged: (s: Settings) => void = () => {};
   onTiltRequest: () => void = () => {};
@@ -185,7 +186,14 @@ export class MenuManager {
     `;
     const buttons = el('div', 'menu-buttons');
     const play = el('button', 'menu-btn primary', 'PLAY');
-    play.addEventListener('click', () => this.show('tracks'));
+    play.addEventListener('click', () => {
+      // Fresh profile: first PLAY goes through the interactive tutorial (v8 P6).
+      if (!this.save.settings.tutorialDone && this.save.settings.onboarded) {
+        this.onStartTutorial();
+        return;
+      }
+      this.show('tracks');
+    });
     const daily = el('button', 'menu-btn', 'DAILY');
     const dailyStreak = el('span', 'daily-streak hidden');
     daily.append(dailyStreak);
@@ -473,6 +481,10 @@ export class MenuManager {
     });
     sensWrap.append(sens, sensVal);
     row('STEERING SENSITIVITY', sensWrap);
+
+    const tutBtn = el('button', 'menu-btn small', 'REPLAY TUTORIAL');
+    tutBtn.addEventListener('click', () => this.onStartTutorial());
+    row('TUTORIAL', tutBtn);
 
     const controlsHelp = el('div', 'controls-help');
     controlsHelp.innerHTML = `

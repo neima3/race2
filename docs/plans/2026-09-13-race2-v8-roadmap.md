@@ -6,7 +6,7 @@
 - [x] Phase 3: Traffic rush — dodge traffic, near-miss bonuses, per-track best
 - [x] Phase 4: Weekly event — seeded 3-race modifier cup, streaks, sharing
 - [x] Phase 5: Paint unlocks + driver stats page
-- [ ] Phase 6: Interactive tutorial — guided steer/boost/drift drills
+- [x] Phase 6: Interactive tutorial — guided steer/boost/drift drills
 - [ ] Phase 7: Audio 2.0 — per-body engines, slip screech, near-miss whoosh
 - [ ] Phase 8: Replay theater — scrub, speeds, camera cycling
 - [ ] Phase 9: Achievements 3.0 + mode balance pass
