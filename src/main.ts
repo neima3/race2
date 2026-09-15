@@ -28,6 +28,7 @@ import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, Share
 import { buildDailyLink, dailyFor, parseDailyLink, todayKey, DAILY_LAPS, type DailyShareLink } from './game/daily';
 import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
 import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
+import { TrafficManager, NEAR_MISS_BONUS_MS, NEAR_MISS_MAX_CREDITED, type TrafficFinishData } from './systems/traffic';
 import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
 import { achievementPops, rivalAchievementState, type RivalAchievementState } from './game/achievements';
 import type { TrophyKind } from './core/save';
@@ -81,6 +82,8 @@ class Game {
   private rivals: RivalManager | null = null;
   private rivalMode = false;
   private knockoutMode = false;
+  private trafficMode = false;
+  private traffic: TrafficManager | null = null;
   private rivalLineup: RivalPreset[] | null = null;
   private rivalsBuiltWith: string | null = null;
   private careerRace: { cup: CupDef; raceIndex: number } | null = null;
@@ -146,7 +149,7 @@ class Game {
   private driftMode = false;
   private replayCar: CarVisual | null = null;
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
-  private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean; daily: { dateKey: string; position: number; streak: number } | null } | null = null;
+  private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean; daily: { dateKey: string; position: number; streak: number } | null; traffic: TrafficFinishData | null } | null = null;
   private friendGhost: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
   /** Decoded friend ghosts per track (from #g= imports this session + persisted save), so ghost battles survive reloads. */
   private friendGhostCache: Record<string, { timeMs: number; samples: GhostSample[] }> = {};
@@ -204,6 +207,7 @@ class Game {
     this.menu.onCareerStartRace = (cup, raceIndex) => {
       this.careerRace = { cup, raceIndex };
       this.rivalLineup = cupLineup(cup, raceIndex);
+      this.menu.trafficMode = false;
       this.dailyRace = null;
       this.startTrack(cupRaceTrack(cup, raceIndex));
     };
@@ -327,6 +331,7 @@ class Game {
     this.menu.driftAttack = false;
     this.menu.rivalsMode = false;
     this.menu.knockoutMode = false;
+    this.menu.trafficMode = false;
     this.driftMode = false;
     this.careerRace = null;
     this.rivalLineup = null;
@@ -343,6 +348,7 @@ class Game {
     this.menu.driftAttack = false;
     this.menu.rivalsMode = false;
     this.menu.knockoutMode = false;
+    this.menu.trafficMode = false;
     this.driftMode = false;
     this.startTrack(def.track);
   }
@@ -713,15 +719,29 @@ class Game {
     this.rivals.onKnockout = (ev) => this.onKnockoutEvent(ev);
     this.rivalsBuiltWith = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
 
+    this.traffic?.dispose();
+    this.traffic = new TrafficManager(curve, def, this.trackGroup);
+    this.traffic.onContact = (pos) => {
+      this.audio.crash();
+      this.particles.wallSparks(pos.clone(), new THREE.Vector3(0, 1, 0));
+      this.input.rumble(0.9, 0.7, 200);
+      this.shake(0.7);
+    };
+    this.traffic.onNearMiss = (count) => {
+      this.hud.setNearMisses(count);
+      this.hud.showNearMissFlash();
+    };
+
     this.rig.snapBehind(this.car.state);
     this.menuOrbitAngle = 0;
   }
 
   private startTrack(def: TrackDef): void {
     this.knockoutMode = this.menu.knockoutMode && this.careerRace === null && this.dailyRace === null;
+    this.trafficMode = this.menu.trafficMode && this.careerRace === null && this.dailyRace === null;
     this.rivalMode = this.menu.rivalsMode || this.knockoutMode || this.careerRace !== null || this.dailyRace !== null;
     if (!this.rivalMode) this.rivalLineup = null;
-    if (this.knockoutMode) this.menu.driftAttack = false;
+    if (this.knockoutMode || this.trafficMode) this.menu.driftAttack = false;
     this.hudAcc = 0;
     this.mapAcc = 0;
     this.lastPlayerPos = 0;
@@ -748,6 +768,15 @@ class Game {
       this.rivals?.setVisible(false);
       this.hud.hideRivalHUD();
     }
+    if (this.trafficMode && this.traffic) {
+      this.traffic.place(this.car!.state.trackDist);
+      this.traffic.setVisible(true);
+      this.hud.showNearMissCounter(true);
+      this.hud.setNearMisses(0);
+    } else {
+      this.traffic?.setVisible(false);
+      this.hud.showNearMissCounter(false);
+    }
     this.rig.snapBehind(this.car!.state);
     this.state = 'countdown';
     this.race!.practice = false;
@@ -756,7 +785,7 @@ class Game {
     this.menu.hidePause();
     this.hud.show(
       def.name,
-      this.driftMode ? null : this.save.trackSave(def.id).bestTimeMs,
+      this.driftMode || this.trafficMode ? null : this.save.trackSave(def.id).bestTimeMs,
       def.checkpoints.length,
       def.checkpoints.map((c) => c.dist),
       curveLen(def),
@@ -777,12 +806,12 @@ class Game {
     this.audio.startMusic(def.theme);
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
     this.race!.totalLaps = this.rivalMode ? (this.knockoutMode ? KNOCKOUT_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS) : 1;
-    this.race!.writesRecords = !this.rivalMode;
+    this.race!.writesRecords = !this.rivalMode && !this.trafficMode;
     const cachedFriend = this.friendGhostCache[def.id] ?? null;
     const legacyFriend = this.friendGhost && this.friendGhost.trackId === def.id ? this.friendGhost : null;
     const friendEntry = cachedFriend ?? legacyFriend;
-    const friendActive = !this.rivalMode && !!friendEntry;
-    this.race!.maxGhosts = this.rivalMode ? 0 : this.save.settings.ghosts;
+    const friendActive = !this.rivalMode && !this.trafficMode && !!friendEntry;
+    this.race!.maxGhosts = this.rivalMode || this.trafficMode ? 0 : this.save.settings.ghosts;
     this.race!.useExternalGhost(friendActive ? friendEntry!.samples : null);
     this.friendRaceActive = friendActive;
     this.hud.setGhostTag(friendActive ? 'FRIEND' : null);
@@ -790,6 +819,10 @@ class Game {
     if (this.knockoutMode && !this.save.settings.hintKnockout) {
       this.save.updateSettings({ hintKnockout: true });
       this.hud.showContextHint('LAST PLACE EACH LAP IS ELIMINATED');
+      modeHinted = true;
+    } else if (this.trafficMode && !this.save.settings.hintTraffic) {
+      this.save.updateSettings({ hintTraffic: true });
+      this.hud.showContextHint('TRAFFIC AHEAD — THREAD IT: NEAR MISSES PAY −0.15s');
       modeHinted = true;
     } else if (this.rivalMode && !this.knockoutMode && !this.save.settings.hintRival) {
       this.save.updateSettings({ hintRival: true });
@@ -845,6 +878,8 @@ class Game {
     if (this.car) this.car.placeAtFrame(0, 8);
     for (const gv of this.ghostVisuals) gv.group.visible = false;
     this.rivals?.setVisible(false);
+    this.traffic?.setVisible(false);
+    this.hud.showNearMissCounter(false);
     this.rig.snapBehind(this.car!.state);
   }
 
@@ -921,7 +956,7 @@ class Game {
       } else {
         this.audio.finish(r.medal);
         this.input.rumble(0.5, 0.9, 500);
-        this.hud.showFinish(r);
+        this.hud.showFinish(this.trafficMode ? { ...r, medal: 'none' as const } : r);
       }
       let rivalStandings: Standing[] | null = null;
       if (this.rivalMode && this.rivals) {
@@ -938,7 +973,7 @@ class Game {
         this.state = 'finished';
         this.hud.clearCenter();
         this.hud.showRespawnHint(false);
-        if (!this.rivalMode) {
+        if (!this.rivalMode && !this.trafficMode) {
           this.save.addStats({
             laps: 1,
             totalDrift: Math.round(this.lapDrift),
@@ -960,8 +995,17 @@ class Game {
         }
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
         let dailyPanel: { dateKey: string; position: number; streak: number } | null = null;
+        let trafficPanel: TrafficFinishData | null = null;
         if (this.knockoutMode) {
           // knockout is a standalone mode — never writes PB/ghost/rival/lifetime stats
+        } else if (this.trafficMode) {
+          // traffic is a standalone time mode — only the per-track traffic-best ledger
+          const nm = this.traffic?.nearMisses ?? 0;
+          const credited = Math.min(nm, NEAR_MISS_MAX_CREDITED);
+          const bonusMs = credited * NEAR_MISS_BONUS_MS;
+          const scoreMs = Math.max(0, r.timeMs - bonusMs);
+          const newBest = this.save.recordTrafficBest(this.track.id, scoreMs);
+          trafficPanel = { nearMisses: nm, credited, bonusMs, scoreMs, best: this.save.allSaves.trafficBest[this.track.id] ?? null, newBest };
         } else if (this.dailyRace && rivalStandings && !r.knockout) {
           // daily is a seeded rival race — records only into the daily ledger, never PB/ghost/lifetime stats
           const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
@@ -989,8 +1033,8 @@ class Game {
             (!this.careerRace && playerPosInRace === 1));
         this.lastPodiumOrder = podiumEligible ? rivalStandings : null;
         const driftArg = this.driftMode ? Math.round(this.driftScore) : null;
-        this.lastFinish = { result: r, hasNext, drift: driftArg, standings: rivalStandings, career: careerPanel, podium: podiumEligible, daily: dailyPanel };
-        this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible, dailyPanel);
+        this.lastFinish = { result: r, hasNext, drift: driftArg, standings: rivalStandings, career: careerPanel, podium: podiumEligible, daily: dailyPanel, traffic: trafficPanel };
+        this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible, dailyPanel, trafficPanel);
         this.touch.hide();
         this.audio.stopEngine();
       }, 1400);
@@ -1207,7 +1251,7 @@ class Game {
     this.podiumUi = null;
     this.hud.root.classList.remove('hidden');
     const lf = this.lastFinish;
-    if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily);
+    if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily, lf.traffic);
   }
 
   private startReplay(): void {
@@ -1435,6 +1479,9 @@ class Game {
             : 0;
         this.rivals.update(simDt * 1000, mode, this.race!.totalProgress, this.moverSnap, playerLapEff);
       }
+      if (this.trafficMode && this.traffic) {
+        this.traffic.update(simDt * 1000, this.car!, this.race!.phase === 'racing');
+      }
       this.acc -= simDt;
       steps++;
     }
@@ -1476,6 +1523,9 @@ class Game {
 
     if (this.rivalMode && this.rivals) {
       this.rivals.updateVisuals(dt, this.particles, this.track.accent);
+    }
+    if (this.trafficMode && this.traffic) {
+      this.traffic.updateVisuals();
     }
 
     if (this.skidMarks) {
@@ -1693,7 +1743,8 @@ declare global {
   interface Window {
     __race2: {
       inst: Game;
-      start: (trackIndex: number, rivals?: boolean | 'knockout') => void;
+      start: (trackIndex: number, rivals?: boolean | 'knockout' | 'traffic') => void;
+      traffic: () => object;
       drive: (v: { steer?: number; throttle?: number; brake?: number; drift?: boolean }) => void;
       auto: (on: boolean) => string;
       state: () => object;
@@ -1718,10 +1769,11 @@ declare global {
 
 window.__race2 = {
   inst: game,
-  start: (trackIndex: number, rivals?: boolean | 'knockout') => {
+  start: (trackIndex: number, rivals?: boolean | 'knockout' | 'traffic') => {
     game['menu'].rivalsMode = rivals === true;
     game['menu'].knockoutMode = rivals === 'knockout';
-    if (rivals === 'knockout') {
+    game['menu'].trafficMode = rivals === 'traffic';
+    if (rivals === 'knockout' || rivals === 'traffic') {
       game['menu'].driftAttack = false;
       game['driftMode'] = false;
     }
@@ -1825,6 +1877,7 @@ window.__race2 = {
     }
   },
   rivals: () => game['rivals']?.telemetry() ?? [],
+  traffic: () => ({ mode: game['trafficMode'], ...(game['traffic']?.telemetry() ?? { count: 0, nearMisses: 0, credited: 0, collisions: 0, cars: [] }) }),
   friend: () => {
     const fg = game['friendGhost'];
     return fg ? { track: fg.trackId, timeMs: fg.timeMs, samples: fg.samples.length } : null;

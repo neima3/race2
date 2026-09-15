@@ -9,6 +9,7 @@ import { autopilotDrive } from '../src/systems/autopilot';
 import { ParticleSystem, RainSystem } from '../src/render/particles';
 import { CameraRig } from '../src/render/camera';
 import { computeOnSlick, surfaceGripFor } from '../src/game/rules';
+import { TrafficManager } from '../src/systems/traffic';
 
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
   getItem: () => null,
@@ -41,6 +42,10 @@ const rivals = new RivalManager(curve, def, { add: () => {} } as unknown as THRE
 rivals.totalLaps = 2;
 rivals.rain = rain;
 
+const traffic = new TrafficManager(curve, def, { add: () => {} } as unknown as THREE.Group);
+traffic.place(8);
+traffic.setVisible(true);
+
 const camPos = new THREE.Vector3();
 const rig = new CameraRig(16 / 9);
 const moverSnap: { dist: number; lat: number }[] = [];
@@ -61,6 +66,7 @@ const heap = (): number => {
 
 player.placeAt(8, 2.5);
 rivals.placeOnGrid();
+traffic.place(8);
 race.start();
 
 // warm-up (shader-free; steady-state allocation)
@@ -74,6 +80,8 @@ for (let i = 0; i < 3600; i++) {
   rivals.updateVisuals(simDt, particles, def.accent);
   rainFx.update(simDt, camPos);
   particles.update(simDt);
+  traffic.update(simDt * 1000, player, race.phase === 'racing');
+  traffic.updateVisuals();
 }
 heap0 = heap();
 let lastSample = 0;
@@ -92,6 +100,8 @@ for (let i = 0; i < 60 * 120; i++) {
   particles.update(simDt);
   rainFx.update(simDt, camPos);
   rivals.standings(race.totalProgress);
+  traffic.update(simDt * 1000, player, race.phase === 'racing');
+  traffic.updateVisuals();
   if (race.phase === 'finished') {
     done = `finished at ${((performance.now() - t0) / 1000).toFixed(1)}s wall-sim`;
     break;
@@ -113,6 +123,8 @@ for (let i = 0; i < 30 * 120; i++) {
   rig.update(simDt, player.state);
   rivals.update(simDt * 1000, 'racing', race.totalProgress, moverSnap);
   particles.update(simDt);
+  traffic.update(simDt * 1000, player, race.phase === 'racing');
+  traffic.updateVisuals();
 }
 const h2 = heap();
 const delta = h2 - h1;

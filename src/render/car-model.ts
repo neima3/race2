@@ -327,6 +327,94 @@ function buildLegacyGhost(group: THREE.Group, bodyGroup: THREE.Group, paintColor
   return bodyMat;
 }
 
+// ---- traffic mode: baked car/trim geometries (instanced, ≤3 draw calls for the whole pack) ----
+const trafficGeoCache = new Map<string, { painted: THREE.BufferGeometry; trim: THREE.BufferGeometry }>();
+
+function paintedParts(geo: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
+  const c = new THREE.Color(hex);
+  const n = geo.getAttribute('position').count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    arr[i * 3] = c.r;
+    arr[i * 3 + 1] = c.g;
+    arr[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  return geo;
+}
+
+/** Merged geometries for instanced traffic cars (same proportions as a standard car body). */
+export function trafficCarGeometry(style: CarBodyStyle = 'standard'): { painted: THREE.BufferGeometry; trim: THREE.BufferGeometry } {
+  const cached = trafficGeoCache.get(style);
+  if (cached) return cached;
+  const chassisH = style === 'tank' ? 0.45 : 0.34;
+  const pontoonW = style === 'tank' ? 0.34 : style === 'aero' ? 0.2 : 0.26;
+  const wingW = style === 'aero' ? 2.25 : style === 'tank' ? 1.7 : 1.9;
+  const wingH = style === 'aero' ? 0.06 : 0.09;
+  const painted = bakeParts([
+    { geo: new THREE.BoxGeometry(style === 'tank' ? 1.95 : style === 'aero' ? 1.55 : 1.7, chassisH, 3.4), pos: [0, 0.42, 0] },
+    { geo: sharedGeo('nose', noseGeometry), pos: [0, 0.05, -1.55] },
+    { geo: new THREE.BoxGeometry(wingW, wingH, 0.5), pos: [0, 1.02, -1.72] },
+  ]);
+  const dark = bakeParts([
+    { geo: new THREE.BoxGeometry(pontoonW, 0.26, 2.1), pos: [-(1.7 / 2 + pontoonW / 2 - 0.02), 0.4, -0.35] },
+    { geo: new THREE.BoxGeometry(pontoonW, 0.26, 2.1), pos: [1.7 / 2 + pontoonW / 2 - 0.02, 0.4, -0.35] },
+    { geo: new THREE.BoxGeometry(1.5, 0.06, 0.5), pos: [0, 0.24, 1.6] },
+    { geo: new THREE.BoxGeometry(1.5, 0.2, 0.4), pos: [0, 0.3, -1.75] },
+    { geo: new THREE.TorusGeometry(0.38, 0.05, 6, 14, Math.PI), rot: [-Math.PI / 2, 0, 0], pos: [0, 0.84, -0.1] },
+    { geo: new THREE.BoxGeometry(0.1, 0.4, 0.3), pos: [0, 0.82, -1.7] },
+    { geo: new THREE.BoxGeometry(0.7, 0.4, 1.3), pos: [0, 0.72, -1.0] },
+  ]);
+  const glass = bakeParts([{ geo: new THREE.SphereGeometry(0.42, 10, 8), scale: [0.85, 0.62, 1.15], pos: [0, 0.72, -0.15] }]);
+  const helmet = bakeParts([{ geo: new THREE.SphereGeometry(0.24, 8, 6), pos: [0, 0.86, -0.18] }]);
+  const lamps = bakeParts([
+    { geo: new THREE.BoxGeometry(0.28, 0.1, 0.06), pos: [-0.5, 0.42, 1.78] },
+    { geo: new THREE.BoxGeometry(0.28, 0.1, 0.06), pos: [0.5, 0.42, 1.78] },
+  ]);
+  const wheelGeo = sharedGeo('wheel', () => {
+    const g = new THREE.CylinderGeometry(0.34, 0.34, 0.3, 14);
+    g.rotateZ(Math.PI / 2);
+    return g;
+  });
+  const hubGeo = sharedGeo('hub', () => {
+    const g = new THREE.CylinderGeometry(0.16, 0.16, 0.32, 8);
+    g.rotateZ(Math.PI / 2);
+    return g;
+  });
+  const discGeo = sharedGeo('disc', () => {
+    const g = new THREE.TorusGeometry(0.2, 0.035, 6, 16);
+    g.rotateY(Math.PI / 2);
+    return g;
+  });
+  const wheelParts: PartSpec[] = [];
+  const hubParts: PartSpec[] = [];
+  for (const [x, y, z] of [
+    [-0.88, 0.34, 1.12],
+    [0.88, 0.34, 1.12],
+    [-0.92, 0.36, -1.18],
+    [0.92, 0.36, -1.18],
+  ] as [number, number, number][]) {
+    wheelParts.push({ geo: wheelGeo, pos: [x, y, z] });
+    hubParts.push({ geo: hubGeo, pos: [x, y, z] });
+    hubParts.push({ geo: discGeo, rot: [0, Math.PI / 2, 0], pos: [x, y, z] });
+  }
+  const trim = mergeGeometries(
+    [
+      paintedParts(dark, 0x15181f),
+      paintedParts(glass, 0x9fd8ff),
+      paintedParts(helmet, 0xdde4ee),
+      paintedParts(lamps, 0xfff2c0),
+      paintedParts(bakeParts(wheelParts), 0x10131a),
+      paintedParts(bakeParts(hubParts), 0x9aa2ae),
+    ],
+    false,
+  )!;
+  trim.userData.shared = true;
+  const out = { painted, trim };
+  trafficGeoCache.set(style, out);
+  return out;
+}
+
 function finishVisual(group: THREE.Group, bodyGroup: THREE.Group, bodyMat: THREE.MeshStandardMaterial | null, wheels: THREE.Mesh[], _merged: boolean): CarVisual {
   let wheelSpin = 0;
   let squashSpring = { v: 0, x: 0 };

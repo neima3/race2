@@ -8,6 +8,9 @@ function cssHex(paint: number): string {
   return '#' + paint.toString(16).padStart(6, '0');
 }
 
+/** Mirror of systems/traffic NEAR_MISS_MAX_CREDITED — display-only cap for the counter. */
+const NEAR_MISS_DISPLAY_CAP = 5;
+
 export class HUD {
   readonly root: HTMLElement;
   readonly minimap: Minimap;
@@ -27,6 +30,7 @@ export class HUD {
   private ghostDeltaRows: { root: HTMLElement; label: HTMLElement; value: HTMLElement }[] = [];
   private battleRankEl: HTMLElement;
   private lapEl: HTMLElement;
+  private nearMissEl: HTMLElement;
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
   driftPoints = 0;
@@ -78,7 +82,8 @@ export class HUD {
     const cpWrap = el('div', 'hud-cp-wrap');
     this.cpEl = el('div', 'hud-cp');
     this.lapEl = el('div', 'hud-lap hidden');
-    cpWrap.append(this.lapEl, this.cpEl);
+    this.nearMissEl = el('div', 'hud-nearmiss hidden');
+    cpWrap.append(this.lapEl, this.cpEl, this.nearMissEl);
     topBar.append(this.trackNameEl, timerWrap, cpWrap);
 
     this.speedEl = el('div', 'hud-speed', '0');
@@ -343,6 +348,23 @@ export class HUD {
       this.lapEl.textContent = text;
       this.lapEl.classList.remove('hidden');
     }
+  }
+
+  showNearMissCounter(on: boolean): void {
+    this.nearMissEl.classList.toggle('hidden', !on);
+    if (on) this.nearMissEl.textContent = 'NEAR MISS 0';
+  }
+
+  setNearMisses(n: number): void {
+    if (this.nearMissEl.classList.contains('hidden')) return;
+    this.nearMissEl.textContent = `NEAR MISS ${n >= NEAR_MISS_DISPLAY_CAP ? NEAR_MISS_DISPLAY_CAP + '+' : n}`;
+    this.nearMissEl.classList.remove('bump');
+    void this.nearMissEl.offsetWidth;
+    this.nearMissEl.classList.add('bump');
+  }
+
+  showNearMissFlash(): void {
+    this.showSplash('NEAR MISS', 'splash-nearmiss');
   }
 
   showRespawnHint(show: boolean): void {

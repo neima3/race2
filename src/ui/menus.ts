@@ -3,6 +3,7 @@ import type { SaveManager, Settings, QualityTier, CupRunEntry, TrophyKind } from
 import type { TrackDef } from '../track/defs';
 import type { FinishResult } from '../game/race';
 import type { Standing } from '../game/rivals';
+import type { TrafficFinishData } from '../systems/traffic';
 import { CUPS, cupUnlock, cupTracks, cupStandings, startCupRun, type CupDef, type CareerPanelData } from '../game/career';
 import { dailyFor, dailyIsLive, todayKey, type DailyShareLink } from '../game/daily';
 import { rivalAchievementState } from '../game/achievements';
@@ -60,6 +61,7 @@ export class MenuManager {
   driftAttack = false;
   rivalsMode = false;
   knockoutMode = false;
+  trafficMode = false;
   readonly root: HTMLElement;
   onPlayTrack: (track: TrackDef) => void = () => {};
   onQuitToMenu: () => void = () => {};
@@ -216,6 +218,7 @@ export class MenuManager {
       this.driftAttack = !this.driftAttack;
       if (this.driftAttack) this.rivalsMode = false;
       this.knockoutMode = false;
+      this.trafficMode = false;
       this.buildTracksScreen();
     });
     const rivalsChip = el('button', 'mode-chip rivals' + (this.rivalsMode ? ' on' : ''), 'RIVALS');
@@ -223,6 +226,7 @@ export class MenuManager {
       this.rivalsMode = !this.rivalsMode;
       if (this.rivalsMode) this.driftAttack = false;
       this.knockoutMode = false;
+      this.trafficMode = false;
       this.buildTracksScreen();
     });
     const knockoutChip = el('button', 'mode-chip knockout' + (this.knockoutMode ? ' on' : ''), 'KNOCKOUT');
@@ -232,9 +236,20 @@ export class MenuManager {
         this.driftAttack = false;
         this.rivalsMode = false;
       }
+      this.trafficMode = false;
       this.buildTracksScreen();
     });
-    right.append(driftChip, rivalsChip, knockoutChip);
+    const trafficChip = el('button', 'mode-chip traffic' + (this.trafficMode ? ' on' : ''), 'TRAFFIC');
+    trafficChip.addEventListener('click', () => {
+      this.trafficMode = !this.trafficMode;
+      if (this.trafficMode) {
+        this.driftAttack = false;
+        this.rivalsMode = false;
+      }
+      this.knockoutMode = false;
+      this.buildTracksScreen();
+    });
+    right.append(driftChip, rivalsChip, knockoutChip, trafficChip);
     right.append(el('div', 'star-total', `&#11088; ${totalStars}/${this.tracks.length * 4}`));
     const back = el('button', 'menu-btn small', '&#8592; BACK');
     back.addEventListener('click', () => this.show('title'));
@@ -867,10 +882,11 @@ export class MenuManager {
     this.pauseScreen.classList.add('hidden');
   }
 
-  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null, podium = false, daily: { dateKey: string; position: number; streak: number } | null = null): void {
+  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null, podium = false, daily: { dateKey: string; position: number; streak: number } | null = null, traffic: TrafficFinishData | null = null): void {
     this.finishScreen.replaceChildren();
     const panel = el('div', 'panel finish-panel');
     const rivalMode = standings != null && standings.length > 0;
+    const trafficMode = traffic != null;
     const careerFinal = career?.isFinal === true;
     const titleText = careerFinal ? career!.cupName : track.name;
     let trophyHtml = '';
@@ -883,10 +899,12 @@ export class MenuManager {
       ? result.knockout
         ? `<div class="finish-medal ko">KNOCKED OUT &middot; P${result.knockout.position}</div>`
         : ''
-      : result.medal === 'none'
-        ? '<div class="finish-medal none">NO MEDAL</div>'
-        : `<div class="finish-medal banner-${result.medal}">${result.medal.toUpperCase()}</div>`;
-    const deltaRows = rivalMode
+      : trafficMode
+        ? ''
+        : result.medal === 'none'
+          ? '<div class="finish-medal none">NO MEDAL</div>'
+          : `<div class="finish-medal banner-${result.medal}">${result.medal.toUpperCase()}</div>`;
+    const deltaRows = rivalMode || trafficMode
       ? ''
       : result.splitDetail
           .map(
@@ -904,7 +922,7 @@ export class MenuManager {
           })()
         : '';
     const deltaTable = deltaRows ? `<div class="finish-deltas">${deltaRows}</div>` : '';
-    const ghostRows = rivalMode
+    const ghostRows = rivalMode || trafficMode
       ? ''
       : (result.ghostResults ?? [])
           .map(
@@ -915,18 +933,23 @@ export class MenuManager {
           )
           .join('');
     const ghostTable = ghostRows ? `<div class="finish-deltas finish-ghosts"><div class="fh-title">GHOST BATTLE</div>${ghostRows}</div>` : '';
-    const history = rivalMode ? [] : this.save.trackSave(track.id).history.slice(0, 5);
+    const history = rivalMode || trafficMode ? [] : this.save.trackSave(track.id).history.slice(0, 5);
     const historyHtml =
       history.length > 1 && driftScore === null
         ? `<div class="finish-history"><div class="fh-title">TOP TIMES</div>${history
             .map((t, i) => `<div class="delta-row"><span>${i + 1}</span><span class="delta-split">${formatTimePrecise(t)}</span><span></span></div>`)
             .join('')}</div>`
         : '';
-    const bestHtml = rivalMode
+    const bestHtml = rivalMode || trafficMode
       ? ''
       : `<div class="finish-best">${result.newBest ? '&#127942; NEW PERSONAL BEST' : `Best: ${formatTimePrecise(result.previousBest ?? result.timeMs)}`}</div>`;
     const dailyHtml = daily
       ? `<div class="finish-daily">DAILY: P${daily.position} · STREAK ${daily.streak}</div>`
+      : '';
+    const trafficHtml = traffic
+      ? `<div class="finish-daily">NEAR MISSES <b>${traffic.nearMisses}</b>${traffic.nearMisses > traffic.credited ? ` (${traffic.credited} CREDITED)` : ''} · BONUS &minus;${(traffic.bonusMs / 1000).toFixed(2)}s</div>
+         <div class="finish-daily">SCORE <b>${formatTimePrecise(traffic.scoreMs)}</b></div>
+         ${traffic.newBest ? '<div class="finish-medal banner-gold">&#127942; NEW TRAFFIC BEST</div>' : traffic.best != null ? `<div class="finish-best">Traffic best: ${formatTimePrecise(traffic.best)}</div>` : ''}`
       : '';
     panel.innerHTML = `
       <h2 class="screen-title">${titleText}</h2>
@@ -934,6 +957,7 @@ export class MenuManager {
       ${trophyHtml}
       ${medalHtml}
       ${dailyHtml}
+      ${trafficHtml}
       ${driftHtml}
       ${bestHtml}
       ${deltaTable}
@@ -1017,8 +1041,8 @@ export class MenuManager {
       this.show(daily ? 'title' : 'tracks');
     });
     panel.append(retry);
-    if (!rivalMode) panel.append(replay);
-    if (!rivalMode && this.save.trackSave(track.id).ghost) {
+    if (!rivalMode && !trafficMode) panel.append(replay);
+    if (!rivalMode && !trafficMode && this.save.trackSave(track.id).ghost) {
       const share = el('button', 'menu-btn', 'SHARE GHOST');
       share.addEventListener('click', () => {
         if (share.disabled) return;

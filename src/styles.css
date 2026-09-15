@@ -1188,6 +1188,40 @@ button {
   box-shadow: 0 0 18px rgba(255, 77, 109, 0.45);
 }
 
+.mode-chip.traffic.on {
+  background: linear-gradient(135deg, #3dff9e, #c8ff2e);
+  color: #04140a;
+  border-color: transparent;
+  box-shadow: 0 0 18px rgba(61, 255, 158, 0.4);
+}
+
+.hud-nearmiss {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent-2);
+  letter-spacing: 0.1em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.hud-nearmiss.hidden { display: none; }
+
+.hud-nearmiss.bump {
+  animation: nmBump 0.45s ease-out;
+}
+
+@keyframes nmBump {
+  0% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+.finish-flash.splash-nearmiss {
+  font-size: clamp(26px, 5vw, 54px);
+  color: var(--accent-2);
+  text-shadow: 0 0 50px rgba(255, 181, 46, 0.9), 0 4px 24px rgba(0, 0, 0, 0.5);
+  animation: countPop 1.4s ease-out forwards;
+}
+
 .hud-driftmode {
   position: absolute;
   top: calc(150px + var(--safe-top));

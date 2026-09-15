@@ -29,6 +29,7 @@ export interface Settings {
   onboarded?: boolean;
   hintRival?: boolean;
   hintKnockout?: boolean;
+  hintTraffic?: boolean;
   hintCam?: boolean;
 }
 
@@ -140,6 +141,7 @@ const DEFAULT_SETTINGS: Settings = {
   onboarded: false,
   hintRival: false,
   hintKnockout: false,
+  hintTraffic: false,
 };
 
 function emptyTrackSave(): TrackSave {
@@ -152,6 +154,8 @@ export interface AllSaves {
   careerRun: CupRun | null;
   friendGhosts: Record<string, FriendGhostEntry>;
   daily: DailySave;
+  /** Traffic Rush per-track best finishing score (bonus-adjusted ms). Additive key. */
+  trafficBest: Record<string, number>;
 }
 
 function emptyCupSave(): CupSave {
@@ -176,6 +180,17 @@ function sanitizeFriendGhosts(v: unknown): Record<string, FriendGhostEntry> {
     if (typeof e.timeMs !== 'number' || !Number.isFinite(e.timeMs) || e.timeMs <= 0) continue;
     if (typeof e.dateMs !== 'number' || !Number.isFinite(e.dateMs)) continue;
     out[key] = { code: e.code, timeMs: e.timeMs, dateMs: e.dateMs };
+  }
+  return out;
+}
+
+function sanitizeTrafficBest(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!v || typeof v !== 'object') return out;
+  const r = v as Record<string, unknown>;
+  for (const key of Object.keys(r)) {
+    const n = r[key];
+    if (typeof n === 'number' && Number.isFinite(n) && n > 0) out[key] = n;
   }
   return out;
 }
@@ -316,19 +331,20 @@ export class SaveManager {
         const parsed = JSON.parse(raw) as Stored<Partial<AllSaves>>;
         if (parsed && typeof parsed.tracks === 'object') {
           this.noteSchemaVersion(parsed.schemaVersion);
-          return {
-            tracks: parsed.tracks,
-            cups: parsed.cups ?? {},
-            careerRun: sanitizeCupRun(parsed.careerRun),
-            friendGhosts: sanitizeFriendGhosts(parsed.friendGhosts),
-            daily: sanitizeDaily(parsed.daily),
-          };
+    return {
+      tracks: parsed.tracks,
+      cups: parsed.cups ?? {},
+      careerRun: sanitizeCupRun(parsed.careerRun),
+      friendGhosts: sanitizeFriendGhosts(parsed.friendGhosts),
+      daily: sanitizeDaily(parsed.daily),
+      trafficBest: sanitizeTrafficBest(parsed.trafficBest),
+    };
         }
       }
     } catch {
       /* corrupted — start fresh */
     }
-    return { tracks: {}, cups: {}, careerRun: null, friendGhosts: {}, daily: { ...DEFAULT_DAILY, results: {} } };
+    return { tracks: {}, cups: {}, careerRun: null, friendGhosts: {}, daily: { ...DEFAULT_DAILY, results: {} }, trafficBest: {} };
   }
 
   private loadSettings(): Settings {
@@ -459,6 +475,17 @@ export class SaveManager {
     }
     this.persistSaves();
     return { streak: d.streak, improved };
+  }
+
+  /** Traffic Rush per-track best (bonus-adjusted score). Best result per track is kept. */
+  recordTrafficBest(trackId: string, scoreMs: number): boolean {
+    const cur = this.saves.trafficBest[trackId];
+    const improved = cur === undefined || scoreMs < cur;
+    if (improved) {
+      this.saves.trafficBest[trackId] = scoreMs;
+      this.persistSaves();
+    }
+    return improved;
   }
 
   get settings(): Settings {

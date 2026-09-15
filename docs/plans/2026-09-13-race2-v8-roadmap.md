@@ -3,7 +3,7 @@
 ## Progress tracker
 - [x] Phase 1: Camera suite — chase/near/bumper modes + FOV slider
 - [x] Phase 2: Ghost battle — race 3 ghosts at once (PB vs dev vs friend)
-- [ ] Phase 3: Traffic rush — dodge traffic, near-miss bonuses, per-track best
+- [x] Phase 3: Traffic rush — dodge traffic, near-miss bonuses, per-track best
 - [ ] Phase 4: Weekly event — seeded 3-race modifier cup, streaks, sharing
 - [ ] Phase 5: Paint unlocks + driver stats page
 - [ ] Phase 6: Interactive tutorial — guided steer/boost/drift drills
