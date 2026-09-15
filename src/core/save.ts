@@ -1,4 +1,5 @@
 import { prevDateKey } from '../game/daily';
+import { prevWeekKey } from '../game/weekly';
 
 export type QualityTier = 'low' | 'medium' | 'high';
 export type TouchSteerMode = 'buttons' | 'tilt';
@@ -88,6 +89,57 @@ export interface DailySave {
   results: Record<string, DailyResult>;
 }
 
+export interface WeeklyRun {
+  weekKey: string;
+  nextRace: number;
+  entries: CupRunEntry[];
+  positions: number[];
+}
+
+export interface WeeklyBestEntry {
+  points: number;
+  position: number;
+}
+
+export interface WeeklySave {
+  run: WeeklyRun | null;
+  best: Record<string, WeeklyBestEntry>;
+  streak: number;
+  lastWeek: string | null;
+}
+
+const DEFAULT_WEEKLY: WeeklySave = { run: null, best: {}, streak: 0, lastWeek: null };
+
+function sanitizeWeeklyRun(v: unknown): WeeklyRun | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = v as Partial<WeeklyRun>;
+  if (typeof r.weekKey !== 'string' || !/^\d{4}W\d{2}$/.test(r.weekKey)) return null;
+  if (typeof r.nextRace !== 'number' || !Number.isFinite(r.nextRace) || r.nextRace < 0 || r.nextRace > 3) return null;
+  if (!Array.isArray(r.entries) || !Array.isArray(r.positions)) return null;
+  return { weekKey: r.weekKey, nextRace: Math.round(r.nextRace), entries: r.entries, positions: r.positions };
+}
+
+function sanitizeWeekly(v: unknown): WeeklySave {
+  if (!v || typeof v !== 'object') return { run: null, best: {}, streak: 0, lastWeek: null };
+  const r = v as Partial<WeeklySave>;
+  const best: Record<string, WeeklyBestEntry> = {};
+  const src = (r.best && typeof r.best === 'object' ? r.best : {}) as Record<string, unknown>;
+  for (const key of Object.keys(src)) {
+    if (!/^\d{4}W\d{2}$/.test(key)) continue;
+    const e = src[key] as Partial<WeeklyBestEntry> | null;
+    if (!e || typeof e !== 'object') continue;
+    const pts = e.points;
+    const pos = e.position;
+    if (typeof pts !== 'number' || !Number.isFinite(pts) || pts < 0 || pts > 999) continue;
+    if (typeof pos !== 'number' || !Number.isFinite(pos) || pos < 1 || pos > 99) continue;
+    best[key] = { points: Math.round(pts), position: Math.round(pos) };
+  }
+  const streak =
+    typeof r.streak === 'number' && Number.isFinite(r.streak) && r.streak >= 0 ? Math.min(9999, Math.round(r.streak)) : 0;
+  const lastWeek = typeof r.lastWeek === 'string' && /^\d{4}W\d{2}$/.test(r.lastWeek) ? r.lastWeek : null;
+  return { run: sanitizeWeeklyRun(r.run), best, streak, lastWeek };
+}
+
 export interface PlayerProfile {
   paint: number;
   body: 'standard' | 'aero' | 'tank';
@@ -156,6 +208,8 @@ export interface AllSaves {
   daily: DailySave;
   /** Traffic Rush per-track best finishing score (bonus-adjusted ms). Additive key. */
   trafficBest: Record<string, number>;
+  /** Weekly Event: mid-week run resume + best ledger + streak. Additive key. */
+  weekly: WeeklySave;
 }
 
 function emptyCupSave(): CupSave {
@@ -331,20 +385,21 @@ export class SaveManager {
         const parsed = JSON.parse(raw) as Stored<Partial<AllSaves>>;
         if (parsed && typeof parsed.tracks === 'object') {
           this.noteSchemaVersion(parsed.schemaVersion);
-    return {
-      tracks: parsed.tracks,
-      cups: parsed.cups ?? {},
-      careerRun: sanitizeCupRun(parsed.careerRun),
-      friendGhosts: sanitizeFriendGhosts(parsed.friendGhosts),
-      daily: sanitizeDaily(parsed.daily),
-      trafficBest: sanitizeTrafficBest(parsed.trafficBest),
-    };
+          return {
+            tracks: parsed.tracks,
+            cups: parsed.cups ?? {},
+            careerRun: sanitizeCupRun(parsed.careerRun),
+            friendGhosts: sanitizeFriendGhosts(parsed.friendGhosts),
+            daily: sanitizeDaily(parsed.daily),
+            trafficBest: sanitizeTrafficBest(parsed.trafficBest),
+            weekly: sanitizeWeekly(parsed.weekly),
+          };
         }
       }
     } catch {
       /* corrupted — start fresh */
     }
-    return { tracks: {}, cups: {}, careerRun: null, friendGhosts: {}, daily: { ...DEFAULT_DAILY, results: {} }, trafficBest: {} };
+    return { tracks: {}, cups: {}, careerRun: null, friendGhosts: {}, daily: { ...DEFAULT_DAILY, results: {} }, trafficBest: {}, weekly: { ...DEFAULT_WEEKLY, best: {} } };
   }
 
   private loadSettings(): Settings {
@@ -486,6 +541,37 @@ export class SaveManager {
       this.persistSaves();
     }
     return improved;
+  }
+
+  get weekly(): WeeklySave {
+    return this.saves.weekly;
+  }
+
+  getWeeklyRun(): WeeklyRun | null {
+    return this.saves.weekly.run;
+  }
+
+  setWeeklyRun(run: WeeklyRun | null): void {
+    this.saves.weekly.run = run;
+    this.persistSaves();
+  }
+
+  /**
+   * Record a completed weekly event (all 3 races finished). Best ledger per week keeps
+   * the most points (then the best position). Streak: +1 when the finished week is the
+   * previous ISO week, reset to 1 after a gap; same-week retries keep the streak.
+   */
+  recordWeeklyFinish(weekKey: string, points: number, position: number): { streak: number; improved: boolean } {
+    const w = this.saves.weekly;
+    const prev = w.best[weekKey];
+    const improved = !prev || points > prev.points || (points === prev.points && position < prev.position);
+    if (improved) w.best[weekKey] = { points, position };
+    if (w.lastWeek !== weekKey) {
+      w.streak = w.lastWeek !== null && w.lastWeek === prevWeekKey(weekKey) ? w.streak + 1 : 1;
+      w.lastWeek = weekKey;
+    }
+    this.persistSaves();
+    return { streak: w.streak, improved };
   }
 
   get settings(): Settings {

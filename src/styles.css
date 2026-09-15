@@ -688,6 +688,32 @@ button {
   letter-spacing: 0.24em;
   color: var(--accent);
 }
+.weekly-modifier {
+  width: 100%;
+  margin: 8px 0 2px;
+  padding: 9px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: rgba(12, 20, 40, 0.55);
+  font-size: 12px;
+  letter-spacing: 0.13em;
+  color: var(--muted);
+}
+.weekly-modifier b {
+  color: var(--accent);
+  letter-spacing: 0.2em;
+  margin-right: 6px;
+}
+.weekly-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  margin: 10px 0 4px;
+}
+.weekly-tracks .cup-track-chip {
+  width: 100%;
+}
 .finish-daily {
   font-size: 15px;
   font-weight: 800;

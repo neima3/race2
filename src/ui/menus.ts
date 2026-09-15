@@ -6,6 +6,7 @@ import type { Standing } from '../game/rivals';
 import type { TrafficFinishData } from '../systems/traffic';
 import { CUPS, cupUnlock, cupTracks, cupStandings, startCupRun, type CupDef, type CareerPanelData } from '../game/career';
 import { dailyFor, dailyIsLive, todayKey, type DailyShareLink } from '../game/daily';
+import { WEEKLY_RACES, isValidWeekKey, weeklyFor, weekKeyFor, weekIsLive, weeklyStandings, type WeeklyDef, type WeeklyPanelData, type WeeklyShareLink } from '../game/weekly';
 import { rivalAchievementState } from '../game/achievements';
 import { PAINTS, type CarBodyStyle } from '../render/car-model';
 import { bodyUnlocks, bodyStatRatios, hasCupTrophy } from '../systems/garage';
@@ -80,6 +81,11 @@ export class MenuManager {
   onFriendRace: (track: TrackDef) => void = () => {};
   onStartDaily: () => void = () => {};
   onShareDaily: () => Promise<void> = async () => {};
+  onStartWeekly: () => void = () => {};
+  onWeeklyStartRace: (raceIndex: number) => void = () => {};
+  onWeeklyNextRace: () => void = () => {};
+  onWeeklyQuit: () => void = () => {};
+  onShareWeekly: () => Promise<void> = async () => {};
 
   private titleScreen: HTMLElement;
   private tracksScreen: HTMLElement;
@@ -91,8 +97,10 @@ export class MenuManager {
   private careerScreen: HTMLElement;
   private friendScreen: HTMLElement;
   private dailyScreen: HTMLElement;
+  private weeklyScreen: HTMLElement;
   private onboardScreen: HTMLElement;
   private dailyStreakEl: HTMLElement | null = null;
+  private weeklyStreakEl: HTMLElement | null = null;
   private toastEl: HTMLElement | null = null;
   private toastTimer: number | null = null;
   careerCup: CupDef | null = null;
@@ -114,9 +122,10 @@ export class MenuManager {
     this.careerScreen = el('div', 'screen hidden');
     this.friendScreen = el('div', 'screen overlay-screen hidden');
     this.dailyScreen = el('div', 'screen overlay-screen hidden');
+    this.weeklyScreen = el('div', 'screen overlay-screen hidden');
     this.onboardScreen = this.buildOnboarding();
 
-    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.onboardScreen);
+    this.root.append(this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.weeklyScreen, this.onboardScreen);
     this.buildTracksScreen();
   }
 
@@ -178,6 +187,11 @@ export class MenuManager {
     daily.append(dailyStreak);
     this.dailyStreakEl = dailyStreak;
     daily.addEventListener('click', () => this.showDailyCard());
+    const weekly = el('button', 'menu-btn', 'WEEKLY');
+    const weeklyStreak = el('span', 'daily-streak weekly-streak hidden');
+    weekly.append(weeklyStreak);
+    this.weeklyStreakEl = weeklyStreak;
+    weekly.addEventListener('click', () => this.showWeeklyCard());
     const career = el('button', 'menu-btn', 'CAREER');
     career.addEventListener('click', () => this.show('career'));
     const garage = el('button', 'menu-btn', 'GARAGE');
@@ -196,7 +210,7 @@ export class MenuManager {
       this.buildAchievements();
       this.show('achievements');
     });
-    buttons.append(play, daily, career, garage, achievements, settings);
+    buttons.append(play, daily, weekly, career, garage, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
     const credits = el('div', 'title-credits', `v2.2.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
@@ -764,6 +778,13 @@ export class MenuManager {
     this.dailyStreakEl.classList.toggle('hidden', streak <= 0);
   }
 
+  private refreshWeeklyStreak(): void {
+    if (!this.weeklyStreakEl) return;
+    const streak = this.save.weekly.streak;
+    this.weeklyStreakEl.textContent = streak > 0 ? `STREAK ${streak}` : '';
+    this.weeklyStreakEl.classList.toggle('hidden', streak <= 0);
+  }
+
   private dailyLineupRows(lineup: { name: string; tier: string; paint: number }[]): HTMLElement {
     const wrap = el('div', 'daily-lineup');
     for (const r of lineup) {
@@ -831,6 +852,121 @@ export class MenuManager {
     this.dailyScreen.classList.remove('hidden');
   }
 
+  private weeklyModifierBadge(modifier: { name: string; blurb: string }): HTMLElement {
+    const badge = el('div', 'weekly-modifier');
+    badge.innerHTML = `<b>${modifier.name}</b> — ${modifier.blurb}`;
+    return badge;
+  }
+
+  private weeklyTrackChips(def: WeeklyDef): HTMLElement {
+    const row = el('div', 'weekly-tracks');
+    def.tracks.forEach((t, i) => {
+      const chip = el('span', 'cup-track-chip');
+      chip.style.setProperty('--accent', t.accentName);
+      chip.append(el('span', 'cup-chip-num', String(i + 1)));
+      chip.append(el('span', 'cup-chip-name', t.name.toUpperCase()));
+      row.append(chip);
+    });
+    return row;
+  }
+
+  showWeeklyCard(): void {
+    this.weeklyScreen.replaceChildren();
+    const forced = new URLSearchParams(window.location.search).get('week');
+    const weekKey = forced && isValidWeekKey(forced) ? forced : weekKeyFor(new Date());
+    const def = weeklyFor(weekKey);
+    const w = this.save.weekly;
+    const run = w.run && w.run.weekKey === weekKey ? w.run : null;
+    const panel = el('div', 'panel friend-panel daily-panel weekly-panel');
+    panel.style.setProperty('--accent', def.tracks[0].accentName);
+    panel.append(el('div', 'fh-title', 'WEEKLY EVENT'));
+    panel.append(el('div', 'daily-date', `${weekKey.slice(0, 4)} · WEEK ${weekKey.slice(5)}`));
+    panel.append(this.weeklyModifierBadge(def.modifier));
+    panel.append(this.weeklyTrackChips(def));
+    const seen = new Set<string>();
+    const roster: { name: string; tier: string; paint: number }[] = [];
+    for (const lu of def.lineups) {
+      for (const r of lu) {
+        if (seen.has(r.name)) continue;
+        seen.add(r.name);
+        roster.push(r);
+      }
+    }
+    panel.append(this.dailyLineupRows(roster));
+    panel.append(el('div', 'daily-meta', `3 RACES · ${def.laps} LAPS EACH · 2 MID + 1 PRO · 25/18/15/12 PTS`));
+    if (run && run.positions.length > 0) {
+      const done = el('div', 'cup-race-history');
+      run.positions.forEach((p, i) => done.append(el('span', 'cup-race-pill', `R${i + 1} <b>P${p}</b>`)));
+      panel.append(done);
+    }
+    const best = w.best[weekKey];
+    if (best) panel.append(el('div', 'daily-result', `DONE: P${best.position} · ${best.points} PTS`));
+    if (w.streak > 0) panel.append(el('div', 'daily-streak-line', `STREAK ${w.streak}`));
+    const weekDone = !!best;
+    const race = el('button', 'menu-btn primary', run && run.positions.length > 0 && !weekDone ? `RESUME · RACE ${run.nextRace + 1}/${WEEKLY_RACES}` : weekDone ? 'RE-RACE THIS WEEK' : 'RACE THIS WEEK');
+    race.addEventListener('click', () => this.onStartWeekly());
+    const back = el('button', 'menu-btn', 'BACK');
+    back.addEventListener('click', () => this.show('title'));
+    panel.append(race, back);
+    this.weeklyScreen.append(panel);
+    this.hideAll();
+    this.weeklyScreen.classList.remove('hidden');
+  }
+
+  showWeeklyInterstitial(def: WeeklyDef, raceIndex: number): void {
+    this.weeklyScreen.replaceChildren();
+    const idx = Math.max(0, Math.min(WEEKLY_RACES - 1, raceIndex));
+    const panel = el('div', 'panel career-panel');
+    panel.style.setProperty('--accent', def.tracks[idx].accentName);
+    panel.append(el('div', 'fh-title', 'WEEKLY EVENT'));
+    panel.append(el('h2', 'screen-title', `RACE ${idx + 1}/${WEEKLY_RACES}`));
+    const sub = el('div', 'cup-race-track');
+    sub.innerHTML = `<span class="cup-chip-num">${idx + 1}</span> ${def.tracks[idx].name.toUpperCase()} · ${def.laps} LAPS`;
+    panel.append(sub);
+    panel.append(this.weeklyModifierBadge(def.modifier));
+    const run = this.save.getWeeklyRun();
+    if (run && run.weekKey === def.weekKey && run.positions.length > 0) {
+      panel.append(this.careerStandingsTable(weeklyStandings(run), 'STANDINGS'));
+      const done = el('div', 'cup-race-history');
+      run.positions.forEach((p, i) => done.append(el('span', 'cup-race-pill', `R${i + 1} <b>P${p}</b>`)));
+      panel.append(done);
+    }
+    const start = el('button', 'menu-btn primary', 'START RACE');
+    start.addEventListener('click', () => this.onWeeklyStartRace(idx));
+    const leave = el('button', 'menu-btn', 'LEAVE');
+    leave.addEventListener('click', () => this.show('title'));
+    panel.append(start, leave);
+    this.weeklyScreen.append(panel);
+    this.hideAll();
+    this.weeklyScreen.classList.remove('hidden');
+  }
+
+  showWeeklyImport(link: WeeklyShareLink): void {
+    this.weeklyScreen.replaceChildren();
+    const live = weekIsLive(link.weekKey);
+    const def = weeklyFor(link.weekKey);
+    const panel = el('div', 'panel friend-panel daily-panel weekly-panel');
+    panel.style.setProperty('--accent', def.tracks[0].accentName);
+    panel.append(el('div', 'fh-title', 'WEEKLY EVENT'));
+    panel.append(el('h2', 'screen-title', 'BEAT MY SCORE'));
+    panel.append(el('div', 'daily-date', `${link.weekKey.slice(0, 4)} · WEEK ${link.weekKey.slice(5)}`));
+    panel.append(this.weeklyModifierBadge(def.modifier));
+    panel.append(el('div', 'daily-result', `THEIR WEEK: ${link.points} PTS · P${link.position}`));
+    panel.append(el('div', 'daily-meta', live ? 'THIS WEEK&#8217;S EVENT' : 'THAT WEEK&#8217;S EVENT — WEEKLIES ARE ONLY PLAYABLE THE WEEK THEY RUN'));
+    const race = el('button', 'menu-btn primary', 'RACE THIS WEEK&#8217;S EVENT') as HTMLButtonElement;
+    race.disabled = !live;
+    race.addEventListener('click', () => {
+      if (race.disabled) return;
+      this.onStartWeekly();
+    });
+    const dismiss = el('button', 'menu-btn', 'DISMISS');
+    dismiss.addEventListener('click', () => this.show('title'));
+    panel.append(race, dismiss);
+    this.weeklyScreen.append(panel);
+    this.hideAll();
+    this.weeklyScreen.classList.remove('hidden');
+  }
+
   showToast(text: string): void {
     if (!this.toastEl) {
       this.toastEl = el('div', 'menu-toast');
@@ -882,18 +1018,23 @@ export class MenuManager {
     this.pauseScreen.classList.add('hidden');
   }
 
-  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null, podium = false, daily: { dateKey: string; position: number; streak: number } | null = null, traffic: TrafficFinishData | null = null): void {
+  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null, podium = false, daily: { dateKey: string; position: number; streak: number } | null = null, traffic: TrafficFinishData | null = null, weekly: WeeklyPanelData | null = null): void {
     this.finishScreen.replaceChildren();
     const panel = el('div', 'panel finish-panel');
     const rivalMode = standings != null && standings.length > 0;
     const trafficMode = traffic != null;
     const careerFinal = career?.isFinal === true;
+    const weeklyFinal = weekly?.isFinal === true;
     const titleText = careerFinal ? career!.cupName : track.name;
     let trophyHtml = '';
     if (careerFinal) {
       trophyHtml = career!.trophy
         ? `<div class="finish-medal banner-${career!.trophy}">${trophyLabel(career!.trophy)}</div>`
         : '<div class="finish-medal none">P4 — NO TROPHY</div>';
+    } else if (weeklyFinal) {
+      trophyHtml = weekly!.trophy
+        ? `<div class="finish-medal banner-${weekly!.trophy}">${trophyLabel(weekly!.trophy)} — WEEKLY</div>`
+        : `<div class="finish-medal none">P${weekly!.playerPos} — NO TROPHY</div>`;
     }
     const medalHtml = rivalMode
       ? result.knockout
@@ -946,6 +1087,9 @@ export class MenuManager {
     const dailyHtml = daily
       ? `<div class="finish-daily">DAILY: P${daily.position} · STREAK ${daily.streak}</div>`
       : '';
+    const weeklyHtml = weekly
+      ? `<div class="finish-daily">WEEKLY R${weekly.raceNumber}/${weekly.totalRaces}: P${weekly.playerPos} · +${weekly.racePoints} PTS · ${weekly.totalPoints} TOTAL</div>`
+      : '';
     const trafficHtml = traffic
       ? `<div class="finish-daily">NEAR MISSES <b>${traffic.nearMisses}</b>${traffic.nearMisses > traffic.credited ? ` (${traffic.credited} CREDITED)` : ''} · BONUS &minus;${(traffic.bonusMs / 1000).toFixed(2)}s</div>
          <div class="finish-daily">SCORE <b>${formatTimePrecise(traffic.scoreMs)}</b></div>
@@ -957,6 +1101,7 @@ export class MenuManager {
       ${trophyHtml}
       ${medalHtml}
       ${dailyHtml}
+      ${weeklyHtml}
       ${trafficHtml}
       ${driftHtml}
       ${bestHtml}
@@ -985,6 +1130,39 @@ export class MenuManager {
         table.style.setProperty('--player-accent', cssHex(this.save.profile.paint));
         panel.append(table);
       }
+      if (weekly) {
+        const table = this.careerStandingsTable(weekly.standings, weekly.isFinal ? 'FINAL WEEKLY STANDINGS' : `WEEKLY STANDINGS · R${weekly.raceNumber}/${weekly.totalRaces}`);
+        table.style.setProperty('--player-accent', cssHex(this.save.profile.paint));
+        panel.append(table);
+      }
+    }
+    if (weekly) {
+      if (weekly.isFinal) {
+        const share = el('button', 'menu-btn primary', 'SHARE RESULT');
+        share.addEventListener('click', () => {
+          if (share.textContent !== 'SHARE RESULT') return;
+          share.textContent = 'SHARING…';
+          void this.onShareWeekly().finally(() => {
+            share.textContent = 'SHARE RESULT';
+          });
+        });
+        panel.append(share);
+        const done = el('button', 'menu-btn', 'BACK TO TITLE');
+        done.addEventListener('click', () => {
+          this.hideAll();
+          this.show('title');
+        });
+        panel.append(done);
+      } else {
+        const next = el('button', 'menu-btn primary', 'NEXT RACE &#8594;');
+        next.addEventListener('click', () => this.onWeeklyNextRace());
+        const quit = el('button', 'menu-btn', 'SAVE &amp; QUIT');
+        quit.addEventListener('click', () => this.onWeeklyQuit());
+        panel.append(next, quit);
+      }
+      this.finishScreen.append(panel);
+      this.finishScreen.classList.remove('hidden');
+      return;
     }
     if (career) {
       if (careerFinal) {
@@ -1066,7 +1244,7 @@ export class MenuManager {
 
   hideAll(): void {
     this.isGarageOpen = false;
-    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.onboardScreen]) {
+    for (const s of [this.titleScreen, this.tracksScreen, this.settingsScreen, this.garageScreen, this.achievementsScreen, this.careerScreen, this.pauseScreen, this.finishScreen, this.friendScreen, this.dailyScreen, this.weeklyScreen, this.onboardScreen]) {
       s.classList.add('hidden');
     }
   }
@@ -1075,6 +1253,7 @@ export class MenuManager {
     this.hideAll();
     if (screen === 'title') {
       this.refreshDailyStreak();
+      this.refreshWeeklyStreak();
       if (!this.save.settings.onboarded) {
         this.onboardScreen.classList.remove('hidden');
         return;

@@ -26,6 +26,24 @@ import { CameraRig } from './render/camera';
 import { RaceController, deserializeGhost, GHOST_COLORS, type GhostLabel, type GhostSample, type RaceEvents } from './game/race';
 import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, ShareError } from './game/share';
 import { buildDailyLink, dailyFor, parseDailyLink, todayKey, DAILY_LAPS, type DailyShareLink } from './game/daily';
+import {
+  WEEKLY_LAPS,
+  WEEKLY_RACES,
+  buildWeeklyLink,
+  parseWeeklyLink,
+  isValidWeekKey,
+  weekKeyFor,
+  weeklyFor,
+  weeklyRaceTrack,
+  weeklyVariant,
+  weeklyComplete,
+  weeklyTrophy,
+  weeklyStandings,
+  startWeeklyRun,
+  applyWeeklyResult,
+  type WeeklyDef,
+  type WeeklyPanelData,
+} from './game/weekly';
 import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
 import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
 import { TrafficManager, NEAR_MISS_BONUS_MS, NEAR_MISS_MAX_CREDITED, type TrafficFinishData } from './systems/traffic';
@@ -92,6 +110,7 @@ class Game {
   private moverSnap: { dist: number; lat: number }[] = [];
   private track: TrackDef = TRACKS[0];
   private urlVariant: TrackVariant | null = parseVariantParam(new URLSearchParams(window.location.search).get('variant'));
+  private devOverrides = new URLSearchParams(window.location.search);
   private variant: TrackVariant = 'day';
   private rainFx: RainSystem | null = null;
 
@@ -149,7 +168,7 @@ class Game {
   private driftMode = false;
   private replayCar: CarVisual | null = null;
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
-  private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean; daily: { dateKey: string; position: number; streak: number } | null; traffic: TrafficFinishData | null } | null = null;
+  private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean; daily: { dateKey: string; position: number; streak: number } | null; traffic: TrafficFinishData | null; weekly: WeeklyPanelData | null } | null = null;
   private friendGhost: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
   /** Decoded friend ghosts per track (from #g= imports this session + persisted save), so ghost battles survive reloads. */
   private friendGhostCache: Record<string, { timeMs: number; samples: GhostSample[] }> = {};
@@ -169,6 +188,7 @@ class Game {
   }
   private shareBusy = false;
   private dailyRace: { dateKey: string } | null = null;
+  private weeklyRace: { def: WeeklyDef; raceIndex: number } | null = null;
   private canvasEl: HTMLCanvasElement = canvas;
   private get canvas(): HTMLCanvasElement { return this.canvasEl; }
   private photoCleanup: (() => void) | null = null;
@@ -239,6 +259,18 @@ class Game {
     this.menu.onFriendRace = (track) => this.raceFriendGhost(track);
     this.menu.onStartDaily = () => this.startDaily();
     this.menu.onShareDaily = () => this.shareDailyResult();
+    this.menu.onStartWeekly = () => this.startWeekly();
+    this.menu.onWeeklyStartRace = (raceIndex) => this.startWeeklyRace(raceIndex);
+    this.menu.onWeeklyNextRace = () => {
+      const run = this.save.getWeeklyRun();
+      if (!run) return;
+      this.menu.showWeeklyInterstitial(weeklyFor(run.weekKey), run.nextRace);
+    };
+    this.menu.onWeeklyQuit = () => {
+      this.weeklyRace = null;
+      this.quitToMenu('title');
+    };
+    this.menu.onShareWeekly = () => this.shareWeeklyResult();
     this.garage = new GarageSystem(this.save);
     this.menu.onSettingsChanged = (s) => {
       this.audio.setMusicEnabled(this.runtimeMuted ? false : s.music);
@@ -353,6 +385,91 @@ class Game {
     this.startTrack(def.track);
   }
 
+  /** Dev seed override (?week=2026W41) for QA on non-current weeks; mirrors ?variant= / ?alltracks. */
+  private devWeekKey(): string {
+    if (!this.devOverrides) return weekKeyFor(new Date());
+    const forced = this.devOverrides.get('week');
+    return forced && isValidWeekKey(forced) ? forced : weekKeyFor(new Date());
+  }
+
+  private startWeekly(): void {
+    const weekKey = this.devWeekKey();
+    const run = this.save.getWeeklyRun();
+    const raceIndex = run && run.weekKey === weekKey ? run.nextRace : 0;
+    this.startWeeklyRace(raceIndex);
+  }
+
+  private startWeeklyRace(raceIndex: number): void {
+    const def = weeklyFor(this.devWeekKey());
+    const idx = Math.max(0, Math.min(WEEKLY_RACES - 1, raceIndex));
+    this.weeklyRace = { def, raceIndex: idx };
+    this.careerRace = null;
+    this.dailyRace = null;
+    this.rivalLineup = def.lineups[idx];
+    this.menu.driftAttack = false;
+    this.menu.rivalsMode = false;
+    this.menu.knockoutMode = false;
+    this.menu.trafficMode = false;
+    this.driftMode = false;
+    this.startTrack(weeklyRaceTrack(def, idx));
+  }
+
+  private async shareWeeklyResult(): Promise<void> {
+    if (this.shareBusy || !this.lastFinish?.weekly) return;
+    const w = this.lastFinish.weekly;
+    this.shareBusy = true;
+    try {
+      const url = window.location.origin + window.location.pathname + buildWeeklyLink(w.weekKey, w.totalPoints, w.playerPos);
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({ title: 'RACE2 weekly event', text: `Race2 weekly ${w.weekKey}: ${w.totalPoints} pts, P${w.playerPos} overall — beat my score`, url });
+          return;
+        } catch (e) {
+          if (e && typeof e === 'object' && (e as { name?: string }).name === 'AbortError') return;
+        }
+      }
+      await navigator.clipboard.writeText(url);
+      this.menu.showToast('WEEKLY LINK COPIED');
+    } catch {
+      this.menu.showToast('SHARE FAILED');
+    } finally {
+      this.shareBusy = false;
+    }
+  }
+
+  private applyWeeklyFinish(standings: Standing[]): WeeklyPanelData {
+    const wr = this.weeklyRace!;
+    let run = this.save.getWeeklyRun();
+    if (!run || run.weekKey !== wr.def.weekKey) run = startWeeklyRun(wr.def.weekKey);
+    const res = applyWeeklyResult(run, standings, this.save.profile.paint);
+    const isFinal = weeklyComplete(run);
+    let trophy: TrophyKind = null;
+    let totalPoints = 0;
+    if (isFinal) {
+      const playerEntry = run.entries.find((e) => e.isPlayer);
+      totalPoints = playerEntry ? playerEntry.points : 0;
+      trophy = weeklyTrophy(run);
+      this.save.recordWeeklyFinish(wr.def.weekKey, totalPoints, res.playerPos);
+      this.save.setWeeklyRun(null);
+    } else {
+      this.save.setWeeklyRun(run);
+      const playerEntry = run.entries.find((e) => e.isPlayer);
+      totalPoints = playerEntry ? playerEntry.points : 0;
+    }
+    return {
+      weekKey: wr.def.weekKey,
+      raceNumber: wr.raceIndex + 1,
+      totalRaces: WEEKLY_RACES,
+      playerPos: res.playerPos,
+      racePoints: res.playerPoints,
+      totalPoints,
+      standings: weeklyStandings(run),
+      isFinal,
+      trophy,
+      modifierName: wr.def.modifier.name,
+    };
+  }
+
   private async shareDailyResult(): Promise<void> {
     if (this.shareBusy || !this.lastFinish?.daily) return;
     const d = this.lastFinish.daily;
@@ -386,6 +503,16 @@ class Game {
         return;
       }
       this.menu.showDailyImport(link);
+      return;
+    }
+    if (hash.startsWith('#w=')) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      const link = parseWeeklyLink(hash);
+      if (!link) {
+        this.menu.showToast('INVALID WEEKLY LINK');
+        return;
+      }
+      this.menu.showWeeklyImport(link);
       return;
     }
     if (!hash.startsWith('#g=')) return;
@@ -639,6 +766,7 @@ class Game {
   private resolveVariant(def: TrackDef): TrackVariant {
     if (this.urlVariant) return this.urlVariant;
     if (this.dailyRace) return 'day';
+    if (this.weeklyRace) return weeklyVariant(this.weeklyRace.def, this.weeklyRace.raceIndex);
     if (this.careerRace) return cupRaceVariant(this.careerRace.cup, this.careerRace.raceIndex);
     return def.variant ?? 'day';
   }
@@ -737,9 +865,9 @@ class Game {
   }
 
   private startTrack(def: TrackDef): void {
-    this.knockoutMode = this.menu.knockoutMode && this.careerRace === null && this.dailyRace === null;
-    this.trafficMode = this.menu.trafficMode && this.careerRace === null && this.dailyRace === null;
-    this.rivalMode = this.menu.rivalsMode || this.knockoutMode || this.careerRace !== null || this.dailyRace !== null;
+    this.knockoutMode = this.menu.knockoutMode && this.careerRace === null && this.dailyRace === null && this.weeklyRace === null;
+    this.trafficMode = this.menu.trafficMode && this.careerRace === null && this.dailyRace === null && this.weeklyRace === null;
+    this.rivalMode = this.menu.rivalsMode || this.knockoutMode || this.careerRace !== null || this.dailyRace !== null || this.weeklyRace !== null;
     if (!this.rivalMode) this.rivalLineup = null;
     if (this.knockoutMode || this.trafficMode) this.menu.driftAttack = false;
     this.hudAcc = 0;
@@ -749,7 +877,7 @@ class Game {
     this.lastPodiumOrder = null;
     this.exitPodium();
     const lineupSig = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
-    if (def.id !== this.track.id || (this.rivalMode && lineupSig !== this.rivalsBuiltWith) || this.resolveVariant(def) !== this.variant) {
+    if (def !== this.track || (this.rivalMode && lineupSig !== this.rivalsBuiltWith) || this.resolveVariant(def) !== this.variant) {
       this.loadTrackIntoScene(def);
     }
     this.hud.setMinimapTrack(this.curve!, def.accent);
@@ -757,7 +885,7 @@ class Game {
     if (this.rivalMode && this.rivals) {
       const slot = this.rivals.gridSlot(3);
       this.car!.placeAt(slot.dist, slot.lateral);
-      this.rivals.totalLaps = this.knockoutMode ? KNOCKOUT_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS;
+      this.rivals.totalLaps = this.knockoutMode ? KNOCKOUT_LAPS : this.weeklyRace ? WEEKLY_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS;
       this.rivals.knockout = this.knockoutMode;
       this.rivals.setPlayerPaint(this.save.profile.paint);
       this.rivals.placeOnGrid();
@@ -805,7 +933,7 @@ class Game {
     this.audio.startEngine();
     this.audio.startMusic(def.theme);
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
-    this.race!.totalLaps = this.rivalMode ? (this.knockoutMode ? KNOCKOUT_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS) : 1;
+    this.race!.totalLaps = this.rivalMode ? (this.knockoutMode ? KNOCKOUT_LAPS : this.weeklyRace ? WEEKLY_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS) : 1;
     this.race!.writesRecords = !this.rivalMode && !this.trafficMode;
     const cachedFriend = this.friendGhostCache[def.id] ?? null;
     const legacyFriend = this.friendGhost && this.friendGhost.trackId === def.id ? this.friendGhost : null;
@@ -864,9 +992,10 @@ class Game {
     this.lastT = performance.now();
   }
 
-  private quitToMenu(dest: 'tracks' | 'career' = 'tracks'): void {
+  private quitToMenu(dest: 'tracks' | 'career' | 'title' = 'tracks'): void {
     this.state = 'menu';
     this.dailyRace = null;
+    this.weeklyRace = null;
     this.menu.hidePause();
     this.menu.hideFinish();
     this.menu.show(dest);
@@ -996,6 +1125,7 @@ class Game {
         const idx = TRACKS.findIndex((t) => t.id === this.track.id);
         let dailyPanel: { dateKey: string; position: number; streak: number } | null = null;
         let trafficPanel: TrafficFinishData | null = null;
+        let weeklyPanel: WeeklyPanelData | null = null;
         if (this.knockoutMode) {
           // knockout is a standalone mode — never writes PB/ghost/rival/lifetime stats
         } else if (this.trafficMode) {
@@ -1011,6 +1141,9 @@ class Game {
           const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
           const res = this.save.recordDailyFinish(this.dailyRace.dateKey, pos, r.timeMs);
           dailyPanel = { dateKey: this.dailyRace.dateKey, position: pos, streak: res.streak };
+        } else if (this.weeklyRace && rivalStandings && !r.knockout) {
+          // weekly is a seeded rival cup — records only into the weekly run/best ledger, never PB/ghost/cup/daily/lifetime stats
+          weeklyPanel = this.applyWeeklyFinish(rivalStandings);
         } else if (this.rivalMode && rivalStandings) {
           const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
           const beaten = rivalStandings.slice(Math.max(0, pos)).filter((s) => !s.isPlayer).map((s) => s.name);
@@ -1024,17 +1157,19 @@ class Game {
           careerPanel = this.applyCareerResult(rivalStandings);
         }
         this.announceAchievementPops(achvBefore);
-        const hasNext = !careerPanel && !r.knockout && !this.dailyRace && idx < TRACKS.length - 1;
+        const hasNext = !careerPanel && !r.knockout && !this.dailyRace && !this.weeklyRace && idx < TRACKS.length - 1;
         const playerPosInRace = rivalStandings ? rivalStandings.findIndex((s) => s.isPlayer) + 1 : -1;
-        const podiumEligible =
+        let podiumEligible =
           !!rivalStandings &&
           !this.dailyRace &&
+          !this.weeklyRace &&
           ((careerPanel !== null && careerPanel.isFinal && playerPosInRace >= 1 && playerPosInRace <= 3) ||
             (!this.careerRace && playerPosInRace === 1));
+        if (weeklyPanel && weeklyPanel.isFinal && playerPosInRace >= 1 && playerPosInRace <= 3) podiumEligible = true;
         this.lastPodiumOrder = podiumEligible ? rivalStandings : null;
         const driftArg = this.driftMode ? Math.round(this.driftScore) : null;
-        this.lastFinish = { result: r, hasNext, drift: driftArg, standings: rivalStandings, career: careerPanel, podium: podiumEligible, daily: dailyPanel, traffic: trafficPanel };
-        this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible, dailyPanel, trafficPanel);
+        this.lastFinish = { result: r, hasNext, drift: driftArg, standings: rivalStandings, career: careerPanel, podium: podiumEligible, daily: dailyPanel, traffic: trafficPanel, weekly: weeklyPanel };
+        this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible, dailyPanel, trafficPanel, weeklyPanel);
         this.touch.hide();
         this.audio.stopEngine();
       }, 1400);
@@ -1251,7 +1386,7 @@ class Game {
     this.podiumUi = null;
     this.hud.root.classList.remove('hidden');
     const lf = this.lastFinish;
-    if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily, lf.traffic);
+    if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily, lf.traffic, lf.weekly);
   }
 
   private startReplay(): void {
@@ -1275,7 +1410,7 @@ class Game {
     this.replay = null;
     this.state = 'finished';
     const lf = this.lastFinish;
-    if (lf) this.menu.showFinish(this.track, lf.result as RaceEvents['finish'], lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily);
+    if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily, lf.traffic, lf.weekly);
   }
 
   private updateReplay(dt: number): void {
@@ -1760,6 +1895,8 @@ declare global {
       podium: () => boolean;
       startDaily: () => object;
       daily: () => object;
+      startWeekly: () => object | null;
+      weekly: () => object;
       audioProbe: () => object;
       ghosts: () => object;
       cam: (mode?: 'chase' | 'close' | 'hood') => 'chase' | 'close' | 'hood';
@@ -1854,6 +1991,7 @@ window.__race2 = {
         podium: !!game['podium'],
         knockout: game['knockoutMode'],
         daily: !!game['dailyRace'],
+        weekly: !!game['weeklyRace'],
         autoDbg: game['autoDbg'],
     };
   },
@@ -1920,6 +2058,28 @@ window.__race2 = {
   daily: () => {
     const save = game['save'];
     return { today: todayKey(), save: save.daily, lastFinish: game['lastFinish']?.daily ?? null };
+  },
+  startWeekly: () => {
+    game['startWeekly']();
+    const wr = game['weeklyRace'];
+    return wr ? { weekKey: wr.def.weekKey, raceIndex: wr.raceIndex, track: game['track'].id, variant: game['variant'] } : null;
+  },
+  weekly: () => {
+    const save = game['save'];
+    const weekKey = game['devWeekKey']();
+    const def = weeklyFor(weekKey);
+    const wr = game['weeklyRace'];
+    return {
+      weekKey,
+      modifier: { id: def.modifier.id, name: def.modifier.name },
+      tracks: def.tracks.map((t) => t.id),
+      laps: def.laps,
+      lineups: def.lineups.map((lu) => lu.map((r) => `${r.name}(${r.tier})`)),
+      race: wr ? { weekKey: wr.def.weekKey, raceIndex: wr.raceIndex, track: game['track'].id, variant: game['variant'] } : null,
+      run: save.getWeeklyRun(),
+      weekly: { streak: save.weekly.streak, lastWeek: save.weekly.lastWeek, best: save.weekly.best[weekKey] ?? null },
+      lastFinish: game['lastFinish']?.weekly ?? null,
+    };
   },
   audioProbe: () => game['audio'].audioProbe(),
   ghosts: () => {
