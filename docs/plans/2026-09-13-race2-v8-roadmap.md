@@ -7,7 +7,7 @@
 - [x] Phase 4: Weekly event — seeded 3-race modifier cup, streaks, sharing
 - [x] Phase 5: Paint unlocks + driver stats page
 - [x] Phase 6: Interactive tutorial — guided steer/boost/drift drills
-- [ ] Phase 7: Audio 2.0 — per-body engines, slip screech, near-miss whoosh
+- [x] Phase 7: Audio 2.0 — per-body engines, slip screech, near-miss whoosh
 - [ ] Phase 8: Replay theater — scrub, speeds, camera cycling
 - [ ] Phase 9: Achievements 3.0 + mode balance pass
 - [ ] Phase 10: QA sweep + accessibility + v2.3.0 + deploy + live verify

@@ -1,4 +1,4 @@
-import { AudioEngine } from '../src/core/audio';
+import { AudioEngine, AUDIO_CEILINGS } from '../src/core/audio';
 
 // Virtual-clock AudioContext mock: automation events are evaluated analytically
 // so gain envelopes can be asserted headless (no audio device, no real time).
@@ -108,6 +108,14 @@ class MockFilter extends MockNode {
   }
 }
 
+class MockCompressor extends MockNode {
+  threshold = { value: 0 };
+  knee = { value: 0 };
+  ratio = { value: 1 };
+  attack = { value: 0 };
+  release = { value: 0 };
+}
+
 class MockAudioContext {
   now = 0;
   sampleRate = 48000;
@@ -133,6 +141,9 @@ class MockAudioContext {
   }
   createBiquadFilter(): MockFilter {
     return new MockFilter(() => this.now);
+  }
+  createDynamicsCompressor(): MockCompressor {
+    return new MockCompressor();
   }
   createBuffer(_channels: number, length: number): { getChannelData: (i: number) => Float32Array } {
     const data = new Float32Array(Math.max(1, length));
@@ -275,6 +286,113 @@ expect(Math.abs(engine.audioProbe().musicIntensity) < 1e-6, 'music intensity sta
   for (let i = 0; i < 20; i++) engine.overtake();
   const n = engine.audioProbe().events.length;
   expect(n <= 12, `probe tap buffer bounded (${n} <= 12)`);
+}
+
+// ---------- v8 P7: audio 2.0 ----------
+
+// Engine not yet started: engine/slip introspection is null-safe.
+{
+  const p = engine.audioProbe();
+  expect(p.engine === null && p.slip === null, `engine/slip probes null before startEngine (engine ${String(p.engine)}, slip ${String(p.slip)})`);
+  expect(p.limiter === true, `master limiter in chain (limiter ${String(p.limiter)})`);
+}
+
+// Per-body engine timbre: same drive inputs, distinct voice params + converged filter cutoff
+{
+  engine.startEngine('standard');
+  const voices = ['standard', 'aero', 'tank'] as const;
+  const filterHz: Record<string, number> = {};
+  for (const v of voices) {
+    engine.setEngineBody(v);
+    const before = engine.audioProbe().engine!;
+    expect(before.voice === v, `engine voice applied (${v})`);
+    if (v === 'standard') expect(before.osc1 === 'sawtooth' && before.osc2 === 'square' && Math.abs(before.sub - 0.5) < 1e-6, `standard voice neutral (osc1 ${before.osc1}, osc2 ${before.osc2}, sub ${before.sub.toFixed(2)})`);
+    if (v === 'aero') expect(before.osc1 === 'sawtooth' && before.osc2 === 'sawtooth' && before.sub < 0.5, `aero voice brighter blend (osc2 ${before.osc2}, sub ${before.sub.toFixed(2)})`);
+    if (v === 'tank') expect(before.osc1 === 'square' && before.osc2 === 'square' && before.sub > 0.5, `tank voice deeper blend (osc1 ${before.osc1}, sub ${before.sub.toFixed(2)})`);
+    expect(Math.abs(before.cutoffMul - { standard: 1, aero: 1.3, tank: 0.75 }[v]) < 1e-6, `${v} cutoff multiplier pinned (${before.cutoffMul})`);
+    engine.updateEngine(0.5, 1, false);
+    ctx.now += 0.4; // ≫ 50ms filter time constant → converged
+    filterHz[v] = engine.audioProbe().engine!.filterHz;
+  }
+  expect(filterHz.aero / filterHz.standard > 1.25 && filterHz.aero / filterHz.standard < 1.35, `aero cutoff brighter (aero ${filterHz.aero.toFixed(0)}Hz / std ${filterHz.standard.toFixed(0)}Hz = ${(filterHz.aero / filterHz.standard).toFixed(2)})`);
+  expect(filterHz.tank / filterHz.standard > 0.7 && filterHz.tank / filterHz.standard < 0.8, `tank cutoff deeper (tank ${filterHz.tank.toFixed(0)}Hz = ${(filterHz.tank / filterHz.standard).toFixed(2)} of std)`);
+}
+
+// Slip screech: envelope attacks with slip, releases to near-zero
+{
+  const p0 = engine.audioProbe().slip!;
+  expect(p0.gain < 0.001, `slip layer silent at rest (gain ${p0.gain.toFixed(4)})`);
+  engine.setSlip(1);
+  ctx.now += 0.5; // ≫ 80ms attack tc
+  const up = engine.audioProbe().slip!;
+  expect(up.gain > 0.05 && up.gain <= AUDIO_CEILINGS.slip, `slip attack reaches level (gain ${up.gain.toFixed(4)} ≤ cap ${AUDIO_CEILINGS.slip})`);
+  expect(up.level === 1, `slip commanded level exposed (level ${up.level})`);
+  engine.setSlip(0);
+  ctx.now += 0.8; // ≫ 200ms release tc
+  const down = engine.audioProbe().slip!;
+  expect(down.gain < 0.005, `slip release complete (gain ${down.gain.toFixed(5)})`);
+}
+
+// Near-miss whoosh: fires, sweeps, decays within ~0.3s
+{
+  engine.nearMissWhoosh();
+  let taps = engine.audioProbe().events.filter((e) => e.name === 'whoosh');
+  expect(taps.length === 1, `whoosh tap registered (${taps.length})`);
+  const peak = taps[0].gain;
+  expect(peak >= 0.1 && peak <= AUDIO_CEILINGS.oneShot, `whoosh subtle level (peak ${peak.toFixed(3)})`);
+  ctx.now += 0.4;
+  taps = engine.audioProbe().events.filter((e) => e.name === 'whoosh');
+  expect(taps[0].gain < 0.005, `whoosh decayed (end ${taps[0].gain.toFixed(5)})`);
+}
+
+// Collision thud: low sine thump + noise crunch, both on the crash() hook
+{
+  engine.crash();
+  const thud = engine.audioProbe().events.filter((e) => e.name === 'thud');
+  const crunch = engine.audioProbe().events.filter((e) => e.name === 'crash');
+  expect(thud.length === 1 && crunch.length === 1, `crash taps registered (thud ${thud.length}, crunch ${crunch.length})`);
+  expect(thud[0].gain >= 0.4 && thud[0].gain <= AUDIO_CEILINGS.oneShot, `thud level (peak ${thud[0].gain.toFixed(3)})`);
+  ctx.now += 0.6;
+  const after = engine.audioProbe().events.filter((e) => e.name === 'thud' || e.name === 'crash');
+  expect(after.every((e) => e.gain < 0.005), `crash envelope finished (max ${Math.max(...after.map((e) => e.gain)).toFixed(5)})`);
+}
+
+// Daily + weekly fanfares: fire distinctly, both ≤ 1.5s, levels within ceiling
+{
+  engine.dailyFanfare();
+  const daily = engine.audioProbe().events.filter((e) => e.name === 'daily');
+  expect(daily.length === 3, `daily fanfare taps (${daily.length})`);
+  const dailySpan = daily[2].start + daily[2].dur - daily[0].start;
+  expect(dailySpan <= 1.5, `daily fanfare ≤1.5s (span ${dailySpan.toFixed(2)}s)`);
+  ctx.now += 0.25; // past all daily onsets → live envelopes
+  const dailyPeak = Math.max(...engine.audioProbe().events.filter((e) => e.name === 'daily').map((e) => e.gain));
+  expect(dailyPeak > 0.03 && dailyPeak <= AUDIO_CEILINGS.oneShot, `daily fanfare level within ceiling (peak ${dailyPeak.toFixed(3)} ≤ ${AUDIO_CEILINGS.oneShot})`);
+  engine.weeklyFanfare();
+  const weekly = engine.audioProbe().events.filter((e) => e.name === 'weekly');
+  expect(weekly.length === 4, `weekly fanfare taps (${weekly.length})`);
+  const weeklySpan = weekly[3].start + weekly[3].dur - weekly[0].start;
+  expect(weeklySpan <= 1.5, `weekly fanfare ≤1.5s (span ${weeklySpan.toFixed(2)}s)`);
+  expect(Math.abs(weeklySpan - dailySpan) > 0.1, `fanfares distinct contours (daily ${dailySpan.toFixed(2)}s vs weekly ${weeklySpan.toFixed(2)}s)`);
+  ctx.now += 0.45; // past all weekly onsets
+  const weeklyPeak = Math.max(...engine.audioProbe().events.filter((e) => e.name === 'weekly').map((e) => e.gain));
+  expect(weeklyPeak > 0.03 && weeklyPeak <= AUDIO_CEILINGS.oneShot, `weekly fanfare level within ceiling (peak ${weeklyPeak.toFixed(3)} ≤ ${AUDIO_CEILINGS.oneShot})`);
+  ctx.now += 1.2;
+  const done = engine.audioProbe().events.filter((e) => e.name === 'daily' || e.name === 'weekly');
+  expect(done.every((e) => e.gain < 0.005), `fanfares decayed (max ${Math.max(...done.map((e) => e.gain)).toFixed(5)})`);
+}
+
+// Gain ceilings: no bus or continuous layer exceeds its cap
+{
+  engine.updateEngine(0.95, 1, false);
+  ctx.now += 0.5;
+  const g = engine.audioProbe().gains;
+  const c = engine.audioProbe().ceilings;
+  expect(g.master > 0 && g.master <= c.master, `master within cap (${g.master.toFixed(2)} ≤ ${c.master})`);
+  expect(g.sfx <= c.sfxBus, `sfx bus within cap (${g.sfx} ≤ ${c.sfxBus})`);
+  expect(g.music <= c.musicBus, `music bus within cap (${g.music} ≤ ${c.musicBus})`);
+  expect(g.engine > 0 && g.engine <= c.engine, `engine layer within cap (${g.engine.toFixed(3)} ≤ ${c.engine})`);
+  expect(g.wind >= 0 && g.wind <= c.wind, `wind layer within cap (${g.wind.toFixed(3)} ≤ ${c.wind})`);
+  expect(g.musicBase <= c.musicLayer && g.musicIntense <= c.musicLayer, `music layers within cap (${g.musicBase.toFixed(2)}, ${g.musicIntense.toFixed(2)} ≤ ${c.musicLayer})`);
 }
 
 engine.stopMusic();

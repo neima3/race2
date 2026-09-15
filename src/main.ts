@@ -775,6 +775,7 @@ class Game {
   }
 
   private applyPlayerStyle(_paint: number, body: 'standard' | 'aero' | 'tank'): void {
+    this.audio.setEngineBody(body);
     this.garage.applyTo(this.carVisual!, null);
     for (let i = 0; i < this.ghostVisuals.length; i++) {
       const gt = this.race?.ghostTrack(i);
@@ -881,6 +882,7 @@ class Game {
     this.traffic.onNearMiss = (count) => {
       this.hud.setNearMisses(count);
       this.hud.showNearMissFlash();
+      this.audio.nearMissWhoosh();
     };
 
     this.rig.snapBehind(this.car.state);
@@ -954,7 +956,7 @@ class Game {
       this.hud.root.classList.add('touch-active');
     }
     this.audio.ensureContext();
-    this.audio.startEngine();
+    this.audio.startEngine(this.save.profile.body);
     this.audio.startMusic(def.theme);
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
     this.race!.totalLaps = this.rivalMode ? (this.knockoutMode ? KNOCKOUT_LAPS : this.weeklyRace ? WEEKLY_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS) : 1;
@@ -1373,6 +1375,9 @@ class Game {
         this.lastFinish = { result: r, hasNext, drift: driftArg, standings: rivalStandings, career: careerPanel, podium: podiumEligible, daily: dailyPanel, traffic: trafficPanel, weekly: weeklyPanel };
         this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible, dailyPanel, trafficPanel, weeklyPanel);
         this.touch.hide();
+        if (dailyPanel) this.audio.dailyFanfare();
+        else if (weeklyPanel?.isFinal) this.audio.weeklyFanfare();
+        this.audio.setSlip(0);
         this.audio.stopEngine();
       }, 1400);
     }
@@ -2006,6 +2011,8 @@ class Game {
       for (let i = ghostN; i < this.ghostRatioBuf.length; i++) this.ghostRatioBuf[i] = null;
       this.hud.updateProgress(s.trackDist / this.curve!.length, this.ghostRatioBuf);
       this.audio.updateEngine(Math.min(1, Math.abs(s.forwardSpeed) / 58), input.throttle, !s.grounded);
+      // Slip screech: car.state.driftAmount = |lateral velocity| / 9 — continuous tire-slip magnitude.
+      this.audio.setSlip(s.grounded && s.speed > 4 ? s.driftAmount : 0);
       this.audio.setSpeedIntensity(Math.min(1, Math.abs(s.forwardSpeed) / 58), s.boostTime > 0);
     }
 

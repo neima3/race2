@@ -1,19 +1,59 @@
 import { getPattern, type MusicTheme } from './music';
 
+export type EngineVoice = 'standard' | 'aero' | 'tank';
+
+/** Per-body engine timbre (v8 P7): real synth deltas keyed by the player body. Rivals stay neutral. */
+export interface EngineTimbre {
+  osc1: OscillatorType;
+  osc2: OscillatorType;
+  cutoffMul: number;
+  freqMul: number;
+  sub: number;
+}
+
+const ENGINE_TIMBRE: Record<EngineVoice, EngineTimbre> = {
+  standard: { osc1: 'sawtooth', osc2: 'square', cutoffMul: 1, freqMul: 1, sub: 0.5 },
+  aero: { osc1: 'sawtooth', osc2: 'sawtooth', cutoffMul: 1.3, freqMul: 1.03, sub: 0.42 },
+  tank: { osc1: 'square', osc2: 'square', cutoffMul: 0.75, freqMul: 0.92, sub: 0.7 },
+};
+
+/** Absolute gain ceilings per bus/layer — asserted in test/probe.ts (v8 P7). */
+export const AUDIO_CEILINGS = {
+  master: 1,
+  sfxBus: 1,
+  musicBus: 0.34,
+  engine: 0.16,
+  wind: 0.1,
+  slip: 0.07,
+  musicLayer: 0.5,
+  oneShot: 0.55,
+} as const;
+
+const SLIP_ATTACK_TC = 0.08;
+const SLIP_RELEASE_TC = 0.2;
+
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private limiter: DynamicsCompressorNode | null = null;
   private sfxGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
 
   private engineOsc1: OscillatorNode | null = null;
   private engineOsc2: OscillatorNode | null = null;
+  private engineSub: GainNode | null = null;
   private engineFilter: BiquadFilterNode | null = null;
   private engineGain: GainNode | null = null;
+  private engineVoice: EngineVoice = 'standard';
 
   private windSource: AudioBufferSourceNode | null = null;
   private windGain: GainNode | null = null;
   private windFilter: BiquadFilterNode | null = null;
+
+  private slipSource: AudioBufferSourceNode | null = null;
+  private slipFilter: BiquadFilterNode | null = null;
+  private slipGain: GainNode | null = null;
+  private slipLevel = 0;
 
   private musicTimer: number | null = null;
   private musicStep = 0;
@@ -41,7 +81,14 @@ export class AudioEngine {
     this.ctx = new Ctor();
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.9;
-    this.master.connect(this.ctx.destination);
+    this.limiter = this.ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -12;
+    this.limiter.knee.value = 6;
+    this.limiter.ratio.value = 8;
+    this.limiter.attack.value = 0.004;
+    this.limiter.release.value = 0.18;
+    this.master.connect(this.limiter);
+    this.limiter.connect(this.ctx.destination);
     this.sfxGain = this.ctx.createGain();
     this.sfxGain.gain.value = 1;
     this.sfxGain.connect(this.master);
@@ -61,24 +108,37 @@ export class AudioEngine {
     if (this.sfxGain) this.sfxGain.gain.value = on ? 1 : 0;
   }
 
-  startEngine(): void {
+  /** Revoice the running engine for a body change (or pre-select the next start). */
+  setEngineBody(body: EngineVoice): void {
+    const t = ENGINE_TIMBRE[body];
+    this.engineVoice = body;
+    if (!this.ctx || !this.engineOsc1 || !this.engineOsc2 || !this.engineSub || !this.engineFilter) return;
+    this.engineOsc1.type = t.osc1;
+    this.engineOsc2.type = t.osc2;
+    this.engineSub.gain.value = t.sub;
+    this.engineFilter.frequency.value = 700 * t.cutoffMul;
+  }
+
+  startEngine(body: EngineVoice = 'standard'): void {
     if (!this.ctx || !this.sfxGain || this.engineOsc1) return;
+    this.engineVoice = body;
+    const t = ENGINE_TIMBRE[body];
     const ctx = this.ctx;
     this.engineOsc1 = ctx.createOscillator();
-    this.engineOsc1.type = 'sawtooth';
+    this.engineOsc1.type = t.osc1;
     this.engineOsc2 = ctx.createOscillator();
-    this.engineOsc2.type = 'square';
+    this.engineOsc2.type = t.osc2;
     this.engineFilter = ctx.createBiquadFilter();
     this.engineFilter.type = 'lowpass';
-    this.engineFilter.frequency.value = 700;
+    this.engineFilter.frequency.value = 700 * t.cutoffMul;
     this.engineFilter.Q.value = 2.2;
     this.engineGain = ctx.createGain();
     this.engineGain.gain.value = 0;
-    const sub = ctx.createGain();
-    sub.gain.value = 0.5;
+    this.engineSub = ctx.createGain();
+    this.engineSub.gain.value = t.sub;
     this.engineOsc1.connect(this.engineFilter);
-    this.engineOsc2.connect(sub);
-    sub.connect(this.engineFilter);
+    this.engineOsc2.connect(this.engineSub);
+    this.engineSub.connect(this.engineFilter);
     this.engineFilter.connect(this.engineGain);
     this.engineGain.connect(this.sfxGain);
     this.engineOsc1.start();
@@ -100,29 +160,60 @@ export class AudioEngine {
     this.windFilter.connect(this.windGain);
     this.windGain.connect(this.sfxGain);
     this.windSource.start();
+
+    // Tire slip screech (v8 P7): continuous layer, gain tracks |lateral slip|.
+    this.slipSource = ctx.createBufferSource();
+    this.slipSource.buffer = noiseBuf;
+    this.slipSource.loop = true;
+    this.slipFilter = ctx.createBiquadFilter();
+    this.slipFilter.type = 'bandpass';
+    this.slipFilter.frequency.value = 2200;
+    this.slipFilter.Q.value = 1.6;
+    this.slipGain = ctx.createGain();
+    this.slipGain.gain.value = 0;
+    this.slipSource.connect(this.slipFilter);
+    this.slipFilter.connect(this.slipGain);
+    this.slipGain.connect(this.sfxGain);
+    this.slipSource.start();
   }
 
   updateEngine(speedRatio: number, throttle: number, airborne: boolean): void {
     if (!this.ctx || !this.engineOsc1 || !this.engineOsc2 || !this.engineGain || !this.engineFilter || !this.windGain || !this.windFilter) return;
-    const t = this.ctx.currentTime;
+    const t = ENGINE_TIMBRE[this.engineVoice];
+    const now = this.ctx.currentTime;
     const gears = 6;
     const clamped = Math.min(0.999, speedRatio);
     const gear = Math.min(gears - 1, Math.floor(clamped * gears));
     const inGear = clamped * gears - gear;
     const rpm = 0.25 + inGear * 0.75;
-    const f = 46 + rpm * 112 + gear * 6;
-    this.engineOsc1.frequency.setTargetAtTime(f, t, 0.035);
-    this.engineOsc2.frequency.setTargetAtTime(f * 0.5, t, 0.035);
-    this.engineFilter.frequency.setTargetAtTime(420 + rpm * 1900 + gear * 180, t, 0.05);
+    const f = (46 + rpm * 112 + gear * 6) * t.freqMul;
+    this.engineOsc1.frequency.setTargetAtTime(f, now, 0.035);
+    this.engineOsc2.frequency.setTargetAtTime(f * 0.5, now, 0.035);
+    this.engineFilter.frequency.setTargetAtTime((420 + rpm * 1900 + gear * 180) * t.cutoffMul, now, 0.05);
     const shiftCut = this.lastGear !== gear && this.lastGear >= 0 ? 0.35 : 1;
     if (this.lastGear !== gear) {
       this.lastGear = gear;
-      this.shiftBlipUntil = t + 0.09;
+      this.shiftBlipUntil = now + 0.09;
     }
-    if (t < this.shiftBlipUntil) this.engineGain.gain.setTargetAtTime(0.02, t, 0.01);
-    else this.engineGain.gain.setTargetAtTime((0.05 + throttle * 0.06 + speedRatio * 0.05) * shiftCut, t, 0.08);
-    this.windGain.gain.setTargetAtTime(airborne ? 0.02 + speedRatio * 0.06 : speedRatio * speedRatio * 0.09, t, 0.1);
-    this.windFilter.frequency.setTargetAtTime(300 + speedRatio * 900, t, 0.1);
+    if (now < this.shiftBlipUntil) this.engineGain.gain.setTargetAtTime(0.02, now, 0.01);
+    else this.engineGain.gain.setTargetAtTime((0.05 + throttle * 0.06 + speedRatio * 0.05) * shiftCut, now, 0.08);
+    this.windGain.gain.setTargetAtTime(airborne ? 0.02 + speedRatio * 0.06 : speedRatio * speedRatio * 0.09, now, 0.1);
+    this.windFilter.frequency.setTargetAtTime(300 + speedRatio * 900, now, 0.1);
+  }
+
+  /**
+   * Continuous tire-slip screech (v8 P7). `slip01` = 0..1 magnitude of lateral slip
+   * (car.state.driftAmount = |lateral velocity| / 9). Attack 80ms, release 200ms.
+   */
+  setSlip(slip01: number): void {
+    if (!this.ctx || !this.slipGain || !this.slipFilter) return;
+    const now = this.ctx.currentTime;
+    const s = Math.min(1, Math.max(0, slip01));
+    this.slipLevel = s;
+    const target = s * (AUDIO_CEILINGS.slip - 0.01);
+    const rising = target > this.slipGain.gain.value;
+    this.slipGain.gain.setTargetAtTime(target, now, rising ? SLIP_ATTACK_TC : SLIP_RELEASE_TC);
+    this.slipFilter.frequency.setTargetAtTime(1800 + s * 1400, now, 0.06);
   }
 
   stopEngine(): void {
@@ -130,14 +221,19 @@ export class AudioEngine {
       this.engineOsc1?.stop();
       this.engineOsc2?.stop();
       this.windSource?.stop();
+      this.slipSource?.stop();
     } catch {
       /* already stopped */
     }
     this.engineOsc1 = null;
     this.engineOsc2 = null;
     this.windSource = null;
+    this.slipSource = null;
     this.engineGain = null;
     this.windGain = null;
+    this.slipGain = null;
+    this.slipFilter = null;
+    this.slipLevel = 0;
   }
 
   private blip(freq: number, dur: number, type: OscillatorType, vol: number, when = 0, slideTo?: number, tag?: string): void {
@@ -187,7 +283,7 @@ export class AudioEngine {
     if (this.probeTaps.length > 12) this.probeTaps.shift();
   }
 
-  /** Headless/audio-QA introspection: current bus gains, music intensity and recent event envelopes. */
+  /** Headless/audio-QA introspection: bus gains, engine voice, slip layer, music intensity and recent event envelopes. */
   audioProbe(): {
     time: number;
     ctxState: string | null;
@@ -195,6 +291,11 @@ export class AudioEngine {
     musicBus: number;
     musicIntensity: number;
     musicLayers: { base: number; intense: number } | null;
+    engine: { osc1: OscillatorType; osc2: OscillatorType; sub: number; cutoffMul: number; freqMul: number; filterHz: number; gain: number; voice: EngineVoice } | null;
+    slip: { gain: number; level: number; hz: number } | null;
+    gains: { master: number; sfx: number; music: number; engine: number; wind: number; musicBase: number; musicIntense: number };
+    ceilings: typeof AUDIO_CEILINGS;
+    limiter: boolean;
     events: { name: string; start: number; dur: number; gain: number }[];
   } {
     return {
@@ -206,6 +307,32 @@ export class AudioEngine {
       musicLayers: this.musicLayers.length === 2
         ? { base: this.musicLayers[0].gain.gain.value, intense: this.musicLayers[1].gain.gain.value }
         : null,
+      engine: this.engineOsc1 && this.engineOsc2 && this.engineFilter && this.engineSub && this.engineGain
+        ? {
+            osc1: this.engineOsc1.type,
+            osc2: this.engineOsc2.type,
+            sub: this.engineSub.gain.value,
+            cutoffMul: ENGINE_TIMBRE[this.engineVoice].cutoffMul,
+            freqMul: ENGINE_TIMBRE[this.engineVoice].freqMul,
+            filterHz: this.engineFilter.frequency.value,
+            gain: this.engineGain.gain.value,
+            voice: this.engineVoice,
+          }
+        : null,
+      slip: this.slipGain && this.slipFilter
+        ? { gain: this.slipGain.gain.value, level: this.slipLevel, hz: this.slipFilter.frequency.value }
+        : null,
+      gains: {
+        master: this.master?.gain.value ?? 0,
+        sfx: this.sfxGain?.gain.value ?? 0,
+        music: this.musicGain?.gain.value ?? 0,
+        engine: this.engineGain?.gain.value ?? 0,
+        wind: this.windGain?.gain.value ?? 0,
+        musicBase: this.musicLayers[0]?.gain.gain.value ?? 0,
+        musicIntense: this.musicLayers[1]?.gain.gain.value ?? 0,
+      },
+      ceilings: AUDIO_CEILINGS,
+      limiter: this.limiter !== null,
       events: this.probeTaps.map((t) => ({ name: t.name, start: t.t0, dur: t.dur, gain: t.gain.value })),
     };
   }
@@ -237,8 +364,10 @@ export class AudioEngine {
     this.noiseBurst(0.12, 0.22, 500, 200);
   }
 
+  /** Collision: low body thump + noise crunch (v8 P7 revoice — was noise-only). */
   crash(): void {
-    this.noiseBurst(0.3, 0.4, 800, 150);
+    this.blip(64, 0.26, 'sine', 0.5, 0, 30, 'thud');
+    this.noiseBurst(0.3, 0.4, 800, 150, 'crash');
   }
 
   finish(medal: 'none' | 'bronze' | 'silver' | 'gold' | 'author'): void {
@@ -262,6 +391,23 @@ export class AudioEngine {
     this.noiseBurst(0.35, 0.38, 240, 2600, 'go');
     this.blip(150, 0.3, 'sawtooth', 0.22, 0, 70, 'go');
     this.blip(587, 0.22, 'square', 0.11, 0.06, undefined, 'go');
+  }
+
+  /** Near-miss pass whoosh (v8 P7): short band-pass noise sweep, subtle. */
+  nearMissWhoosh(): void {
+    this.noiseBurst(0.25, 0.14, 350, 2600, 'whoosh');
+  }
+
+  /** Daily-challenge completion stinger (v8 P7): rising fourths, D-major, ≤0.6s. */
+  dailyFanfare(): void {
+    const notes: [number, number][] = [[587, 0.14], [880, 0.14], [1175, 0.3]];
+    notes.forEach(([f, d], i) => this.blip(f, d, 'triangle', 0.2, i * 0.1, undefined, 'daily'));
+  }
+
+  /** Weekly-event final stinger (v8 P7): fifth-based C-major arpeggio, ≤1.2s — distinct contour from the daily one. */
+  weeklyFanfare(): void {
+    const notes: [number, number][] = [[523, 0.12], [784, 0.12], [1046, 0.12], [1319, 0.4]];
+    notes.forEach(([f, d], i) => this.blip(f, d, i === notes.length - 1 ? 'triangle' : 'square', 0.18, i * 0.13, undefined, 'weekly'));
   }
 
   /** Procedural crowd swell: brownish noise through a wide bandpass with slow attack/release. */
