@@ -8,6 +8,8 @@ import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
 import { ParticleSystem, RainSystem } from '../src/render/particles';
 import { CameraRig } from '../src/render/camera';
+import { advanceReplayTime, sampleReplayAt, REPLAY_SPEEDS } from '../src/ui/replay';
+import type { CarState } from '../src/physics/car';
 import { computeOnSlick, surfaceGripFor } from '../src/game/rules';
 import { TrafficManager } from '../src/systems/traffic';
 
@@ -133,6 +135,53 @@ console.log(`allocs probe: track=${def.id} rain=${rain} gc=${gc ? 'forced' : 'no
 for (const r of rows) console.log('  ' + r);
 console.log(`  30s steady-state window: ${delta >= 0 ? '+' : ''}${delta.toFixed(3)}MB (gc-forced)`);
 console.log(done ? `  ${done}` : '  60s elapsed, race still running');
+
+// ---- replay theater window (v8 P8): shared lookup + rig in manual-cam mode + time scale ----
+{
+  const f = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 };
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const xAxis = new THREE.Vector3();
+  const rp = new THREE.Vector3();
+  const samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[] = [];
+  const n = 480;
+  for (let i = 0; i < n; i++) {
+    const d = (i / n) * curve.length;
+    curve.frameAtDist(d, f);
+    rp.copy(f.pos).addScaledVector(f.normal, 0.55);
+    xAxis.crossVectors(f.normal, f.tangent);
+    m.makeBasis(xAxis, f.normal, f.tangent);
+    q.setFromRotationMatrix(m);
+    samples.push({ t: (i / n) * 20000, pos: rp.clone(), quat: q.clone() });
+  }
+  const replayPos = new THREE.Vector3();
+  const replayQuat = new THREE.Quaternion();
+  const spd = { v: 0 };
+  const fake = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), vel: new THREE.Vector3(), grounded: true, offroad: false, driftAmount: 0, speed: 0, forwardSpeed: 0, trackIndex: 0, trackDist: 0, lateral: 0, airborneTime: 0, boostTime: 0, wallHit: 0, onSlick: false, surfaceGrip: 1, landedAt: 0 } as unknown as CarState;
+  let rt = samples[0].t;
+  const theaterRig = new CameraRig(16 / 9);
+  theaterRig.fovPref = 72;
+  const hR1 = heap();
+  const totalMs = samples[n - 1].t + 800;
+  for (let i = 0; i < 30 * 120; i++) {
+    rt = advanceReplayTime(rt, simDt * 1000, REPLAY_SPEEDS[i % 3]);
+    if (rt > totalMs) rt = samples[0].t;
+    sampleReplayAt(samples, rt, replayPos, replayQuat, spd);
+    fake.pos.copy(replayPos);
+    fake.quat.copy(replayQuat);
+    fake.speed = spd.v;
+    theaterRig.setMode(i % 7200 < 2400 ? 'chase' : i % 7200 < 4800 ? 'close' : 'hood');
+    theaterRig.update(simDt, fake as CarState);
+  }
+  const hR2 = heap();
+  const replayDelta = hR2 - hR1;
+  console.log(`  30s theater window: ${replayDelta >= 0 ? '+' : ''}${replayDelta.toFixed(3)}MB (gc-forced)`);
+  if (gc && replayDelta > 2) {
+    console.log(`FAIL theater allocation churn > 2MB per 30s forced-GC window (${replayDelta.toFixed(2)}MB)`);
+    process.exit(1);
+  }
+}
+
 if (gc && delta > 2) {
   console.log(`FAIL allocation churn > 2MB per 30s forced-GC window (${delta.toFixed(2)}MB)`);
   process.exit(1);

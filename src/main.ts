@@ -22,8 +22,19 @@ import { autopilotDrive } from './systems/autopilot';
 import { el } from './ui/common';
 import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem, RainSystem } from './render/particles';
-import { CameraRig } from './render/camera';
+import { CameraRig, type CameraMode } from './render/camera';
+import type { CarState } from './physics/car';
 import { RaceController, deserializeGhost, GHOST_COLORS, type GhostLabel, type GhostSample, type RaceEvents } from './game/race';
+import {
+  ReplayBuffer,
+  TheaterUI,
+  REPLAY_SPEEDS,
+  advanceReplayTime,
+  clampReplayTime,
+  defaultAutoCuts,
+  sampleReplayAt,
+  type ReplayEntry,
+} from './ui/replay';
 import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, ShareError } from './game/share';
 import { buildDailyLink, dailyFor, parseDailyLink, todayKey, DAILY_LAPS, type DailyShareLink } from './game/daily';
 import {
@@ -188,7 +199,48 @@ class Game {
   private tutorialDropTimer: number | null = null;
   private tutorialSample = { dist: 0, lateral: 0, speedKmh: 0, drifting: false };
   private replayCar: CarVisual | null = null;
-  private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
+  /** v8 P8 theater state: null when not watching; speed/playing are theater-only. */
+  private replay: {
+    samples: GhostSample[];
+    t: number;
+    startMs: number;
+    endMs: number;
+    camPos: THREE.Vector3;
+    nextCut: number;
+    speed: number;
+    playing: boolean;
+    autoCuts: boolean;
+  } | null = null;
+  private replayBuffer = new ReplayBuffer();
+  private replayList: ReplayEntry[] = [];
+  private replayIdx = -1;
+  private theater: TheaterUI;
+  private replayCam: CameraMode = 'chase';
+  private replayCutHint = 0;
+  private replaySpd = { v: 0 };
+  private replayPos = new THREE.Vector3();
+  private replayQuat = new THREE.Quaternion();
+  /** Minimal CarState view of the replay car for the P1 rig in manual-cam theater mode. */
+  private replayFake: CarState = {
+    pos: new THREE.Vector3(),
+    quat: new THREE.Quaternion(),
+    vel: new THREE.Vector3(),
+    grounded: true,
+    offroad: false,
+    driftAmount: 0,
+    speed: 0,
+    forwardSpeed: 0,
+    trackIndex: 0,
+    trackDist: 0,
+    lateral: 0,
+    airborneTime: 0,
+    boostTime: 0,
+    wallHit: 0,
+    onSlick: false,
+    surfaceGrip: 1,
+    landedAt: 0,
+  };
+  private photoFrom: 'racing' | 'replay' = 'racing';
   private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean; daily: { dateKey: string; position: number; streak: number } | null; traffic: TrafficFinishData | null; weekly: WeeklyPanelData | null } | null = null;
   private friendGhost: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
   /** Decoded friend ghosts per track (from #g= imports this session + persisted save), so ghost battles survive reloads. */
@@ -313,6 +365,32 @@ class Game {
     this.touch.onPause = () => {
       if (this.state === 'racing' || this.state === 'countdown') this.pause();
     };
+
+    // ---------- Replay theater (v8 P8) ----------
+    this.theater = new TheaterUI();
+    document.getElementById('ui-root')!.append(this.theater.root);
+    this.theater.onPlayToggle = () => {
+      if (this.replay) {
+        this.replay.playing = !this.replay.playing;
+        this.theater.setPlaying(this.replay.playing);
+      }
+    };
+    this.theater.onSeek = (t) => this.seekReplay(t);
+    this.theater.onSeekStep = (d) => {
+      if (this.replay) this.seekReplay(this.replay.t + d);
+    };
+    this.theater.onScrubEnd = () => {};
+    this.theater.onSpeed = (s) => {
+      if (this.replay) {
+        this.replay.speed = s;
+        this.theater.setSpeed(s);
+      }
+    };
+    this.theater.onCamera = () => this.cycleReplayCam();
+    this.theater.onAutoCuts = (on) => this.setReplayAutoCuts(on);
+    this.theater.onExit = () => this.stopReplay();
+    this.theater.onPrev = () => this.openReplay(this.replayIdx - 1);
+    this.theater.onNext = () => this.openReplay(this.replayIdx + 1);
 
     this.loadTrackIntoScene(this.track);
     this.menu.show('title');
@@ -602,10 +680,12 @@ class Game {
 
   private enterPhoto(): void {
     if (this.state !== 'racing' && this.state !== 'replay') return;
+    this.photoFrom = this.state === 'replay' ? 'replay' : 'racing';
     this.photo = { yaw: Math.PI, pitch: 0.35, dist: 9, filterIdx: 0 };
     this.state = 'photo';
     this.hud.hide();
     this.touch.hide();
+    if (this.photoFrom === 'replay') this.theater.hide();
     if (!this.photoUi) {
       const ui = el('div', 'photo-ui');
       ui.innerHTML = `<div class="photo-hint">DRAG orbit · WHEEL zoom · P exit</div>`;
@@ -642,6 +722,16 @@ class Game {
     this.canvas.style.filter = '';
     this.photoCleanup?.();
     this.photoUi?.classList.add('hidden');
+    if (this.photoFrom === 'replay' && this.replay && this.replayCar) {
+      this.state = 'replay';
+      this.theater.show({ trackName: this.track.name, totalMs: this.replay.endMs, index: this.replayIdx, count: this.replayList.length });
+      this.theater.setPlaying(this.replay.playing);
+      this.theater.setSpeed(this.replay.speed);
+      this.theater.setCam(this.replayCam);
+      this.theater.setAutoCuts(this.replay.autoCuts);
+      this.pushTheaterTime();
+      return;
+    }
     this.state = 'racing';
     this.hud.show(this.track.name, this.save.trackSave(this.track.id).bestTimeMs, this.track.checkpoints.length);
     if (matchMedia('(pointer: coarse)').matches) this.touch.show();
@@ -684,8 +774,9 @@ class Game {
   }
 
   private updatePhoto(): void {
-    if (!this.photo || !this.car) return;
-    const carPos = this.car.state.pos;
+    if (!this.photo) return;
+    const carPos = this.photoFrom === 'replay' && this.replayCar ? this.replayCar.group.position : this.car?.state.pos;
+    if (!carPos) return;
     const cp = this.photo;
     const x = carPos.x + cp.dist * Math.cos(cp.pitch) * Math.sin(cp.yaw);
     const y = carPos.y + cp.dist * Math.sin(cp.pitch) + 1;
@@ -1268,6 +1359,12 @@ class Game {
       }
     } else if (ev === 'finish') {
       const r = payload as RaceEvents['finish'];
+      // v8 P8: keep the just-driven time-trial replay in the session buffer
+      // (same availability rule as the WATCH REPLAY button: time-trial only).
+      if (!this.rivalMode && !this.trafficMode) {
+        const rec = this.race?.lastLapSamples ?? [];
+        if (rec.length >= 10) this.replayBuffer.push({ trackId: this.track.id, samples: rec, timeMs: r.timeMs, dateMs: Date.now() });
+      }
       const achvBefore: RivalAchievementState = rivalAchievementState(this.save);
       if (r.knockout) {
         this.audio.crash();
@@ -1604,82 +1701,172 @@ class Game {
     if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily, lf.traffic, lf.weekly);
   }
 
+  // ---------- Replay theater (v8 P8) ----------
+
   private startReplay(): void {
-    const samples = this.race?.lastLapSamples ?? [];
-    if (samples.length < 10) return;
+    this.replayList = this.replayBuffer.entries.filter((e) => e.trackId === this.track.id);
+    if (this.replayList.length > 0) this.openReplay(this.replayList.length - 1);
+  }
+
+  /** Open (or cycle to) a replay; index wraps within the current track's session buffer. */
+  private openReplay(index: number): void {
+    const n = this.replayList.length;
+    if (n === 0) return;
+    const i = ((index % n) + n) % n;
+    const entry = this.replayList[i];
+    this.replayIdx = i;
     if (!this.replayCar) {
       this.replayCar = buildCarVisual(this.save.profile.paint, false, this.save.profile.body);
       this.trackGroup!.add(this.replayCar.group);
     }
     this.replayCar.group.visible = true;
+    this.replayCar.bodyGroup.visible = true;
     this.rivals?.setVisible(false);
-    this.replay = { samples, t: samples[0].t, camPos: new THREE.Vector3(), nextSwap: 0 };
+    const samples = entry.samples;
+    this.replay = {
+      samples,
+      t: samples[0].t,
+      startMs: samples[0].t,
+      endMs: samples[samples.length - 1].t + 800,
+      camPos: new THREE.Vector3(),
+      nextCut: 0,
+      speed: 1,
+      playing: true,
+      autoCuts: defaultAutoCuts(this.save.settings.reducedMotion),
+    };
+    this.replayCam = 'chase';
+    this.replayCutHint = 0;
     this.state = 'replay';
     this.menu.hideAll();
     this.hud.hide();
     this.touch.hide();
+    this.theater.show({ trackName: this.track.name, totalMs: this.replay.endMs, index: i, count: n });
+    this.theater.setPlaying(true);
+    this.theater.setSpeed(1);
+    this.theater.setCam('chase');
+    this.theater.setAutoCuts(this.replay.autoCuts);
+    this.applyReplayFrame(0);
   }
 
   private stopReplay(): void {
+    this.theater.hide();
     if (this.replayCar) this.replayCar.group.visible = false;
     this.replay = null;
+    this.rig.setMode(this.save.settings.cam);
     this.state = 'finished';
     const lf = this.lastFinish;
     if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily, lf.traffic, lf.weekly);
   }
 
+  /** Seek the playhead to t (ms sample-time) and re-derive the frame — one deterministic lookup. */
+  private seekReplay(tMs: number): void {
+    if (!this.replay) return;
+    this.replay.t = clampReplayTime(tMs, this.replay.startMs, this.replay.endMs);
+    if (this.replay.autoCuts) this.replay.nextCut = this.replay.t;
+    this.applyReplayFrame(0);
+    this.pushTheaterTime();
+  }
+
+  /** Deterministic render transform at the playhead; shared by playback and seeks. */
+  private applyReplayFrame(dt: number): void {
+    if (!this.replay || !this.replayCar) return;
+    const r = this.replay;
+    if (!sampleReplayAt(r.samples, r.t, this.replayPos, this.replayQuat, this.replaySpd)) return;
+    this.replayCar.group.position.copy(this.replayPos);
+    this.replayCar.group.quaternion.copy(this.replayQuat);
+    // wheels spin with SAMPLE-space speed scaled by the replay time scale (slow-mo = slow wheels)
+    this.replayCar.wheelSpin += (this.replaySpd.v / 0.34) * dt * r.speed;
+    for (const w of this.replayCar.wheels) w.rotation.x = this.replayCar.wheelSpin;
+    this.replayFake.pos.copy(this.replayPos);
+    this.replayFake.quat.copy(this.replayQuat);
+    this.replayFake.speed = this.replaySpd.v;
+  }
+
+  private pushTheaterTime(): void {
+    if (!this.replay) return;
+    this.theater.setTime(this.replay.t, this.replay.startMs, this.replay.endMs);
+  }
+
+  /** Manual camera cycle in theater: chase -> close -> hood; stops the director for this session. */
+  private cycleReplayCam(): void {
+    if (!this.replay) return;
+    this.replayCam = this.replayCam === 'chase' ? 'close' : this.replayCam === 'close' ? 'hood' : 'chase';
+    this.theater.setCam(this.replayCam);
+    if (this.replay.autoCuts) this.setReplayAutoCuts(false);
+    else {
+      this.rig.setMode(this.replayCam);
+      this.rig.snapBehind(this.replayFake);
+    }
+  }
+
+  private setReplayAutoCuts(on: boolean): void {
+    const r = this.replay;
+    if (!r) return;
+    this.theater.setAutoCuts(on);
+    if (r.autoCuts === on) return;
+    r.autoCuts = on;
+    if (on) {
+      r.nextCut = r.t + 400;
+    } else {
+      this.rig.setMode(this.replayCam);
+      this.rig.snapBehind(this.replayFake);
+    }
+  }
+
+  /** Director cut: flash + new trackside vantage near the playhead (existing v2.2 behavior). */
+  private cutReplayCamera(): void {
+    const r = this.replay;
+    if (!r || !this.replayCar || !this.curve) return;
+    const flash = el('div', 'cut-flash');
+    document.getElementById('ui-root')!.append(flash);
+    window.setTimeout(() => flash.remove(), 260);
+    this.theater.flashCut();
+    // hint from the playhead's own frame, not the parked player car — the v2.2 hint
+    // pinned cuts near the finish line once the hint window missed the replay car
+    const idx = this.curve.closestFrameIndex(this.replayCar.group.position, this.replayCutHint, 40);
+    this.replayCutHint = idx;
+    const f = this.curve.frames[idx];
+    const side = Math.random() > 0.5 ? 1 : -1;
+    r.camPos
+      .copy(f.pos)
+      .addScaledVector(f.binormal, side * (f.halfWidth + 8 + Math.random() * 6))
+      .addScaledVector(f.normal, 3.5 + Math.random() * 3);
+  }
+
   private updateReplay(dt: number): void {
     if (!this.replay || !this.replayCar) return;
-    const { samples } = this.replay;
-    this.replay.t += dt * 1000;
-    const t = this.replay.t;
-    const last = samples[samples.length - 1];
-    if (t >= last.t + 800) {
+    const r = this.replay;
+    this.theater.tickCut(performance.now());
+    if (r.playing && !this.theater.scrubbing) {
+      r.t = clampReplayTime(advanceReplayTime(r.t, dt * 1000, r.speed), r.startMs, r.endMs);
+    }
+    this.applyReplayFrame(dt);
+    // hood POV in the theater hides the replay body exactly like the P1 race hood cam
+    this.replayCar.bodyGroup.visible = !(this.rig.mode === 'hood' && !r.autoCuts);
+    this.pushTheaterTime();
+    if (r.playing && !this.theater.scrubbing && r.t >= r.endMs) {
       this.stopReplay();
       return;
     }
-    let lo = 0;
-    let hi = samples.length - 1;
-    if (t <= samples[0].t) {
-      lo = 0;
-      hi = 1;
-    } else {
-      while (lo < hi - 1) {
-        const mid = (lo + hi) >> 1;
-        if (samples[mid].t < t) lo = mid;
-        else hi = mid;
+    if (r.autoCuts) {
+      if (r.t >= r.nextCut) {
+        r.nextCut = r.t + 6500;
+        this.cutReplayCamera();
       }
+      const cam = this.rig.camera;
+      // a big jump (seek past a cut boundary) snaps instead of lerping across the map
+      if (cam.position.distanceTo(r.camPos) > 60) cam.position.copy(r.camPos);
+      else cam.position.lerp(r.camPos, 1 - Math.exp(-2.2 * dt));
+      cam.up.set(0, 1, 0);
+      cam.lookAt(this.replayCar.group.position);
+      cam.fov = 55;
+      cam.updateProjectionMatrix();
+    } else {
+      this.rig.setLookBack(false);
+      this.rig.boostKick = 0;
+      this.rig.speedFovEnabled = !this.save.settings.reducedMotion;
+      this.rig.update(dt, this.replayFake);
     }
-    const a = samples[lo];
-    const b = samples[hi];
-    const k = Math.max(0, Math.min(1, (t - a.t) / Math.max(1, b.t - a.t)));
-    this.replayCar.group.position.copy(a.pos).lerp(b.pos, k);
-    this.replayCar.group.quaternion.copy(a.quat).slerp(b.quat, k);
-    const wheels = this.replayCar.wheels;
-    const spd = a.pos.distanceTo(b.pos) / Math.max(0.016, (b.t - a.t) / 1000);
-    this.replayCar.wheelSpin += (spd / 0.34) * dt;
-    for (const w of wheels) w.rotation.x = this.replayCar.wheelSpin;
-
-    if (t >= this.replay.nextSwap) {
-      this.replay.nextSwap = t + 6500;
-      const flash = el('div', 'cut-flash');
-      document.getElementById('ui-root')!.append(flash);
-      window.setTimeout(() => flash.remove(), 260);
-      const carPos = this.replayCar.group.position;
-      const idx = this.curve!.closestFrameIndex(carPos, this.car!.state.trackIndex, 40);
-      const f = this.curve!.frames[idx];
-      const side = Math.random() > 0.5 ? 1 : -1;
-      this.replay.camPos
-        .copy(f.pos)
-        .addScaledVector(f.binormal, side * (f.halfWidth + 8 + Math.random() * 6))
-        .addScaledVector(f.normal, 3.5 + Math.random() * 3);
-    }
-    const cam = this.rig.camera;
-    cam.position.lerp(this.replay.camPos, 1 - Math.exp(-2.2 * dt));
-    cam.up.set(0, 1, 0);
-    cam.lookAt(this.replayCar.group.position);
-    cam.fov = 55;
-    cam.updateProjectionMatrix();
   }
 
   private frame = (now: number): void => {
@@ -2138,6 +2325,7 @@ declare global {
       unlockPaint: (id?: string) => object;
       startTutorial: () => object;
       tutorial: () => object;
+      replay: (cmd?: 'open' | 'seek' | 'speed' | 'cam' | 'cuts' | 'prev' | 'next' | 'pause' | 'play', arg?: number | boolean) => object;
     };
   }
 }
@@ -2381,6 +2569,63 @@ window.__race2 = {
         done: game['save'].settings.tutorialDone === true,
         skipped: game['save'].settings.tutorialSkipped === true,
       },
+    };
+  },
+  replay: (cmd?: 'open' | 'seek' | 'speed' | 'cam' | 'cuts' | 'prev' | 'next' | 'pause' | 'play', arg?: number | boolean) => {
+    interface ReplayState {
+      t: number;
+      startMs: number;
+      endMs: number;
+      speed: number;
+      playing: boolean;
+      autoCuts: boolean;
+    }
+    const g = game as unknown as {
+      state: string;
+      startReplay: () => void;
+      seekReplay: (tMs: number) => void;
+      cycleReplayCam: () => void;
+      setReplayAutoCuts: (on: boolean) => void;
+      openReplay: (index: number) => void;
+      replayIdx: number;
+      replayList: { trackId: string; timeMs: number; samples: unknown[] }[];
+      replayBuffer: { entries: { trackId: string; timeMs: number; samples: unknown[] }[] };
+      replay: ReplayState | null;
+      replayCam: 'chase' | 'close' | 'hood';
+      theater: { onSpeed: (s: number) => void; setPlaying: (p: boolean) => void };
+      save: { settings: { reducedMotion: boolean } };
+    };
+    if (cmd === 'open') {
+      if (g.state !== 'finished') return { error: 'not-finished' };
+      g.startReplay();
+    } else if (cmd === 'seek' && typeof arg === 'number') g.seekReplay(arg);
+    else if (cmd === 'speed' && typeof arg === 'number' && (REPLAY_SPEEDS as readonly number[]).includes(arg)) g.theater.onSpeed(arg);
+    else if (cmd === 'cam') g.cycleReplayCam();
+    else if (cmd === 'cuts' && typeof arg === 'boolean') g.setReplayAutoCuts(arg);
+    else if (cmd === 'prev') g.openReplay(g.replayIdx - 1);
+    else if (cmd === 'next') g.openReplay(g.replayIdx + 1);
+    else if (cmd === 'pause' || cmd === 'play') {
+      const rp = g.replay;
+      if (rp) {
+        rp.playing = cmd === 'play';
+        g.theater.setPlaying(rp.playing);
+      }
+    }
+    const r = g.replay;
+    return {
+      available: g.replayList.length > 0,
+      buffer: g.replayBuffer.entries.map((e) => ({ trackId: e.trackId, timeMs: e.timeMs, samples: e.samples.length })),
+      count: g.replayList.length,
+      index: g.replayIdx,
+      open: !!r,
+      state: g.state,
+      tMs: r ? Math.round(r.t) : null,
+      totalMs: r ? Math.round(r.endMs) : null,
+      playing: r?.playing ?? null,
+      speed: r?.speed ?? null,
+      cam: g['replayCam'],
+      autoCuts: r?.autoCuts ?? null,
+      reducedMotion: g.save.settings.reducedMotion,
     };
   },
 };
