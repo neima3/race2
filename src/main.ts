@@ -1073,7 +1073,7 @@ class Game {
       modeHinted = true;
     } else if (this.rivalMode && !this.knockoutMode && !this.save.settings.hintRival) {
       this.save.updateSettings({ hintRival: true });
-      this.hud.showContextHint('FINISH P2 OR BETTER TO SCORE POINTS');
+      this.hud.showContextHint('3 RIVALS — BEAT THEM TO THE LINE');
       modeHinted = true;
     }
     if (!modeHinted && !this.save.settings.hintCam) {

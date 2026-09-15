@@ -78,9 +78,17 @@ export class GarageSystem {
   }
 
   renderPreview(canvas: HTMLCanvasElement): void {
-    if (!this.renderer || !this.scene || !this.camera) {
+    // menus rebuilds the garage screen (and this canvas) on every open; rebind the
+    // renderer when the canvas element differs or the preview renders off-screen
+    if (this.renderer && this.renderer.domElement !== canvas) {
+      this.renderer.dispose();
+      this.renderer = null;
+    }
+    if (!this.renderer) {
       this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    }
+    if (!this.scene || !this.camera) {
       this.scene = new THREE.Scene();
       this.camera = new THREE.PerspectiveCamera(40, canvas.width / canvas.height, 0.1, 50);
       this.camera.position.set(3.6, 2.2, 4.6);

@@ -147,6 +147,9 @@ button {
 .hud-cp-wrap {
   justify-self: end;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 2px;
   gap: 8px;
   align-items: center;
   padding-right: 0;
@@ -1321,6 +1324,7 @@ button {
   font-size: 15px;
   color: var(--accent-2);
   letter-spacing: 0.1em;
+  white-space: nowrap;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
