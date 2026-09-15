@@ -26,6 +26,7 @@ export interface Settings {
   touchSteer: TouchSteerMode;
   showGhost: boolean;
   reducedMotion: boolean;
+  hudContrast?: boolean;
   shakeIntensity: number;
   leftyTouch: boolean;
   onboarded?: boolean;

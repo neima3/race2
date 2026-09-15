@@ -226,7 +226,7 @@ export class MenuManager {
     });
     buttons.append(play, daily, weekly, career, garage, stats, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
-    const credits = el('div', 'title-credits', `v2.2.0 — built with Three.js · © 2026 neima.me`);
+    const credits = el('div', 'title-credits', `v2.3.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
     return screen;
   }
@@ -446,6 +446,13 @@ export class MenuManager {
         { value: 'off', label: 'Off' },
         { value: 'on', label: 'On' },
       ], (v) => this.patchSettings({ reducedMotion: v === 'on' })),
+    );
+    row(
+      'HIGH CONTRAST HUD',
+      select(s.hudContrast ? 'on' : 'off', [
+        { value: 'off', label: 'Off' },
+        { value: 'on', label: 'On' },
+      ], (v) => this.patchSettings({ hudContrast: v === 'on' })),
     );
     row(
       'CAMERA SHAKE',

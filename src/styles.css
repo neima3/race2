@@ -19,6 +19,17 @@
   --safe-right: env(safe-area-inset-right, 0px);
 }
 
+/* High-contrast HUD (settings.hudContrast): brighter accents + solid chip fills so
+   readouts survive bright skies (alpine day) and dark scenes (neon night) alike. */
+:root.hud-contrast {
+  --accent: #8df6ff;
+  --accent-2: #ffe066;
+  --ink: #ffffff;
+  --muted: rgba(255, 255, 255, 0.85);
+  --panel: rgba(8, 11, 22, 0.94);
+  --panel-border: rgba(141, 246, 255, 0.55);
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {

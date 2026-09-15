@@ -288,6 +288,7 @@ class Game {
     this.touch = new TouchControls(this.input);
     this.menu = new MenuManager(this.save, TRACKS);
     if (this.save.settings.leftyTouch) this.touch.root.classList.add('touch-lefty');
+    if (this.save.settings.hudContrast) document.documentElement.classList.add('hud-contrast');
     document.getElementById('ui-root')!.append(this.hud.root, this.touch.root, this.menu.root);
 
     this.menu.onPlayTrack = (t) => {
@@ -361,6 +362,7 @@ class Game {
       this.rig.fovPref = s.fov;
       this.rig.setMode(s.cam);
       this.touch.root.classList.toggle('touch-lefty', s.leftyTouch);
+      document.documentElement.classList.toggle('hud-contrast', s.hudContrast === true);
     };
     this.touch.onPause = () => {
       if (this.state === 'racing' || this.state === 'countdown') this.pause();
