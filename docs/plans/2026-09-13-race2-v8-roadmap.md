@@ -2,7 +2,7 @@
 
 ## Progress tracker
 - [x] Phase 1: Camera suite — chase/near/bumper modes + FOV slider
-- [ ] Phase 2: Ghost battle — race 3 ghosts at once (PB vs dev vs friend)
+- [x] Phase 2: Ghost battle — race 3 ghosts at once (PB vs dev vs friend)
 - [ ] Phase 3: Traffic rush — dodge traffic, near-miss bonuses, per-track best
 - [ ] Phase 4: Weekly event — seeded 3-race modifier cup, streaks, sharing
 - [ ] Phase 5: Paint unlocks + driver stats page
@@ -18,7 +18,7 @@
 
 ## Ground rules
 - ALL browser testing muted (`?mute=1`, webdriver auto-mute). Never unmute.
-- Gates per phase (all must pass before ticking): `npm run typecheck && npm run build`, laps 14/14, rivals 20/20, career 119/119, share 34/34, knockout 50/50, daily 59/59, probe 24/24, allocs PASS. New tests from new phases join the permanent gate list.
+- Gates per phase (all must pass before ticking): `npm run typecheck && npm run build`, laps 14/14, rivals 20/20, career 119/119, share 34/34, knockout 50/50, daily 59/59, probe 24/24, allocs PASS. New tests from new phases join the permanent gate list (P1: camera 28/28; P2: ghostbattle 39/39, run with `--expose-gc`).
 - Physics conventions sacred (AGENTS.md). Steering-direction check after any car.ts/curve.ts touch. Time-trial semantics (PBs/ghosts/medals) unchanged except where a phase explicitly extends them (P2).
 - Save: additive default-merge on the versioned store; never wipe/rename keys.
 - Commit per phase `v8 Phase N: <summary>`; do NOT push (P10 pushes + deploys). Evidence in `qa/v8-phaseN/` (never committed).

@@ -16,6 +16,8 @@ export interface Settings {
   cam: CameraMode;
   /** FOV preference 60-100 (slider value; CHASE/CLOSE base = fov - 10, HOOD forces 70). */
   fov: number;
+  /** Max simultaneous time-trial ghosts (1-3). */
+  ghosts: number;
   music: boolean;
   sfx: boolean;
   steeringSensitivity: number;
@@ -126,6 +128,7 @@ const DEFAULT_SETTINGS: Settings = {
   quality: 'auto',
   cam: 'chase',
   fov: 72,
+  ghosts: 3,
   music: true,
   sfx: true,
   steeringSensitivity: 1.0,
@@ -344,6 +347,10 @@ export class SaveManager {
           typeof merged.fov === 'number' && Number.isFinite(merged.fov)
             ? Math.min(100, Math.max(60, Math.round(merged.fov)))
             : DEFAULT_SETTINGS.fov;
+        merged.ghosts =
+          typeof merged.ghosts === 'number' && Number.isInteger(merged.ghosts) && merged.ghosts >= 1 && merged.ghosts <= 3
+            ? merged.ghosts
+            : DEFAULT_SETTINGS.ghosts;
         delete (merged as { camera?: unknown }).camera;
         return merged;
       }

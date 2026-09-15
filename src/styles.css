@@ -575,6 +575,63 @@ button {
 
 .hud-ghost-tag.hidden { display: none; }
 
+/* ---------- Ghost battle (v8 P2) ---------- */
+
+.hud-ghost-deltas {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 20px;
+}
+
+.hud-ghost-delta {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-height: 18px;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
+}
+
+.hud-ghost-delta.hidden { display: none; }
+
+.hud-ghost-delta .gd-label {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  opacity: 0.95;
+}
+
+.hud-ghost-delta .gd-value.ahead { color: #7dff6e; }
+.hud-ghost-delta .gd-value.behind { color: #ff6e7d; }
+
+.hud-battle-rank {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--accent, #29e6ff);
+  border: 1px solid rgba(41, 230, 255, 0.5);
+  border-radius: 999px;
+  padding: 2px 10px;
+  margin-top: 4px;
+  width: fit-content;
+}
+
+.hud-battle-rank.hidden { display: none; }
+
+.finish-ghosts { margin-top: 6px; }
+
+.ghost-finish-row .ghost-finish-label {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+}
+
 .friend-panel { width: min(420px, 92vw); align-items: center; text-align: center; }
 .friend-track {
   font-family: var(--font-display);

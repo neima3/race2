@@ -23,7 +23,7 @@ import { el } from './ui/common';
 import { buildEnvironment, type Environment } from './render/environment';
 import { ParticleSystem, RainSystem } from './render/particles';
 import { CameraRig } from './render/camera';
-import { RaceController, deserializeGhost, type GhostSample, type RaceEvents } from './game/race';
+import { RaceController, deserializeGhost, GHOST_COLORS, type GhostLabel, type GhostSample, type RaceEvents } from './game/race';
 import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, ShareError } from './game/share';
 import { buildDailyLink, dailyFor, parseDailyLink, todayKey, DAILY_LAPS, type DailyShareLink } from './game/daily';
 import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
@@ -45,6 +45,10 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 const kmh = 3.6;
 const EMPTY_DOTS: { x: number; z: number; paint: number }[] = [];
+
+function cssHex(paint: number): string {
+  return '#' + paint.toString(16).padStart(6, '0');
+}
 
 function parseVariantParam(v: string | null): TrackVariant | null {
   return v === 'day' || v === 'dusk' || v === 'night' || v === 'rain' ? v : null;
@@ -72,7 +76,7 @@ class Game {
   private car: CarPhysics | null = null;
   private sceneBody: 'standard' | 'aero' | 'tank' = 'standard';
   private carVisual: CarVisual | null = null;
-  private ghostVisual: CarVisual | null = null;
+  private ghostVisuals: CarVisual[] = [];
   private race: RaceController | null = null;
   private rivals: RivalManager | null = null;
   private rivalMode = false;
@@ -144,7 +148,22 @@ class Game {
   private replay: { samples: { t: number; pos: THREE.Vector3; quat: THREE.Quaternion }[]; t: number; camPos: THREE.Vector3; nextSwap: number } | null = null;
   private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean; daily: { dateKey: string; position: number; streak: number } | null } | null = null;
   private friendGhost: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
+  /** Decoded friend ghosts per track (from #g= imports this session + persisted save), so ghost battles survive reloads. */
+  private friendGhostCache: Record<string, { timeMs: number; samples: GhostSample[] }> = {};
   private friendRaceActive = false;
+  private ghostDotBuf: { x: number; z: number; color: string }[] = [
+    { x: 0, z: 0, color: '#fff' },
+    { x: 0, z: 0, color: '#fff' },
+    { x: 0, z: 0, color: '#fff' },
+  ];
+  private ghostDotView: { x: number; z: number; color: string }[] = this.ghostDotBuf;
+  private ghostRatioBuf: (number | null)[] = [null, null, null];
+  private ghostPosBuf: THREE.Vector3[] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  private ghostQuatBuf: THREE.Quaternion[] = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()];
+  /** Car paint per ghost label; PB keeps the translucent player paint (existing look). */
+  private ghostCarPaint(label: GhostLabel): number {
+    return label === 'PB' ? this.save.profile.paint : label === 'FRIEND' ? GHOST_COLORS.FRIEND : GHOST_COLORS.BOT;
+  }
   private shareBusy = false;
   private dailyRace: { dateKey: string } | null = null;
   private canvasEl: HTMLCanvasElement = canvas;
@@ -228,7 +247,7 @@ class Game {
           this.rebuildScene();
         }
       }
-      if (this.ghostVisual) this.ghostVisual.group.visible = s.showGhost;
+      for (const gv of this.ghostVisuals) gv.group.visible = s.showGhost && gv.group.visible;
       this.rig.fovPref = s.fov;
       this.rig.setMode(s.cam);
       this.touch.root.classList.toggle('touch-lefty', s.leftyTouch);
@@ -251,6 +270,21 @@ class Game {
     this.lastT = performance.now();
     requestAnimationFrame(this.frame);
     void this.checkShareHash();
+    this.decodeSavedFriendGhosts();
+  }
+
+  /** Persisted friend ghosts decode async (deflate); populate the cache so ghost battles survive reloads. */
+  private decodeSavedFriendGhosts(): void {
+    for (const [trackId, entry] of Object.entries(this.save.allSaves.friendGhosts)) {
+      if (this.friendGhostCache[trackId]) continue;
+      void decodeGhostCode(entry.code)
+        .then((samples) => {
+          if (samples.length > 1) this.friendGhostCache[trackId] = { timeMs: entry.timeMs, samples };
+        })
+        .catch(() => {
+          /* corrupted saved ghost — ignore */
+        });
+    }
   }
 
   private async shareGhost(track: TrackDef): Promise<void> {
@@ -287,7 +321,9 @@ class Game {
   }
 
   private raceFriendGhost(track: TrackDef): void {
-    if (!this.friendGhost || this.friendGhost.trackId !== track.id) return;
+    const cached = this.friendGhostCache[track.id];
+    const legacyMatch = this.friendGhost && this.friendGhost.trackId === track.id;
+    if (!cached && !legacyMatch) return;
     this.menu.driftAttack = false;
     this.menu.rivalsMode = false;
     this.menu.knockoutMode = false;
@@ -362,6 +398,7 @@ class Game {
       const samples = await decodeGhostCode(link.code);
       if (samples.length < 2) throw new ShareError('empty ghost');
       this.friendGhost = { trackId: def.id, timeMs: link.timeMs, samples };
+      this.friendGhostCache[def.id] = { timeMs: link.timeMs, samples };
       this.save.setFriendGhost(def.id, { code: link.code, timeMs: link.timeMs, dateMs: Date.now() });
       this.menu.showFriendChallenge(def, link.timeMs);
     } catch {
@@ -582,7 +619,11 @@ class Game {
   }
 
   private applyPlayerStyle(_paint: number, body: 'standard' | 'aero' | 'tank'): void {
-    this.garage.applyTo(this.carVisual!, this.ghostVisual ?? null);
+    this.garage.applyTo(this.carVisual!, null);
+    for (let i = 0; i < this.ghostVisuals.length; i++) {
+      const gt = this.race?.ghostTrack(i);
+      this.ghostVisuals[i].setPaint(gt ? this.ghostCarPaint(gt.label) : this.save.profile.paint);
+    }
     if (this.track && this.sceneBody !== body) {
       this.loadTrackIntoScene(this.track);
       if (this.state === 'menu') this.car!.placeAtFrame(0, 8);
@@ -654,9 +695,13 @@ class Game {
     });
     this.trackGroup.add(this.carVisual.group);
 
-    this.ghostVisual = buildCarVisual(this.save.profile.paint, true);
-    this.ghostVisual.group.visible = false;
-    this.trackGroup.add(this.ghostVisual.group);
+    this.ghostVisuals = [];
+    for (let i = 0; i < 3; i++) {
+      const gv = buildCarVisual(this.save.profile.paint, true);
+      gv.group.visible = false;
+      this.trackGroup.add(gv.group);
+      this.ghostVisuals.push(gv);
+    }
 
     this.race = new RaceController(this.car, curve, def, this.save, <K extends keyof RaceEvents>(
       ev: K,
@@ -733,8 +778,12 @@ class Game {
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
     this.race!.totalLaps = this.rivalMode ? (this.knockoutMode ? KNOCKOUT_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS) : 1;
     this.race!.writesRecords = !this.rivalMode;
-    const friendActive = !this.rivalMode && !!this.friendGhost && this.friendGhost.trackId === def.id;
-    this.race!.useExternalGhost(friendActive ? this.friendGhost!.samples : null);
+    const cachedFriend = this.friendGhostCache[def.id] ?? null;
+    const legacyFriend = this.friendGhost && this.friendGhost.trackId === def.id ? this.friendGhost : null;
+    const friendEntry = cachedFriend ?? legacyFriend;
+    const friendActive = !this.rivalMode && !!friendEntry;
+    this.race!.maxGhosts = this.rivalMode ? 0 : this.save.settings.ghosts;
+    this.race!.useExternalGhost(friendActive ? friendEntry!.samples : null);
     this.friendRaceActive = friendActive;
     this.hud.setGhostTag(friendActive ? 'FRIEND' : null);
     let modeHinted = false;
@@ -755,7 +804,15 @@ class Game {
     this.hud.setLapCounter(this.rivalMode ? `LAP ${this.race!.lapNumber}/${this.race!.totalLaps}` : null);
     this.ringsHit.clear();
     this.driftScore = 0;
-    this.ghostVisual!.group.visible = this.save.settings.showGhost && this.race!.ghostActive;
+    const ghostN = this.race!.ghostCount();
+    for (let i = 0; i < this.ghostVisuals.length; i++) {
+      const gv = this.ghostVisuals[i];
+      const gt = this.race!.ghostTrack(i);
+      if (gt) gv.setPaint(this.ghostCarPaint(gt.label));
+      gv.group.visible = !!gt && this.save.settings.showGhost;
+    }
+    this.hud.setGhostDeltaCount(ghostN);
+    this.hud.setBattleRank(this.rivalMode || ghostN === 0 ? null : { rank: ghostN + 1, of: ghostN + 1 });
     this.hud.clearCenter();
   }
 
@@ -786,7 +843,7 @@ class Game {
     this.audio.stopEngine();
     this.audio.stopAmbience();
     if (this.car) this.car.placeAtFrame(0, 8);
-    if (this.ghostVisual) this.ghostVisual.group.visible = false;
+    for (const gv of this.ghostVisuals) gv.group.visible = false;
     this.rivals?.setVisible(false);
     this.rig.snapBehind(this.car!.state);
   }
@@ -1448,13 +1505,17 @@ class Game {
     }
 
     if (this.state === 'racing') {
-      const gh = this.race!.ghostSampleAt(this.race!.elapsedMs);
-      if (gh && this.save.settings.showGhost) {
-        this.ghostVisual!.group.visible = true;
-        this.ghostVisual!.group.position.copy(gh.pos);
-        this.ghostVisual!.group.quaternion.copy(gh.quat);
-      } else {
-        this.ghostVisual!.group.visible = false;
+      const ghostN = this.race!.ghostCount();
+      const elapsed = this.race!.elapsedMs;
+      for (let i = 0; i < this.ghostVisuals.length; i++) {
+        const gv = this.ghostVisuals[i];
+        if (i < ghostN && this.save.settings.showGhost && this.race!.ghostSampleInto(elapsed, i, this.ghostPosBuf[i], this.ghostQuatBuf[i])) {
+          gv.group.visible = true;
+          gv.group.position.copy(this.ghostPosBuf[i]);
+          gv.group.quaternion.copy(this.ghostQuatBuf[i]);
+        } else {
+          gv.group.visible = false;
+        }
       }
 
       if (s.driftAmount > 0.32 && s.grounded && s.speed > 14 && Math.random() < 0.75) {
@@ -1506,7 +1567,7 @@ class Game {
       }
       this.hud.showRespawnHint(this.offroadTime > 1.5 && (this.state === 'racing' || this.state === 'countdown'));
 
-      const liveDelta = this.race!.ghostActive ? this.race!.liveGhostDelta(s.trackDist, this.race!.elapsedMs) : null;
+      const liveDelta = null;
       const speedRatio = Math.min(1, Math.abs(s.forwardSpeed) / 58);
       const sl = document.getElementById('speedlines');
       if (sl) {
@@ -1526,7 +1587,17 @@ class Game {
         this.track.checkpoints.length,
         liveDelta,
       );
-      this.hud.updateProgress(s.trackDist / this.curve!.length, this.race!.ghostDistAt(this.race!.elapsedMs) === null ? null : (this.race!.ghostDistAt(this.race!.elapsedMs) as number) / this.curve!.length);
+      for (let i = 0; i < ghostN; i++) {
+        const gt = this.race!.ghostTrack(i)!;
+        this.hud.setGhostDelta(i, gt.label, cssHex(gt.color), this.race!.liveGhostDelta(s.trackDist, elapsed, i));
+      }
+      this.hud.setBattleRank(this.rivalMode || ghostN === 0 ? null : this.race!.battleRank(s.trackDist, elapsed));
+      for (let i = 0; i < ghostN; i++) {
+        const gd = this.race!.ghostDistAt(elapsed, i);
+        this.ghostRatioBuf[i] = gd === null ? null : gd / this.curve!.length;
+      }
+      for (let i = ghostN; i < this.ghostRatioBuf.length; i++) this.ghostRatioBuf[i] = null;
+      this.hud.updateProgress(s.trackDist / this.curve!.length, this.ghostRatioBuf);
       this.audio.updateEngine(Math.min(1, Math.abs(s.forwardSpeed) / 58), input.throttle, !s.grounded);
       this.audio.setSpeedIntensity(Math.min(1, Math.abs(s.forwardSpeed) / 58), s.boostTime > 0);
     }
@@ -1545,18 +1616,26 @@ class Game {
       this.mapAcc += dt;
       if (this.mapAcc >= 1 / 30) {
         this.mapAcc = 0;
-        const gh =
-          this.race!.ghostActive && this.save.settings.showGhost ? this.race!.ghostSampleAt(this.race!.elapsedMs) : null;
+        const ghostN = this.race!.ghostCount();
+        const showDots = this.save.settings.showGhost;
+        for (let i = 0; i < ghostN; i++) {
+          const gt = this.race!.ghostTrack(i)!;
+          const found = showDots && this.race!.ghostSampleInto(this.race!.elapsedMs, i, this.ghostPosBuf[i], this.ghostQuatBuf[i]);
+          this.ghostDotBuf[i].x = found ? this.ghostPosBuf[i].x : 0;
+          this.ghostDotBuf[i].z = found ? this.ghostPosBuf[i].z : 0;
+          this.ghostDotBuf[i].color = cssHex(gt.color);
+        }
+        this.ghostDotView.length = showDots ? ghostN : 0;
         this.hud.minimap.update(
           this.car!.state.pos,
           this.rivalMode && this.rivals ? this.rivals.dotPositions() : EMPTY_DOTS,
-          gh ? gh.pos : null,
+          this.ghostDotView,
         );
       }
     }
 
     if (this.state === 'finished') {
-      const gh = this.race!.ghostSampleAt(this.race!.elapsedMs);
+      const gh = this.race!.ghostSampleAt(this.race!.elapsedMs, 0);
       void gh;
     }
 
@@ -1631,6 +1710,7 @@ declare global {
       startDaily: () => object;
       daily: () => object;
       audioProbe: () => object;
+      ghosts: () => object;
       cam: (mode?: 'chase' | 'close' | 'hood') => 'chase' | 'close' | 'hood';
     };
   }
@@ -1789,6 +1869,18 @@ window.__race2 = {
     return { today: todayKey(), save: save.daily, lastFinish: game['lastFinish']?.daily ?? null };
   },
   audioProbe: () => game['audio'].audioProbe(),
+  ghosts: () => {
+    const race = game['race'];
+    if (!race) return { active: 0, tracks: [] };
+    const tracks = race.ghostTracks().map((g, i) => ({
+      index: i,
+      label: g.label,
+      color: g.color,
+      samples: g.samples.length,
+      lapMs: Math.round(g.samples[g.samples.length - 1].t),
+    }));
+    return { active: race.ghostCount(), maxGhosts: race.maxGhosts, settings: game['save'].settings.ghosts, tracks };
+  },
   cam: (mode?: 'chase' | 'close' | 'hood') => {
     if (mode === 'chase' || mode === 'close' || mode === 'hood') {
       game['rig'].setMode(mode);

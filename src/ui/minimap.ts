@@ -98,7 +98,7 @@ export class Minimap {
     ctx.fill();
   }
 
-  update(player: { x: number; z: number }, rivals: MinimapDot[], ghost: { x: number; z: number } | null): void {
+  update(player: { x: number; z: number }, rivals: MinimapDot[], ghosts: { x: number; z: number; color: string }[]): void {
     const ctx = this.ctx;
     if (!this.outline) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -114,7 +114,7 @@ export class Minimap {
       ctx.strokeStyle = this.accentCss;
       ctx.stroke(this.notch);
     }
-    if (ghost) this.dot(this.px(ghost.x), this.py(ghost.z), 2.6, 'rgba(255, 255, 255, 0.75)');
+    for (const g of ghosts) this.dot(this.px(g.x), this.py(g.z), 2.6, g.color);
     for (const r of rivals) this.dot(this.px(r.x), this.py(r.z), 3, cssHex(r.paint));
     const px = this.px(player.x);
     const py = this.py(player.z);

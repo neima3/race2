@@ -383,6 +383,14 @@ export class MenuManager {
       ], (v) => this.patchSettings({ sfx: v === 'on' })),
     );
     row(
+      'GHOSTS',
+      select(String(s.ghosts), [
+        { value: '1', label: '1' },
+        { value: '2', label: '2' },
+        { value: '3', label: '3' },
+      ], (v) => this.patchSettings({ ghosts: Math.max(1, Math.min(3, parseInt(v, 10) || 3)) })),
+    );
+    row(
       'GHOST CAR',
       select(s.showGhost ? 'on' : 'off', [
         { value: 'on', label: 'On' },
@@ -896,6 +904,17 @@ export class MenuManager {
           })()
         : '';
     const deltaTable = deltaRows ? `<div class="finish-deltas">${deltaRows}</div>` : '';
+    const ghostRows = rivalMode
+      ? ''
+      : (result.ghostResults ?? [])
+          .map(
+            (g) =>
+              `<div class="delta-row ghost-finish-row"><span class="ghost-finish-label" style="color:${cssHex(g.color)}">${g.label}</span><span></span><span class="${
+                g.deltaMs <= 0 ? 'delta-ahead' : 'delta-behind'
+              }">${g.deltaMs <= 0 ? 'BEAT' : 'LOST'} BY ${(Math.abs(g.deltaMs) / 1000).toFixed(2)}s</span></div>`,
+          )
+          .join('');
+    const ghostTable = ghostRows ? `<div class="finish-deltas finish-ghosts"><div class="fh-title">GHOST BATTLE</div>${ghostRows}</div>` : '';
     const history = rivalMode ? [] : this.save.trackSave(track.id).history.slice(0, 5);
     const historyHtml =
       history.length > 1 && driftScore === null
@@ -918,6 +937,7 @@ export class MenuManager {
       ${driftHtml}
       ${bestHtml}
       ${deltaTable}
+      ${ghostTable}
       ${historyHtml}
     `;
     if (rivalMode) {

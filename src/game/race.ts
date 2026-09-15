@@ -24,6 +24,7 @@ export interface FinishResult {
   splitDetail: { splitMs: number; deltaMs: number | null }[];
   isRecordLapCount?: number;
   knockout?: { position: number };
+  ghostResults?: GhostFinishRow[];
 }
 
 export interface RaceEvents {
@@ -43,6 +44,26 @@ export interface GhostSample {
   t: number;
   pos: THREE.Vector3;
   quat: THREE.Quaternion;
+}
+
+export type GhostLabel = 'PB' | 'FRIEND' | 'BOT';
+
+/** Chip/dot color per ghost kind (car paint is chosen per label in main.ts). */
+export const GHOST_COLORS: Record<GhostLabel, number> = { PB: 0xffffff, FRIEND: 0xffb52e, BOT: 0x8d96a5 };
+
+export interface GhostTrack {
+  samples: GhostSample[];
+  dists: number[];
+  cpSplits: number[];
+  label: GhostLabel;
+  color: number;
+}
+
+export interface GhostFinishRow {
+  label: GhostLabel;
+  color: number;
+  /** player time minus ghost lap time; negative = player beat the ghost */
+  deltaMs: number;
 }
 
 const GHOST_INTERVAL_MS = 1000 / 30;
@@ -103,10 +124,10 @@ export class RaceController {
   private maxProgress = 0;
   private pads: PadState = { lastBoostIndex: -1, boostCooldown: 0 };
   private recording: GhostSample[] = [];
-  private ghost: GhostSample[] = [];
+  private ghosts: GhostTrack[] = [];
   private externalGhost: GhostSample[] | null = null;
-  private ghostDists: number[] = [];
-  private ghostCpSplits: number[] = [];
+  /** Max simultaneous ghosts (from the GHOSTS setting); capped at 3. */
+  maxGhosts = 3;
   ghostActive = false;
   checkpointSplits: number[] = [];
   controlsEnabled = false;
@@ -139,52 +160,89 @@ export class RaceController {
     this.lapOffset = this.car.state.trackDist > this.curve.length * 0.5 ? -1 : 0;
     this.progressDatum = this.lapOffset * this.curve.length + this.car.state.trackDist;
     if (this.writesRecords) {
-      if (this.externalGhost) {
-        this.ghost = this.externalGhost;
-      } else {
-        const playerGhost = this.save.trackSave(this.def.id).ghost;
-        const devGhost = DEV_GHOSTS[this.def.id];
-        const ghostData = playerGhost ?? devGhost ?? null;
-        this.ghost = ghostData ? deserializeGhost(ghostData) : [];
-      }
+      this.ghosts = this.loadGhostTracks();
     } else {
-      this.ghost = [];
+      this.ghosts = [];
     }
-    this.ghostActive = this.ghost.length > 1;
-    this.ghostDists = [];
-    this.ghostCpSplits = [];
-    if (this.ghostActive) {
-      const q = { index: 0, frame: { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 }, lateral: 0, vertical: 0, longitudinal: 0, dist: 0 };
-      let hint = 0;
-      for (const sample of this.ghost) {
-        this.curve.surfaceQuery(sample.pos, hint, q);
-        hint = q.index;
-        this.ghostDists.push(q.dist);
-      }
-      for (const cp of this.def.checkpoints) {
-        let split: number | null = null;
-        for (let i = 1; i < this.ghostDists.length; i++) {
-          const prev = this.ghostDists[i - 1];
-          const curr = this.ghostDists[i];
-          if (prev < cp.dist && curr >= cp.dist && curr - prev < this.curve.length * 0.5) {
-            split = this.ghost[i].t;
-            break;
-          }
+    this.ghostActive = this.ghosts.length > 0;
+  }
+
+  /**
+   * Slot filling: up to `maxGhosts` (1-3) from the available candidates.
+   * FRIEND (external ghost) takes the primary slot — preserves today's behavior
+   * where an imported friend ghost is THE ghost. Then PB, then dev ("BOT").
+   * Dev is skipped when a PB occupies a slot and the limit leaves no room
+   * (dedupe: BOT never displaces PB, it only fills genuinely empty slots).
+   */
+  private loadGhostTracks(): GhostTrack[] {
+    const limit = Math.max(0, Math.min(3, Math.round(this.maxGhosts)));
+    if (limit === 0) return [];
+    const ts = this.save.trackSave(this.def.id);
+    const pbData = ts.ghost;
+    const devData = DEV_GHOSTS[this.def.id];
+    const slots: { samples: GhostSample[]; label: GhostLabel }[] = [];
+    if (this.externalGhost && this.externalGhost.length > 1) slots.push({ samples: this.externalGhost, label: 'FRIEND' });
+    if (pbData) {
+      const samples = deserializeGhost(pbData);
+      if (samples.length > 1) slots.push({ samples, label: 'PB' });
+    }
+    const slotsFree = limit - slots.length;
+    if (devData && !(pbData && slotsFree < 1)) {
+      const samples = deserializeGhost(devData);
+      if (samples.length > 1) slots.push({ samples, label: 'BOT' });
+    }
+    return slots.slice(0, limit).map((s) => this.buildGhostTrack(s.samples, s.label));
+  }
+
+  private buildGhostTrack(samples: GhostSample[], label: GhostLabel): GhostTrack {
+    const dists: number[] = [];
+    const q = { index: 0, frame: { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), normal: new THREE.Vector3(), binormal: new THREE.Vector3(), halfWidth: 0, dist: 0 }, lateral: 0, vertical: 0, longitudinal: 0, dist: 0 };
+    let hint = 0;
+    for (const sample of samples) {
+      this.curve.surfaceQuery(sample.pos, hint, q);
+      hint = q.index;
+      dists.push(q.dist);
+    }
+    const cpSplits: number[] = [];
+    for (const cp of this.def.checkpoints) {
+      let split: number | null = null;
+      for (let i = 1; i < dists.length; i++) {
+        const prev = dists[i - 1];
+        const curr = dists[i];
+        if (prev < cp.dist && curr >= cp.dist && curr - prev < this.curve.length * 0.5) {
+          split = samples[i].t;
+          break;
         }
-        this.ghostCpSplits.push(split ?? -1);
       }
+      cpSplits.push(split ?? -1);
     }
+    return { samples, dists, cpSplits, label, color: GHOST_COLORS[label] };
   }
 
   useExternalGhost(samples: GhostSample[] | null): void {
     this.externalGhost = samples;
   }
 
-  ghostSplitDelta(index: number): number | null {
-    if (index >= this.ghostCpSplits.length) return null;
-    const gt = this.ghostCpSplits[index];
+  ghostCount(): number {
+    return this.ghosts.length;
+  }
+
+  ghostTrack(index: number): GhostTrack | null {
+    return this.ghosts[index] ?? null;
+  }
+
+  /** All active ghost tracks (for HUD/minimap wiring). */
+  ghostTracks(): readonly GhostTrack[] {
+    return this.ghosts;
+  }
+
+  /** Primary ghost split delta (friend > PB > dev), compared at checkpoint `cpIndex`. */
+  ghostSplitDelta(ghostIndex: number, cpIndex: number): number | null {
+    const g = this.ghosts[ghostIndex];
+    if (!g || cpIndex >= g.cpSplits.length) return null;
+    const gt = g.cpSplits[cpIndex];
     if (gt < 0) return null;
-    const playerSplit = this.checkpointSplits[index];
+    const playerSplit = this.checkpointSplits[cpIndex];
     if (playerSplit === undefined) return null;
     return playerSplit - gt;
   }
@@ -193,35 +251,58 @@ export class RaceController {
     return this.recording;
   }
 
-  ghostDistAt(elapsedMs: number): number | null {
-    if (!this.ghostActive || this.ghostDists.length < 2) return null;
-    const g = this.ghost;
-    if (elapsedMs <= g[0].t) return this.ghostDists[0];
-    if (elapsedMs >= g[g.length - 1].t) return this.ghostDists[this.ghostDists.length - 1];
-    let lo = 0;
-    let hi = g.length - 1;
-    while (lo < hi - 1) {
-      const mid = (lo + hi) >> 1;
-      if (g[mid].t < elapsedMs) lo = mid;
-      else hi = mid;
-    }
-    const t = (elapsedMs - g[lo].t) / Math.max(1, g[hi].t - g[lo].t);
-    return this.ghostDists[lo] + (this.ghostDists[hi] - this.ghostDists[lo]) * t;
+  ghostDistAt(elapsedMs: number, index = 0): number | null {
+    const g = this.ghosts[index];
+    if (!g || !this.ghostActive || g.dists.length < 2) return null;
+    return this.trackDistAt(g, elapsedMs);
   }
 
-  liveGhostDelta(currentDist: number, elapsedMs: number): number | null {
-    if (!this.ghostActive || this.ghostDists.length < 2) return null;
-    const d = this.ghostDists;
+  private trackDistAt(g: GhostTrack, elapsedMs: number): number {
+    const d = g.dists;
+    const s = g.samples;
+    if (elapsedMs <= s[0].t) return d[0];
+    if (elapsedMs >= s[s.length - 1].t) return d[d.length - 1];
+    let lo = 0;
+    let hi = s.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (s[mid].t < elapsedMs) lo = mid;
+      else hi = mid;
+    }
+    const t = (elapsedMs - s[lo].t) / Math.max(1, s[hi].t - s[lo].t);
+    return d[lo] + (d[hi] - d[lo]) * t;
+  }
+
+  /** Signed time delta vs ghost `index` at the player's current distance (negative = ahead). */
+  liveGhostDelta(currentDist: number, elapsedMs: number, index = 0): number | null {
+    const g = this.ghosts[index];
+    if (!g || !this.ghostActive || g.dists.length < 2) return null;
+    const d = g.dists;
+    const s = g.samples;
+    if (currentDist < d[0] || currentDist > d[d.length - 1]) return null;
     let lo = 0;
     let hi = d.length - 1;
-    if (currentDist < d[0] || currentDist > d[d.length - 1]) return null;
     while (lo < hi - 1) {
       const mid = (lo + hi) >> 1;
       if (d[mid] < currentDist) lo = mid;
       else hi = mid;
     }
-    const ghostTimeAtDist = this.ghost[lo].t + ((currentDist - d[lo]) / Math.max(0.001, d[hi] - d[lo])) * (this.ghost[hi].t - this.ghost[lo].t);
+    const ghostTimeAtDist = s[lo].t + ((currentDist - d[lo]) / Math.max(0.001, d[hi] - d[lo])) * (s[hi].t - s[lo].t);
     return elapsedMs - ghostTimeAtDist;
+  }
+
+  /**
+   * Player's live rank among player + active ghosts by progress at this instant.
+   * Time-trial only (ghosts never load in rival/knockout modes). Returns null when
+   * no ghost is active.
+   */
+  battleRank(dist: number, elapsedMs: number): { rank: number; of: number } | null {
+    if (!this.ghostActive || this.ghosts.length === 0) return null;
+    let rank = 1;
+    for (const g of this.ghosts) {
+      if (this.trackDistAt(g, elapsedMs) > dist) rank++;
+    }
+    return { rank, of: this.ghosts.length + 1 };
   }
 
   beginRacing(): void {
@@ -315,7 +396,7 @@ export class RaceController {
           index: this.nextCheckpoint,
           total: cps.length,
           splitMs,
-          deltaMs: this.ghostSplitDelta(this.nextCheckpoint),
+          deltaMs: this.ghostSplitDelta(0, this.nextCheckpoint),
         });
         this.nextCheckpoint++;
       }
@@ -378,12 +459,14 @@ export class RaceController {
     }
     const splitDetail = this.checkpointSplits.map((splitMs, i) => ({
       splitMs,
-      deltaMs: (() => {
-        const gt = this.ghostCpSplits[i];
-        return gt !== undefined && gt >= 0 ? splitMs - gt : null;
-      })(),
+      deltaMs: this.ghostSplitDelta(0, i),
     }));
-    this.emit('finish', { timeMs, medal, newBest, previousBest: prevBest, splitDetail });
+    const ghostResults: GhostFinishRow[] = this.ghosts.map((g) => ({
+      label: g.label,
+      color: g.color,
+      deltaMs: timeMs - g.samples[g.samples.length - 1].t,
+    }));
+    this.emit('finish', { timeMs, medal, newBest, previousBest: prevBest, splitDetail, ghostResults });
   }
 
   finishKnockedOut(position: number): void {
@@ -394,32 +477,60 @@ export class RaceController {
     const prevBest = this.save.trackSave(this.def.id).bestTimeMs;
     const splitDetail = this.checkpointSplits.map((splitMs, i) => ({
       splitMs,
-      deltaMs: (() => {
-        const gt = this.ghostCpSplits[i];
-        return gt !== undefined && gt >= 0 ? splitMs - gt : null;
-      })(),
+      deltaMs: this.ghostSplitDelta(0, i),
     }));
     this.emit('finish', { timeMs, medal: 'none', newBest: false, previousBest: prevBest, splitDetail, knockout: { position } });
   }
 
-  ghostSampleAt(elapsedMs: number): { pos: THREE.Vector3; quat: THREE.Quaternion } | null {
-    if (!this.ghostActive || this.ghost.length < 2) return null;
-    const g = this.ghost;
-    if (elapsedMs <= g[0].t) return { pos: g[0].pos.clone(), quat: g[0].quat.clone() };
-    if (elapsedMs >= g[g.length - 1].t) return { pos: g[g.length - 1].pos.clone(), quat: g[g.length - 1].quat.clone() };
+  ghostSampleAt(elapsedMs: number, index = 0): { pos: THREE.Vector3; quat: THREE.Quaternion } | null {
+    const g = this.ghosts[index];
+    if (!g || !this.ghostActive || g.samples.length < 2) return null;
+    const s = g.samples;
+    if (elapsedMs <= s[0].t) return { pos: s[0].pos.clone(), quat: s[0].quat.clone() };
+    if (elapsedMs >= s[s.length - 1].t) return { pos: s[s.length - 1].pos.clone(), quat: s[s.length - 1].quat.clone() };
     let lo = 0;
-    let hi = g.length - 1;
+    let hi = s.length - 1;
     while (lo < hi - 1) {
       const mid = (lo + hi) >> 1;
-      if (g[mid].t < elapsedMs) lo = mid;
+      if (s[mid].t < elapsedMs) lo = mid;
       else hi = mid;
     }
-    const a = g[lo];
-    const b = g[hi];
+    const a = s[lo];
+    const b = s[hi];
     const t = (elapsedMs - a.t) / Math.max(1, b.t - a.t);
     return {
       pos: a.pos.clone().lerp(b.pos, t),
       quat: a.quat.clone().slerp(b.quat, t),
     };
+  }
+
+  /** Allocation-free variant of ghostSampleAt for per-frame render loops. */
+  ghostSampleInto(elapsedMs: number, index: number, outPos: THREE.Vector3, outQuat: THREE.Quaternion): boolean {
+    const g = this.ghosts[index];
+    if (!g || !this.ghostActive || g.samples.length < 2) return false;
+    const s = g.samples;
+    if (elapsedMs <= s[0].t) {
+      outPos.copy(s[0].pos);
+      outQuat.copy(s[0].quat);
+      return true;
+    }
+    if (elapsedMs >= s[s.length - 1].t) {
+      outPos.copy(s[s.length - 1].pos);
+      outQuat.copy(s[s.length - 1].quat);
+      return true;
+    }
+    let lo = 0;
+    let hi = s.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (s[mid].t < elapsedMs) lo = mid;
+      else hi = mid;
+    }
+    const a = s[lo];
+    const b = s[hi];
+    const t = (elapsedMs - a.t) / Math.max(1, b.t - a.t);
+    outPos.copy(a.pos).lerp(b.pos, t);
+    outQuat.copy(a.quat).slerp(b.quat, t);
+    return true;
   }
 }

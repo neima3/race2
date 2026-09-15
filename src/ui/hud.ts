@@ -23,6 +23,9 @@ export class HUD {
   private respawnHint: HTMLElement;
   private liveDeltaEl: HTMLElement;
   private ghostTagEl: HTMLElement;
+  private ghostDeltasEl: HTMLElement;
+  private ghostDeltaRows: { root: HTMLElement; label: HTMLElement; value: HTMLElement }[] = [];
+  private battleRankEl: HTMLElement;
   private lapEl: HTMLElement;
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
@@ -32,7 +35,7 @@ export class HUD {
   private driftBest = 0;
   private progressTrack: HTMLElement;
   private progressPlayer: HTMLElement;
-  private progressGhost: HTMLElement;
+  private progressGhostDots: HTMLElement[] = [];
   private progressTicks: HTMLElement;
   private posWrap: HTMLElement;
   private posNumEl: HTMLElement;
@@ -54,6 +57,16 @@ export class HUD {
     this.bestEl = el('div', 'hud-best');
     this.liveDeltaEl = el('div', 'hud-live-delta');
     this.ghostTagEl = el('div', 'hud-ghost-tag hidden');
+    this.ghostDeltasEl = el('div', 'hud-ghost-deltas');
+    for (let i = 0; i < 3; i++) {
+      const root = el('div', 'hud-ghost-delta hidden');
+      const label = el('span', 'gd-label');
+      const value = el('span', 'gd-value');
+      root.append(label, value);
+      this.ghostDeltasEl.append(root);
+      this.ghostDeltaRows.push({ root, label, value });
+    }
+    this.battleRankEl = el('div', 'hud-battle-rank hidden');
     this.posWrap = el('div', 'hud-pos-wrap');
     this.posFlashEl = el('div', 'hud-pos-flash');
     const posLine = el('div', 'hud-pos');
@@ -61,7 +74,7 @@ export class HUD {
     this.posTotalEl = el('span', 'hud-pos-total', '/4');
     posLine.append(this.posNumEl, this.posTotalEl);
     this.posWrap.append(this.posFlashEl, posLine);
-    timerWrap.append(this.timerEl, this.bestEl, this.liveDeltaEl, this.ghostTagEl, this.posWrap);
+    timerWrap.append(this.timerEl, this.bestEl, this.liveDeltaEl, this.ghostDeltasEl, this.ghostTagEl, this.battleRankEl, this.posWrap);
     const cpWrap = el('div', 'hud-cp-wrap');
     this.cpEl = el('div', 'hud-cp');
     this.lapEl = el('div', 'hud-lap hidden');
@@ -80,9 +93,12 @@ export class HUD {
 
     this.progressTrack = el('div', 'progress-track');
     this.progressTicks = el('div', 'progress-ticks');
-    this.progressGhost = el('div', 'progress-dot ghost');
+    for (let i = 0; i < 3; i++) {
+      const dot = el('div', 'progress-dot ghost');
+      this.progressGhostDots.push(dot);
+    }
     this.progressPlayer = el('div', 'progress-dot player');
-    this.progressTrack.append(this.progressTicks, this.progressGhost, this.progressPlayer);
+    this.progressTrack.append(this.progressTicks, ...this.progressGhostDots, this.progressPlayer);
 
     this.centerEl = el('div', 'hud-center');
     this.splitToast = el('div', 'hud-split-toast');
@@ -150,6 +166,42 @@ export class HUD {
     }
   }
 
+  /** How many per-ghost delta chips are in play this race (0-3). */
+  setGhostDeltaCount(n: number): void {
+    for (let i = 0; i < this.ghostDeltaRows.length; i++) {
+      this.ghostDeltaRows[i].root.classList.toggle('hidden', i >= n);
+      if (i >= n) {
+        this.ghostDeltaRows[i].label.textContent = '';
+        this.ghostDeltaRows[i].value.textContent = '';
+      }
+    }
+  }
+
+  setGhostDelta(index: number, label: string, cssColor: string, deltaMs: number | null): void {
+    const row = this.ghostDeltaRows[index];
+    if (!row) return;
+    if (this.driftMode || deltaMs === null) {
+      row.root.classList.add('hidden');
+      return;
+    }
+    row.root.classList.remove('hidden');
+    row.label.textContent = label;
+    row.label.style.color = cssColor;
+    row.value.textContent = `${deltaMs <= 0 ? '−' : '+'}${(Math.abs(deltaMs) / 1000).toFixed(2)}`;
+    row.value.classList.toggle('ahead', deltaMs <= 0);
+    row.value.classList.toggle('behind', deltaMs > 0);
+  }
+
+  setBattleRank(rank: { rank: number; of: number } | null): void {
+    if (!rank || rank.of < 2) {
+      this.battleRankEl.classList.add('hidden');
+      return;
+    }
+    const ords = ['1ST', '2ND', '3RD', '4TH'];
+    this.battleRankEl.textContent = `${ords[rank.rank - 1] ?? `${rank.rank}TH`} OF ${rank.of}`;
+    this.battleRankEl.classList.remove('hidden');
+  }
+
   show(trackName: string, bestMs: number | null, cpTotal: number, cpDists: number[] = [], trackLen = 1): void {
     this.trackNameEl.textContent = trackName;
     this.bestEl.textContent = bestMs != null ? `PB ${formatTimePrecise(bestMs)}` : '';
@@ -163,11 +215,15 @@ export class HUD {
       this.progressTicks.append(tick);
     }
     this.progressPlayer.style.left = '0%';
-    this.progressGhost.style.left = '0%';
-    this.progressGhost.style.display = 'none';
+    for (const dot of this.progressGhostDots) {
+      dot.style.left = '0%';
+      dot.style.display = 'none';
+    }
     this.lastRivalPos = 0;
     this.posNumEl.textContent = '–';
     this.posFlashEl.classList.remove('show', 'up', 'down');
+    this.battleRankEl.classList.add('hidden');
+    this.setGhostDeltaCount(0);
     this.root.classList.remove('hidden');
   }
 
@@ -265,13 +321,18 @@ export class HUD {
     this.toastTimer = window.setTimeout(() => this.splitToast.classList.remove('show'), 1600);
   }
 
-  updateProgress(playerRatio: number, ghostRatio: number | null): void {
+  /** Ghost dot ratios indexed per ghost; null hides that dot. Pass a preallocated array. */
+  updateProgress(playerRatio: number, ghostRatios: ArrayLike<number | null>): void {
     this.progressPlayer.style.left = `${Math.min(100, Math.max(0, playerRatio * 100))}%`;
-    if (ghostRatio === null) {
-      this.progressGhost.style.display = 'none';
-    } else {
-      this.progressGhost.style.display = 'block';
-      this.progressGhost.style.left = `${Math.min(100, Math.max(0, ghostRatio * 100))}%`;
+    for (let i = 0; i < this.progressGhostDots.length; i++) {
+      const dot = this.progressGhostDots[i];
+      const r = ghostRatios[i];
+      if (r == null) {
+        dot.style.display = 'none';
+      } else {
+        dot.style.display = 'block';
+        dot.style.left = `${Math.min(100, Math.max(0, r * 100))}%`;
+      }
     }
   }
 
