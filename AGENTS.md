@@ -6,12 +6,19 @@
 - `npm run typecheck` — `tsc --noEmit` (strict; run before committing)
 - `node scripts/make-icons.mjs` — regenerate PWA icons
 - `npx tsx test/laps.ts` — headless time-trial harness (14/14 since the v7 geometry repairs — canyon-twist/grand-gauntlet/gauntlet-ii used to wedge on seam folds, now fixed; `--body=aero|tank` runs the same roster with that body's tuning, `--emit-ghosts` regenerates dev ghosts)
+- `npx tsx test/camera.ts` — camera-suite gate (28 checks: chase byte-identity vs v2.2, per-mode frustum/ahead-facing, mid-lap cycling)
+- `npx tsx test/ghostbattle.ts` — multi-ghost gate (39 checks: slot filling/dedupe, battle rank, finish deltas, no per-frame allocs)
+- `npx tsx test/traffic.ts` — traffic-mode gate (16 checks: finishes, natural near-miss, collision recovery, constant density, step integrity)
+- `npx tsx test/weekly.ts` — weekly-event gate (116 checks: ISO-week keys, seed determinism, 4-modifier rotation, modifier plumbing, resume, streaks, `#w=` round-trip)
+- `npx tsx test/stats.ts` — paint-unlock/stats gate (64 checks)
+- `npx tsx test/tutorial.ts` — tutorial state-machine gate (73 checks)
+- `npx tsx test/replay.ts` — replay-theater gate (34 checks: scrub determinism, speed scale, buffer eviction)
 - `npx tsx test/rivals.ts` — headless rival-race gate (20 checks: steering sign, lateral sign, 2-lap races on sunrise-sprint + dune-rush, slow-mo accumulator integrity, rubber-band gap <120m)
 - `npx tsx test/career.ts` — career gate (119 checks incl. difficulty-curve pins: street cup = autopilot silver, never P4; roster-capacity guard on cup tier mixes; rival-era stats migration)
 - `npx tsx test/share.ts` — ghost-share codec gate (34 checks)
 - `npx tsx test/knockout.ts` — knockout gate (50 checks: eliminations at lap boundaries, frozen sim, win + player-KO paths)
 - `npx tsx test/daily.ts` — daily-challenge gate (59 checks: seed determinism + 30-day rotation, streak matrix, save sanitize/round-trip, `#d=` link round-trip)
-- `npx tsx test/probe.ts` — audio-probe gate (24 checks: overtake chime, GO stinger, crowd swell, music intensity layer fire + envelope movement on a virtual-clock AudioContext mock; exit 1 on no movement)
+- `npx tsx test/probe.ts` — audio-probe gate (61 checks: overtake chime, GO stinger, crowd swell, music intensity layer fire + envelope movement on a virtual-clock AudioContext mock; exit 1 on no movement)
 - `npx tsx --expose-gc test/allocs.ts` — headless allocation probe (must PASS; catches per-frame churn)
 
 ## Architecture (src/)
@@ -29,9 +36,15 @@
 - `systems/autopilot.ts` — pure-pursuit + curvature lookahead; optional `skill` param for rivals (identical behavior when omitted)
 - `game/share.ts` — compact ghost codec (15Hz, 16-bit bbox-relative pos, smallest-three quat, transposed planes + deflate) → `#g=v1.<track>.<time>.<code>` URL share/import
 - Offline PWA: `dist/sw.js` is generated at build time by the `race2ServiceWorker` plugin in `vite.config.ts` (asset list inlined, cache name = content hash of the asset list → any content change = new cache, old cache deleted on activate). Network-first navigations, cache-first assets, same-origin GET only. Registered in `main.ts` (PROD only — dev never registers). First-run onboarding overlay + once-per-mode contextual HUD hints (`hud.ts showContextHint`, `settings.onboarded/hintRival/hintKnockout` — optional flags, old saves default-merge)
-- Version string: `v2.2.0` lives in `menus.ts` title credits + `package.json`; the sw cache name needs no version constant (content-hash-derived). Title shows on the credits line only
+- Version string: `v2.3.0` lives in `menus.ts` title credits + `package.json`; the sw cache name needs no version constant (content-hash-derived). Title shows on the credits line only
 - Car bodies: standard/aero/tank = real `CarTuning` deltas (aero +5% top −4% grip; tank +6% grip −4% top +8% boostKick); aero unlock 12★, tank unlock any cup trophy; single car-agnostic PB ledger
 - Weather variants (`dusk|night|rain`) via uniform swaps + `rules.ts` grip plumbing (`RAIN_GRIP_MULT 0.82`, floor 0.32× combined); cups assign variants, free-play stays day; `?variant=` dev override
+- `game/traffic.ts` → `systems/traffic.ts` — kinematic traffic mode (10-14 cars, `dist += v·dt` along fixed lanes, wrap-safe; contact band Δlat<1.5 scrubs player, [1.5,2.2) clean-pass corridor = NEAR MISS, 5 credited × −0.15s at finish; per-track `trafficBest`)
+- `game/weekly.ts` — Weekly Event: seed = FNV-1a('race2-weekly:' + ISO `GWWWW`) → 3 tracks/lineup + modifier rotation (rain-finals/night-owl/slick-mayhem/boost-fest; slick-mayhem SYNTHESIZES patches on slick-less tracks); career-style run resume + streaks + `#w=` share
+- `game/tutorial.ts` — 4-drill guided tutorial (steer/boost/drift/brake) on sunrise-sprint, practice rules, 3 tries → auto-skip; fresh profiles only (pre-v8 profiles get `tutorialDone=true` at migration — never force veterans)
+- `game/stats.ts` — driverStats() source for the STATS panel; lifetime `nearMisses/distanceKm/knockoutWins/rivalWinsBy`, `unlocks.paints[]` (4 locked paints: knockout win / 7-day streak / 25 near-misses / weekly gold)
+- `render/camera.ts` — 3 modes (CHASE byte-default / CLOSE / HOOD) + FOV slider 60-100 (base −10 for chase/close; HOOD forces 70); C cycles; `settings.cam/fov`
+- Replay theater: scrub/speed(0.25/0.5/1)/camera-cycle over a 5-slot in-session buffer; sample lookup shared with photo anchor
 - `render/` — environment (per-theme lighting rig, sky shader w/ soft sun + haze + night-only stars, instanced soft clouds, ground/landform disposal patterns), `terrain.ts` (themed ground textures, grounded 2-tone landforms, ridge silhouette rings, GROUND_Y), `roadTextures.ts` (asphalt/wear/curb/banner canvases — keep colorSpace SRGB on any new CanvasTexture), props (clustered placement + variants + palette jitter), car model, particles, camera rig (speed FOV)
 - Track geometry (v7 repairs): control-point seam folds/kinks on 8 tracks fixed (canyon-twist, sky-loop over/underpass bridge, grand-gauntlet, neon-vertical hairpin, gauntlet-ii, twilight-gauntlet, ring-runner, volt-alley) — harness is 14/14; geometry conventions: strands must not fold below dy −3 near the seam, keep tangent continuity at the wrap point (`test/tmp/geo-*.ts` harnesses)
 - `ui/` — HUD, menus, touch controls; DOM only, no framework
@@ -43,7 +56,7 @@
 - Binormal/lateral sign flips are the #1 regression risk — verify steering direction after touching curve.ts/car.ts
 
 ## QA hooks (window.__race2)
-`start(i, rivals?)` (`true` = rivals, `'knockout'` = knockout), `auto(bool)` (pure-pursuit autopilot), `drive({steer,throttle,brake,drift})`, `state()` telemetry, `skipCountdown()`, `respawn()`, `mute()`, `rivals()` (per-rival telemetry), `standings()` (live order; rows carry `eliminated`), `finishLine()` (teleport-to-line QA cheat — defeated by the 92%-per-lap anti-cheat mid-lap), `startDaily()`, `daily()`, `audioProbe()`. URL: `?mute=1`, `?touch=1`, `?alltracks` (unlock override), `?variant=`. Audio auto-mutes under `navigator.webdriver`.
+`start(i, rivals?)` (`true` = rivals, `'knockout'` = knockout), `auto(bool)` (pure-pursuit autopilot), `drive({steer,throttle,brake,drift})`, `state()` telemetry, `skipCountdown()`, `respawn()`, `mute()`, `rivals()` (per-rival telemetry), `standings()` (live order; rows carry `eliminated`), `finishLine()` (teleport-to-line QA cheat — defeated by the 92%-per-lap anti-cheat mid-lap), `startDaily()`, `daily()`, `audioProbe()`, `startWeekly()`, `weekly()`, `startTutorial()`, `tutorial()`, `cam(mode?)`, `traffic()`. URL: `?mute=1`, `?touch=1`, `?alltracks` (unlock override), `?variant=`. Audio auto-mutes under `navigator.webdriver`.
 
 ## Known QA baselines (autopilot, mute=1)
 Track laps: T1 ≈ 17.5s, T2 ≈ 30.8s, T3 ≈ 21.7s, T4 ≈ 28.4s; salt-flats ≈ 22.2s, harbor-nine ≈ 24.3s (browser ≈ headless, deterministic). Medal times in defs.ts are calibrated to these. Knockout pacing (3-lap, default e/m/p grid): autopilot reaches the duel on 4/4 probed tracks, elimination margins 0.3–35m (balance harness: `npx tsx test/tmp/ko-balance.ts [easy,mid,mid]`). Daily difficulty (10 seeded days): autopilot P1×3 / P3×5, P4 only on the 2 headless-exempt wedge tracks (`npx tsx test/tmp/daily-balance.ts 10`). NOTE: v7 road/curb/embankment geometry is visual-only — road collision surface unchanged; curbs sit +0.025 flush with no grip effect.

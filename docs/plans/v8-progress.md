@@ -272,3 +272,8 @@ Full gate list re-run green after each fix; final state: typecheck ✓ build ✓
 3. QA tooling notes for the next agent: (a) screenshots hang indefinitely when Chrome-for-Testing's compositor wedges (happened mid-session after ~50 captures + viewport flips; even example.com hangs) — workaround: `--executable-path "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"`, and/or brew-upgrade agent-browser; (b) screenshot paths resolve against the daemon cwd — use absolute paths; (c) friend-ghost battle evidence requires a REAL `encodeGhostCode` payload (deflate + version flag), not raw `quantizeGhost` bytes — helper at `test/tmp/make-friend-ghost.ts` (uncommitted).
 4. `__race2.start(i)` after a daily/weekly/rival race leaves the previous mode flags set (menu state is the source of truth) — pass explicit mode args in QA scripts; not a game bug, hook semantics.
 5. `test/tmp/old-profile-migration.ts` left uncommitted as living evidence of the item-14 issue (19 checks; currently 18/19).
+
+## Phase 10 final (lead)
+- QA sweep (subagent): 15-item matrix all PASS after 3 fixes (garage preview rebind, portrait NEAR MISS wrap, rival hint string); perf 191-196 calls rain-rivals, traffic 78-84; migration bug found → lead fixed (pre-v8 profiles force tutorialDone at migration; repro test 19/19).
+- High-contrast HUD option shipped (settings.hudContrast + :root.hud-contrast overrides), verified alpine-day.
+- v2.3.0 bumped (package.json + title credits). AGENTS.md updated (new gates 28/39/16/116/64/73/34, probe 61, v8 architecture, hooks).

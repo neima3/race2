@@ -10,7 +10,7 @@
 - [x] Phase 7: Audio 2.0 — per-body engines, slip screech, near-miss whoosh
 - [x] Phase 8: Replay theater — scrub, speeds, camera cycling
 - [x] Phase 9: Achievements 3.0 + mode balance pass
-- [ ] Phase 10: QA sweep + accessibility + v2.3.0 + deploy + live verify
+- [x] Phase 10: QA sweep + accessibility + v2.3.0 + deploy + live verify
   - QA portion DONE (2026-09-15, see `docs/plans/v8-progress.md` Phase 10): 15-item matrix — 14 PASS, 1 reported issue (migrated v2.2 profiles hit the tutorial; menus.ts:191 + save.ts:383), 3 UI fixes committed, all 16 gates green. v2.3.0 + hudContrast already shipped (6db2470). Remaining: soak spot-check, push, deploy, live verify.
 
 **Goal statement (full ambition):** Multiply the reasons to come back: a camera for every taste, racing your own PB and a friend's ghost side by side, threading traffic for near-miss bonuses, a seeded weekly championship with modifiers, visible progression (paints to earn, stats to brag about), a tutorial that actually teaches the drift, engines that sound like the car you picked, and a replay theater worth sharing — shipped as v2.3.0 with every gate green, verified live and muted.

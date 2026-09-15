@@ -374,13 +374,21 @@ export class SaveManager {
     this._settings = this.loadSettings();
     if (hadPriorProfile) {
       let storedHasOnboarded = false;
+      let storedHasTutorialKey = false;
       try {
         const raw = localStorage.getItem(SETTINGS_KEY);
-        storedHasOnboarded = !!raw && 'onboarded' in (JSON.parse(raw) as object);
+        if (raw) {
+          const parsed = JSON.parse(raw) as object;
+          storedHasOnboarded = 'onboarded' in parsed;
+          // The tutorial shipped in v8 — a stored settings object without the key is a
+          // pre-v8 veteran, and veterans are never forced into the tutorial.
+          storedHasTutorialKey = 'tutorialDone' in parsed;
+        }
       } catch {
         /* corrupted settings — treat returning player as onboarded */
       }
       if (!storedHasOnboarded) this._settings.onboarded = true;
+      if (!storedHasTutorialKey) this._settings.tutorialDone = true;
     }
     this._profile = this.loadProfile();
     this._stats = this.loadStats();
