@@ -1,6 +1,6 @@
 import { el, formatTimePrecise } from './common';
 import type { SaveManager, Settings, QualityTier, CupRunEntry, TrophyKind } from '../core/save';
-import type { TrackDef } from '../track/defs';
+import type { TrackDef, TrackVariant } from '../track/defs';
 import type { FinishResult } from '../game/race';
 import type { Standing } from '../game/rivals';
 import type { TrafficFinishData } from '../systems/traffic';
@@ -283,6 +283,18 @@ export class MenuManager {
     back.addEventListener('click', () => this.show('title'));
     right.append(back);
     header.append(right);
+    const variantRow = el('div', 'variant-row');
+    variantRow.append(el('span', 'variant-label', 'VARIANT'));
+    const currentVariant: TrackVariant = this.save.settings.variant ?? 'day';
+    for (const v of ['day', 'dusk', 'night', 'rain'] as TrackVariant[]) {
+      const chip = el('button', 'mode-chip variant' + (currentVariant === v ? ' on' : ''), v.toUpperCase());
+      chip.addEventListener('click', () => {
+        if (currentVariant === v) return;
+        this.patchSettings({ variant: v });
+        this.buildTracksScreen();
+      });
+      variantRow.append(chip);
+    }
     const forceAll = new URLSearchParams(window.location.search).has('alltracks');
     const grid = el('div', 'track-grid');
     this.tracks.forEach((track, i) => {
@@ -327,7 +339,7 @@ export class MenuManager {
       });
       grid.append(card);
     });
-    this.tracksScreen.append(header, grid);
+    this.tracksScreen.append(header, variantRow, grid);
   }
 
   private buildSettingsScreen(): void {
@@ -1101,7 +1113,7 @@ export class MenuManager {
     this.pauseScreen.classList.add('hidden');
   }
 
-  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null, podium = false, daily: { dateKey: string; position: number; streak: number } | null = null, traffic: TrafficFinishData | null = null, weekly: WeeklyPanelData | null = null): void {
+  showFinish(track: TrackDef, result: FinishResult, hasNext: boolean, driftScore: number | null = null, standings: Standing[] | null = null, career: CareerPanelData | null = null, podium = false, daily: { dateKey: string; position: number; streak: number } | null = null, traffic: TrafficFinishData | null = null, weekly: WeeklyPanelData | null = null, variantRace = false): void {
     this.finishScreen.replaceChildren();
     const panel = el('div', 'panel finish-panel');
     const rivalMode = standings != null && standings.length > 0;
@@ -1128,6 +1140,7 @@ export class MenuManager {
         : result.medal === 'none'
           ? '<div class="finish-medal none">NO MEDAL</div>'
           : `<div class="finish-medal banner-${result.medal}">${result.medal.toUpperCase()}</div>`;
+    const variantHtml = variantRace ? '<div class="finish-daily variant-note">VARIANT RACE &mdash; NO PB</div>' : '';
     const deltaRows = rivalMode || trafficMode
       ? ''
       : result.splitDetail
@@ -1142,7 +1155,8 @@ export class MenuManager {
       !rivalMode && driftScore !== null
         ? (() => {
             const best = this.save.trackSave(track.id).driftBest ?? 0;
-            return `<div class="finish-drift">DRIFT SCORE <b>${Math.round(driftScore)}</b>${best > 0 && driftScore >= best ? ' &#127942; NEW BEST' : driftScore > 0 ? ` · BEST ${best}` : ''}</div>`;
+            const suffix = variantRace ? '' : best > 0 && driftScore >= best ? ' &#127942; NEW BEST' : driftScore > 0 ? ` · BEST ${best}` : '';
+            return `<div class="finish-drift">DRIFT SCORE <b>${Math.round(driftScore)}</b>${suffix}</div>`;
           })()
         : '';
     const deltaTable = deltaRows ? `<div class="finish-deltas">${deltaRows}</div>` : '';
@@ -1183,6 +1197,7 @@ export class MenuManager {
       <div class="finish-time">${formatTimePrecise(result.timeMs)}</div>
       ${trophyHtml}
       ${medalHtml}
+      ${variantHtml}
       ${dailyHtml}
       ${weeklyHtml}
       ${trafficHtml}
@@ -1303,7 +1318,7 @@ export class MenuManager {
     });
     panel.append(retry);
     if (!rivalMode && !trafficMode) panel.append(replay);
-    if (!rivalMode && !trafficMode && this.save.trackSave(track.id).ghost) {
+    if (!rivalMode && !trafficMode && !variantRace && this.save.trackSave(track.id).ghost) {
       const share = el('button', 'menu-btn', 'SHARE GHOST');
       share.addEventListener('click', () => {
         if (share.disabled) return;

@@ -117,6 +117,8 @@ export class RaceController {
   nextCheckpoint = 0;
   totalLaps = 1;
   writesRecords = true;
+  /** v9 P1: keep the session replay recording alive in no-records (variant) time-trial runs. Ledgers stay dry. */
+  recordReplay = false;
   lapsDone = 0;
   private lapOffset = 0;
   private progressDatum = 0;
@@ -425,7 +427,7 @@ export class RaceController {
     }
     this.prevDist = curr;
 
-    if (this.writesRecords && (this.recording.length === 0 || this.recording[this.recording.length - 1].t <= this.elapsedMs - GHOST_INTERVAL_MS)) {
+    if ((this.writesRecords || this.recordReplay) && (this.recording.length === 0 || this.recording[this.recording.length - 1].t <= this.elapsedMs - GHOST_INTERVAL_MS)) {
       this.recording.push({
         t: this.elapsedMs,
         pos: car.state.pos.clone(),

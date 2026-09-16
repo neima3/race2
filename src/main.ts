@@ -56,6 +56,7 @@ import {
   type WeeklyPanelData,
 } from './game/weekly';
 import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
+import { variantWritesRecords } from './game/variants';
 import {
   TutorialRun,
   TUTORIAL_TRACK_ID,
@@ -885,7 +886,8 @@ class Game {
     if (this.dailyRace) return 'day';
     if (this.weeklyRace) return weeklyVariant(this.weeklyRace.def, this.weeklyRace.raceIndex);
     if (this.careerRace) return cupRaceVariant(this.careerRace.cup, this.careerRace.raceIndex);
-    return def.variant ?? 'day';
+    if (this.rivalMode || this.knockoutMode) return def.variant ?? 'day';
+    return this.save.settings.variant ?? 'day';
   }
 
   private loadTrackIntoScene(def: TrackDef): void {
@@ -1053,12 +1055,15 @@ class Game {
     this.audio.startMusic(def.theme);
     this.audio.startAmbience(THEMES[def.theme].ambientSound);
     this.race!.totalLaps = this.rivalMode ? (this.knockoutMode ? KNOCKOUT_LAPS : this.weeklyRace ? WEEKLY_LAPS : this.dailyRace ? DAILY_LAPS : DEFAULT_RIVAL_LAPS) : 1;
-    this.race!.writesRecords = !this.rivalMode && !this.trafficMode;
+    // v9 P1: non-day free-play variants run dry — PB/ghost/friend/drift/traffic ledgers untouched.
+    const dryVariant = !this.rivalMode && !variantWritesRecords(this.variant);
+    this.race!.writesRecords = !this.rivalMode && !this.trafficMode && !dryVariant;
+    this.race!.recordReplay = dryVariant && !this.trafficMode;
     const cachedFriend = this.friendGhostCache[def.id] ?? null;
     const legacyFriend = this.friendGhost && this.friendGhost.trackId === def.id ? this.friendGhost : null;
     const friendEntry = cachedFriend ?? legacyFriend;
-    const friendActive = !this.rivalMode && !this.trafficMode && !!friendEntry;
-    this.race!.maxGhosts = this.rivalMode || this.trafficMode ? 0 : this.save.settings.ghosts;
+    const friendActive = !this.rivalMode && !this.trafficMode && !dryVariant && !!friendEntry;
+    this.race!.maxGhosts = this.rivalMode || this.trafficMode || dryVariant ? 0 : this.save.settings.ghosts;
     this.race!.useExternalGhost(friendActive ? friendEntry!.samples : null);
     this.friendRaceActive = friendActive;
     this.hud.setGhostTag(friendActive ? 'FRIEND' : null);
@@ -1407,7 +1412,7 @@ class Game {
           this.lapDrift = 0;
           this.lapAir = 0;
           this.lapWalls = 0;
-          if (this.driftMode) {
+          if (this.driftMode && variantWritesRecords(this.variant)) {
             const ts = this.save.trackSave(this.track.id);
             const prevBest = ts.driftBest ?? 0;
             if (this.driftScore > prevBest) {
@@ -1431,13 +1436,15 @@ class Game {
           }
         } else if (this.trafficMode) {
           // traffic is a standalone time mode — only the per-track traffic-best ledger
+          // (v9 P1: dry in non-day variants)
+          const dryTraffic = !variantWritesRecords(this.variant);
           const nm = this.traffic?.nearMisses ?? 0;
           this.save.addStats({ nearMisses: nm, trafficNeedles: nm >= NEEDLE_NEAR_MISSES ? 1 : 0 });
           const credited = Math.min(nm, NEAR_MISS_MAX_CREDITED);
           const bonusMs = credited * NEAR_MISS_BONUS_MS;
           const scoreMs = Math.max(0, r.timeMs - bonusMs);
-          const newBest = this.save.recordTrafficBest(this.track.id, scoreMs);
-          trafficPanel = { nearMisses: nm, credited, bonusMs, scoreMs, best: this.save.allSaves.trafficBest[this.track.id] ?? null, newBest };
+          const newBest = dryTraffic ? false : this.save.recordTrafficBest(this.track.id, scoreMs);
+          trafficPanel = { nearMisses: nm, credited, bonusMs, scoreMs, best: dryTraffic ? null : this.save.allSaves.trafficBest[this.track.id] ?? null, newBest };
         } else if (this.dailyRace && rivalStandings && !r.knockout) {
           // daily is a seeded rival race — records only into the daily ledger, never PB/ghost/lifetime stats
           const pos = rivalStandings.findIndex((s) => s.isPlayer) + 1;
@@ -1478,8 +1485,9 @@ class Game {
         if (weeklyPanel && weeklyPanel.isFinal && playerPosInRace >= 1 && playerPosInRace <= 3) podiumEligible = true;
         this.lastPodiumOrder = podiumEligible ? rivalStandings : null;
         const driftArg = this.driftMode ? Math.round(this.driftScore) : null;
+        const variantRace = !this.rivalMode && !variantWritesRecords(this.variant);
         this.lastFinish = { result: r, hasNext, drift: driftArg, standings: rivalStandings, career: careerPanel, podium: podiumEligible, daily: dailyPanel, traffic: trafficPanel, weekly: weeklyPanel };
-        this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible, dailyPanel, trafficPanel, weeklyPanel);
+        this.menu.showFinish(this.track, r, hasNext, driftArg, rivalStandings, careerPanel, podiumEligible, dailyPanel, trafficPanel, weeklyPanel, variantRace);
         this.touch.hide();
         if (dailyPanel) this.audio.dailyFanfare();
         else if (weeklyPanel?.isFinal) this.audio.weeklyFanfare();
@@ -2332,6 +2340,7 @@ declare global {
       audioProbe: () => object;
       ghosts: () => object;
       cam: (mode?: 'chase' | 'close' | 'hood') => 'chase' | 'close' | 'hood';
+      variant: (v?: 'day' | 'dusk' | 'night' | 'rain') => object;
       stats: () => object;
       achievements: () => object;
       paints: () => object;
@@ -2539,6 +2548,18 @@ window.__race2 = {
       game['save'].updateSettings({ cam: mode });
     }
     return game['rig'].mode;
+  },
+  variant: (v?: 'day' | 'dusk' | 'night' | 'rain') => {
+    if (v === 'day' || v === 'dusk' || v === 'night' || v === 'rain') {
+      game['save'].updateSettings({ variant: v });
+    }
+    return {
+      setting: game['save'].settings.variant,
+      active: game['variant'],
+      urlOverride: game['urlVariant'],
+      dry: !game['rivalMode'] && !variantWritesRecords(game['variant']),
+      writesRecords: game['race']?.writesRecords ?? null,
+    };
   },
   stats: () => driverStats(game['save']),
   achievements: () => achievementList(game['save']),

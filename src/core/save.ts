@@ -1,6 +1,7 @@
 import { prevDateKey } from '../game/daily';
 import { prevWeekKey } from '../game/weekly';
 import { PAINT_LOCK_IDS, type PaintLockId } from '../render/car-model';
+import type { TrackVariant } from '../track/defs';
 
 export type QualityTier = 'low' | 'medium' | 'high';
 export type TouchSteerMode = 'buttons' | 'tilt';
@@ -38,6 +39,8 @@ export interface Settings {
   tutorialDone?: boolean;
   /** True when any tutorial drill was skipped via fails or the SKIP/ESC exit (v8 P6). Additive. */
   tutorialSkipped?: boolean;
+  /** Free-play variant pick (day/dusk/night/rain) — day keeps records, others run dry (v9 P1). Additive. */
+  variant: TrackVariant;
 }
 
 const SAVE_KEY = 'race2.save.v1';
@@ -252,6 +255,7 @@ const DEFAULT_SETTINGS: Settings = {
   hintRival: false,
   hintKnockout: false,
   hintTraffic: false,
+  variant: 'day',
 };
 
 function emptyTrackSave(): TrackSave {
@@ -524,6 +528,10 @@ export class SaveManager {
           typeof merged.ghosts === 'number' && Number.isInteger(merged.ghosts) && merged.ghosts >= 1 && merged.ghosts <= 3
             ? merged.ghosts
             : DEFAULT_SETTINGS.ghosts;
+        merged.variant =
+          merged.variant === 'dusk' || merged.variant === 'night' || merged.variant === 'rain'
+            ? merged.variant
+            : 'day';
         delete (merged as { camera?: unknown }).camera;
         return merged;
       }

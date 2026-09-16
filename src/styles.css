@@ -734,6 +734,23 @@ button {
   letter-spacing: 0.16em;
   color: var(--accent);
 }
+.finish-daily.variant-note { color: rgba(242, 245, 255, 0.62); }
+
+.variant-row {
+  width: min(760px, 94vw);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.variant-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  margin-right: 2px;
+}
 
 .mini-medal {
   width: 14px;
