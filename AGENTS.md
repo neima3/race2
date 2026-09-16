@@ -5,6 +5,8 @@
 - `npm run build` — production build → `dist/`
 - `npm run typecheck` — `tsc --noEmit` (strict; run before committing)
 - `node scripts/make-icons.mjs` — regenerate PWA icons
+- `npx tsx test/variants.ts` — free-play variant gate (4 variant laps, dry-ledger policy through the real finish path, theme map)
+- `npx tsx test/draft.ts` — slipstream gate (pocket build/decay, +8% top speed, traffic draft, solo no-op)
 - `npx tsx test/laps.ts` — headless time-trial harness (14/14 since the v7 geometry repairs — canyon-twist/grand-gauntlet/gauntlet-ii used to wedge on seam folds, now fixed; `--body=aero|tank` runs the same roster with that body's tuning, `--emit-ghosts` regenerates dev ghosts)
 - `npx tsx test/camera.ts` — camera-suite gate (28 checks: chase byte-identity vs v2.2, per-mode frustum/ahead-facing, mid-lap cycling)
 - `npx tsx test/ghostbattle.ts` — multi-ghost gate (39 checks: slot filling/dedupe, battle rank, finish deltas, no per-frame allocs)
@@ -36,9 +38,13 @@
 - `systems/autopilot.ts` — pure-pursuit + curvature lookahead; optional `skill` param for rivals (identical behavior when omitted)
 - `game/share.ts` — compact ghost codec (15Hz, 16-bit bbox-relative pos, smallest-three quat, transposed planes + deflate) → `#g=v1.<track>.<time>.<code>` URL share/import
 - Offline PWA: `dist/sw.js` is generated at build time by the `race2ServiceWorker` plugin in `vite.config.ts` (asset list inlined, cache name = content hash of the asset list → any content change = new cache, old cache deleted on activate). Network-first navigations, cache-first assets, same-origin GET only. Registered in `main.ts` (PROD only — dev never registers). First-run onboarding overlay + once-per-mode contextual HUD hints (`hud.ts showContextHint`, `settings.onboarded/hintRival/hintKnockout` — optional flags, old saves default-merge)
-- Version string: `v2.3.0` lives in `menus.ts` title credits + `package.json`; the sw cache name needs no version constant (content-hash-derived). Title shows on the credits line only
+- Version string: `v2.4.0` lives in `menus.ts` title credits + `package.json`; the sw cache name needs no version constant (content-hash-derived). Title shows on the credits line only
 - Car bodies: standard/aero/tank = real `CarTuning` deltas (aero +5% top −4% grip; tank +6% grip −4% top +8% boostKick); aero unlock 12★, tank unlock any cup trophy; single car-agnostic PB ledger
 - Weather variants (`dusk|night|rain`) via uniform swaps + `rules.ts` grip plumbing (`RAIN_GRIP_MULT 0.82`, floor 0.32× combined); cups assign variants, free-play stays day; `?variant=` dev override
+- `game/variants.ts` — free-play variant policy: day writes records, dusk/night/rain run dry (`race.writesRecords=false`, replay still recorded); settings.variant + `__race2.variant()`; `?variant=` dev override keeps priority
+- `game/draft.ts` — slipstream: pocket 4-9m behind + |Δlat|<2.2 + CLOSING; build 0.5s → +8% top speed (car.ts `draftFactor` param, default 1 byte-identical); player-only, rivals/knockout/traffic scopes (career/daily/weekly excluded — autopilot exploit); ghosts never draft
+- Replay share: `#r=v1.<track>.<time>.<code>` same ghost codec, 30Hz, 90s cap; theater import labeled FRIEND REPLAY; session-only
+- Rival roster 12 (v9 +NOVA/KESTREL/VESUVIUS/SOVEREIGN-champion {accel×1.07, maxSpeed×1.04}); champion rides GT race 4; `V230_POOL_DEPTH` freezes pre-v9 lineup pools so seeded lineups stay byte-stable; per-rival banter splashes; KINGMAKER/DRAFT KING/STORM CHASER/DIRECTOR achievements
 - `game/traffic.ts` → `systems/traffic.ts` — kinematic traffic mode (10-14 cars, `dist += v·dt` along fixed lanes, wrap-safe; contact band Δlat<1.5 scrubs player, [1.5,2.2) clean-pass corridor = NEAR MISS, 5 credited × −0.15s at finish; per-track `trafficBest`)
 - `game/weekly.ts` — Weekly Event: seed = FNV-1a('race2-weekly:' + ISO `GWWWW`) → 3 tracks/lineup + modifier rotation (rain-finals/night-owl/slick-mayhem/boost-fest; slick-mayhem SYNTHESIZES patches on slick-less tracks); career-style run resume + streaks + `#w=` share
 - `game/tutorial.ts` — 4-drill guided tutorial (steer/boost/drift/brake) on sunrise-sprint, practice rules, 3 tries → auto-skip; fresh profiles only (pre-v8 profiles get `tutorialDone=true` at migration — never force veterans)

@@ -44,3 +44,6 @@
 - Perf census (dev build, in-race): rain-rivals GT R4 — **fps 60 flat, 128 draw calls ≤ 220**; allocs gate PASS (headless).
 - QA friction notes (harness, not app): headless CDP tabs throttle `setInterval` → `__race2.auto` ticks starve (documented P4; QA ran in a headed window); draft chips latch for <400ms so screenshots need the observer-hold trick; planted `careerRun` must include a `tracks` envelope or loadSaves rejects the whole blob (found via QA surgery — app behavior correct).
 - Gates after changes: typecheck + build + laps 14/14 + rivals 29/29 + career 173/173 + share 51/51 + knockout 50/50 + daily 59/59 + probe 61/61 + allocs PASS + camera 28/28 + ghostbattle 39/39 + traffic 16/16 + weekly 116/116 + **stats 80/80** (extended: 15-row roster, id/name pins, flip semantics, pop diff, sanitize/round-trip) + tutorial 73/73 + replay 34/34 + **variants** (extended: 3-track night/rain) + **draft 21/21** (extended: draftTime accrual/reset semantics + DRAFT_KING_SECONDS + autopilot cumulative-time band 2-30s).
+
+## Phase 6 (lead)
+- v2.4.0 bumped (package.json + title credits); AGENTS.md updated (variants/draft/replay-share/roster + new gates).
