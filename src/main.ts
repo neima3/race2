@@ -35,7 +35,7 @@ import {
   sampleReplayAt,
   type ReplayEntry,
 } from './ui/replay';
-import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, ShareError } from './game/share';
+import { decodeGhostCode, encodeGhostCode, buildShareLink, parseShareLink, buildReplayLink, parseReplayLink, ShareError } from './game/share';
 import { buildDailyLink, dailyFor, parseDailyLink, todayKey, DAILY_LAPS, type DailyShareLink } from './game/daily';
 import {
   WEEKLY_LAPS,
@@ -249,6 +249,8 @@ class Game {
   private photoFrom: 'racing' | 'replay' = 'racing';
   private lastFinish: { result: RaceEvents['finish']; hasNext: boolean; drift: number | null; standings: Standing[] | null; career: CareerPanelData | null; podium: boolean; daily: { dateKey: string; position: number; streak: number } | null; traffic: TrafficFinishData | null; weekly: WeeklyPanelData | null } | null = null;
   private friendGhost: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
+  /** v9 P3: imported #r= friend replay — session-only (in-memory), never persisted to the save. */
+  private friendReplay: { trackId: string; timeMs: number; samples: GhostSample[] } | null = null;
   /** Decoded friend ghosts per track (from #g= imports this session + persisted save), so ghost battles survive reloads. */
   private friendGhostCache: Record<string, { timeMs: number; samples: GhostSample[] }> = {};
   private friendRaceActive = false;
@@ -338,6 +340,7 @@ class Game {
     this.menu.onViewPodium = () => this.enterPodium(this.lastPodiumOrder);
     this.menu.onShareGhost = (track) => this.shareGhost(track);
     this.menu.onFriendRace = (track) => this.raceFriendGhost(track);
+    this.menu.onWatchFriendReplay = (track) => this.watchFriendReplay(track);
     this.menu.onStartDaily = () => this.startDaily();
     this.menu.onShareDaily = () => this.shareDailyResult();
     this.menu.onStartWeekly = () => this.startWeekly();
@@ -396,6 +399,7 @@ class Game {
     };
     this.theater.onCamera = () => this.cycleReplayCam();
     this.theater.onAutoCuts = (on) => this.setReplayAutoCuts(on);
+    this.theater.onShare = () => void this.shareReplay();
     this.theater.onExit = () => this.stopReplay();
     this.theater.onPrev = () => this.openReplay(this.replayIdx - 1);
     this.theater.onNext = () => this.openReplay(this.replayIdx + 1);
@@ -463,6 +467,57 @@ class Game {
     } finally {
       this.shareBusy = false;
     }
+  }
+
+  /** v9 P3: share the replay currently open in the theater via #r= link (Web Share -> clipboard). */
+  private async shareReplay(): Promise<void> {
+    if (this.shareBusy) return;
+    const entry = this.replayList[this.replayIdx];
+    if (!entry || entry.imported) return;
+    if (entry.variant !== undefined && entry.variant !== 'day') return;
+    this.shareBusy = true;
+    let shared = false;
+    try {
+      const url = window.location.origin + window.location.pathname + await buildReplayLink(this.track, entry.timeMs, entry.samples);
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({ title: 'RACE2 replay', text: `Watch my ${this.track.name} replay: ${(entry.timeMs / 1000).toFixed(2)}s`, url });
+          shared = true;
+          return;
+        } catch (e) {
+          if (e && typeof e === 'object' && (e as { name?: string }).name === 'AbortError') return;
+        }
+      }
+      await navigator.clipboard.writeText(url);
+      this.menu.showToast('REPLAY LINK COPIED');
+      shared = true;
+    } catch {
+      this.menu.showToast('SHARE FAILED');
+    } finally {
+      if (shared) window.dispatchEvent(new CustomEvent('race2:replay-shared'));
+      this.shareBusy = false;
+    }
+  }
+
+  /** v9 P3: WATCH on the FRIEND REPLAY card — load the track and drop the lap into the theater. */
+  private watchFriendReplay(track: TrackDef): void {
+    const fr = this.friendReplay;
+    if (!fr || fr.trackId !== track.id) return;
+    this.menu.driftAttack = false;
+    this.menu.rivalsMode = false;
+    this.menu.knockoutMode = false;
+    this.menu.trafficMode = false;
+    this.driftMode = false;
+    this.careerRace = null;
+    this.rivalLineup = null;
+    this.dailyRace = null;
+    this.weeklyRace = null;
+    this.knockoutMode = false;
+    this.trafficMode = false;
+    this.rivalMode = false;
+    if (track !== this.track || this.resolveVariant(track) !== this.variant) this.loadTrackIntoScene(track);
+    this.replayList = [{ trackId: track.id, samples: fr.samples, timeMs: fr.timeMs, dateMs: Date.now(), imported: true }];
+    this.openReplay(0);
   }
 
   private raceFriendGhost(track: TrackDef): void {
@@ -624,6 +679,28 @@ class Game {
       this.menu.showWeeklyImport(link);
       return;
     }
+    if (hash.startsWith('#r=')) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      const link = parseReplayLink(hash);
+      if (!link) {
+        this.menu.showToast('INVALID REPLAY LINK');
+        return;
+      }
+      const def = TRACKS.find((t) => t.id === link.trackId);
+      if (!def) {
+        this.menu.showToast('INVALID REPLAY LINK');
+        return;
+      }
+      try {
+        const samples = await decodeGhostCode(link.code);
+        if (samples.length < 2) throw new ShareError('empty replay');
+        this.friendReplay = { trackId: def.id, timeMs: link.timeMs, samples };
+        this.menu.showFriendReplay(def, link.timeMs);
+      } catch {
+        this.menu.showToast('INVALID REPLAY LINK');
+      }
+      return;
+    }
     if (!hash.startsWith('#g=')) return;
     history.replaceState(null, '', window.location.pathname + window.location.search);
     const link = parseShareLink(hash);
@@ -732,7 +809,9 @@ class Game {
     this.photoUi?.classList.add('hidden');
     if (this.photoFrom === 'replay' && this.replay && this.replayCar) {
       this.state = 'replay';
-      this.theater.show({ trackName: this.track.name, totalMs: this.replay.endMs, index: this.replayIdx, count: this.replayList.length });
+      const entry = this.replayList[this.replayIdx];
+      this.theater.setShareVisible(this.theaterShareable(entry));
+      this.theater.show({ trackName: this.track.name, totalMs: this.replay.endMs, index: this.replayIdx, count: this.replayList.length, label: this.theaterLabel(entry) });
       this.theater.setPlaying(this.replay.playing);
       this.theater.setSpeed(this.replay.speed);
       this.theater.setCam(this.replayCam);
@@ -1381,7 +1460,7 @@ class Game {
       // (same availability rule as the WATCH REPLAY button: time-trial only).
       if (!this.rivalMode && !this.trafficMode) {
         const rec = this.race?.lastLapSamples ?? [];
-        if (rec.length >= 10) this.replayBuffer.push({ trackId: this.track.id, samples: rec, timeMs: r.timeMs, dateMs: Date.now() });
+        if (rec.length >= 10) this.replayBuffer.push({ trackId: this.track.id, samples: rec, timeMs: r.timeMs, dateMs: Date.now(), variant: this.variant });
       }
       const achvBefore: RivalAchievementState = rivalAchievementState(this.save);
       if (r.knockout) {
@@ -1797,7 +1876,8 @@ class Game {
     this.menu.hideAll();
     this.hud.hide();
     this.touch.hide();
-    this.theater.show({ trackName: this.track.name, totalMs: this.replay.endMs, index: i, count: n });
+    this.theater.setShareVisible(this.theaterShareable(entry));
+    this.theater.show({ trackName: this.track.name, totalMs: this.replay.endMs, index: i, count: n, label: this.theaterLabel(entry) });
     this.theater.setPlaying(true);
     this.theater.setSpeed(1);
     this.theater.setCam('chase');
@@ -1805,11 +1885,26 @@ class Game {
     this.applyReplayFrame(0);
   }
 
+  /** v9 P3: SHARE REPLAY only for real recorded day laps — never imported friend replays. */
+  private theaterShareable(entry: ReplayEntry | undefined): boolean {
+    return !!entry && !entry.imported && (entry.variant === undefined || entry.variant === 'day');
+  }
+
+  private theaterLabel(entry: ReplayEntry | undefined): string {
+    return entry?.imported ? 'FRIEND REPLAY' : 'REPLAY';
+  }
+
   private stopReplay(): void {
     this.theater.hide();
     if (this.replayCar) this.replayCar.group.visible = false;
     this.replay = null;
     this.rig.setMode(this.save.settings.cam);
+    if (this.friendReplay) {
+      this.friendReplay = null;
+      this.state = 'menu';
+      this.menu.show('title');
+      return;
+    }
     this.state = 'finished';
     const lf = this.lastFinish;
     if (lf) this.menu.showFinish(this.track, lf.result, lf.hasNext, lf.drift, lf.standings, lf.career, lf.podium, lf.daily, lf.traffic, lf.weekly);

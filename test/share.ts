@@ -10,6 +10,8 @@ import {
   decodeGhostCode,
   buildShareLink,
   parseShareLink,
+  buildReplayLink,
+  parseReplayLink,
   quantizeGhost,
   dequantizeGhost,
   bytesToB64url,
@@ -261,6 +263,59 @@ save3.setFriendGhost('sky-loop', { code: 'abc', timeMs: 30000, dateMs: 5 });
 const save4 = new SaveManager();
 expect(save4.friendGhost('sky-loop') !== null && save4.friendGhost(def.id) === null, 'second slot written and reloaded independently');
 expect(save4.schemaVersion === 2, 'schema version stays 2 (additive field, no bump)');
+
+// ---------- 10. replay share links (#r=, v9 P3) ----------
+const rLink = await buildReplayLink(def, timeMs, samples);
+expect(rLink.startsWith(`#r=v1.${def.id}.${timeMs}.`), `replay envelope is #r=v1.<track>.<timeMs>.<code> (${rLink.slice(0, 40)}...)`);
+const rParsed = parseReplayLink(rLink);
+expect(rParsed !== null && rParsed.trackId === def.id && rParsed.timeMs === timeMs, 'parseReplayLink round-trips trackId + timeMs');
+expect(rParsed !== null && rParsed.code === rLink.slice(rLink.lastIndexOf('.') + 1), 'parseReplayLink extracts the code verbatim');
+expect(parseShareLink(rLink) === null, 'ghost parser rejects the replay envelope (no cross-parse)');
+expect(parseReplayLink(link) === null, 'replay parser rejects the ghost envelope (no cross-parse)');
+const rSamples = await decodeGhostCode(rParsed!.code);
+expect(rSamples.length >= 2, `replay decodes ${rSamples.length} samples from the 30Hz recording (same ghost codec)`);
+let rErr = 0;
+let rDetOk = true;
+for (let i = 0; i < rSamples.length; i++) {
+  rErr = Math.max(rErr, rSamples[i].pos.distanceTo(samples[Math.min(samples.length - 1, i * 2)].pos));
+  m4.makeRotationFromQuaternion(rSamples[i].quat);
+  if (!(m4.determinant() > 0)) rDetOk = false;
+}
+expect(rErr < 0.35, `replay round-trip position error ${rErr.toFixed(4)}m < 0.35m`);
+expect(rDetOk, 'all replay orientations are proper rotations (det > 0)');
+const rTimeDelta = Math.abs(rSamples[rSamples.length - 1].t - samples[samples.length - 1].t) / samples[samples.length - 1].t;
+expect(rTimeDelta < 0.01, `replay lap time delta ${(rTimeDelta * 100).toFixed(3)}% < 1%`);
+
+// 60s synthetic replay stays under the 12K code cap
+const r60 = resampleGhost(samples, 60000);
+const rLink60 = await buildReplayLink(def, 60000, r60);
+const rCode60 = rLink60.slice(rLink60.lastIndexOf('.') + 1);
+expect(rCode60.length <= 12000, `60s replay code ${rCode60.length} chars <= 12K`);
+const decR60 = await decodeGhostCode(rCode60);
+let rErr60 = 0;
+for (let i = 0; i < decR60.length; i++) {
+  rErr60 = Math.max(rErr60, decR60[i].pos.distanceTo(r60[Math.min(r60.length - 1, i * 2)].pos));
+}
+expect(rErr60 < 0.35, `60s replay round-trip position error ${rErr60.toFixed(4)}m < 0.35m`);
+
+// 90s trim via the replay envelope
+const r120 = resampleGhost(samples, 120000);
+const rLink120 = await buildReplayLink(def, 120000, r120);
+const rDec120 = await decodeGhostCode(parseReplayLink(rLink120)!.code);
+expect(rDec120[rDec120.length - 1].t <= 90000, `120s replay trimmed to 90s (last t ${rDec120[rDec120.length - 1].t.toFixed(0)}ms)`);
+
+// corrupt / truncated replay codes fail gracefully
+let rTruncated = false;
+try {
+  await decodeGhostCode(rParsed!.code.slice(0, Math.floor(rParsed!.code.length / 3)));
+} catch (e) {
+  rTruncated = e instanceof ShareError;
+}
+expect(rTruncated, 'truncated replay code rejected with ShareError');
+expect(parseReplayLink('garbage') === null, 'parseReplayLink rejects garbage');
+expect(parseReplayLink('#r=v9.x.1.abc') === null, 'parseReplayLink rejects unknown version');
+expect(parseReplayLink('#r=v1.sunrise-sprint.abc.abc') === null, 'parseReplayLink rejects non-numeric timeMs');
+expect(parseReplayLink(`#r=v1.${'x'.repeat(80)}.${timeMs}.${rParsed!.code}`) === null, 'parseReplayLink rejects oversized trackId');
 
 console.log(`\nshare test: ${checks - failures}/${checks} checks passed`);
 if (failures > 0) process.exit(1);

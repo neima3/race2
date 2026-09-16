@@ -295,15 +295,34 @@ export async function decodeGhostCode(code: string): Promise<GhostSample[]> {
   let body: Uint8Array;
   if (flag & FLAG_DEFLATE) {
     if (typeof DecompressionStream !== 'function') throw new ShareError('deflate unavailable');
-    body = rleDecode(await streamInflate(bytes.subarray(1)));
+    try {
+      body = rleDecode(await streamInflate(bytes.subarray(1)));
+    } catch (e) {
+      if (e instanceof ShareError) throw e;
+      throw new ShareError('deflate failed');
+    }
   } else {
     body = bytes.subarray(1);
   }
   return dequantizeGhost(body);
 }
 
+function buildV1Envelope(kind: 'g' | 'r', def: TrackDef, timeMs: number, code: string): string {
+  return `#${kind}=v1.${def.id}.${Math.max(0, Math.round(timeMs))}.${code}`;
+}
+
 export function buildShareLink(def: TrackDef, timeMs: number, code: string): string {
-  return `#g=v1.${def.id}.${Math.max(0, Math.round(timeMs))}.${code}`;
+  return buildV1Envelope('g', def, timeMs, code);
+}
+
+/**
+ * v9 P3: full `#r=` share URL hash for a recorded replay. The samples run through the
+ * SAME quantize/rle/deflate pipeline as ghosts (encodeGhostCode) — replay recording is
+ * 30Hz, so the codec's inherent 15Hz payload is the shared fidelity.
+ */
+export async function buildReplayLink(def: TrackDef, timeMs: number, samples: GhostSample[]): Promise<string> {
+  const code = await encodeGhostCode(def, samples);
+  return buildV1Envelope('r', def, timeMs, code);
 }
 
 export interface ShareLink {
@@ -312,9 +331,9 @@ export interface ShareLink {
   code: string;
 }
 
-export function parseShareLink(hash: string): ShareLink | null {
+function parseV1Envelope(hash: string, kind: 'g' | 'r'): ShareLink | null {
   const h = hash.startsWith('#') ? hash.slice(1) : hash;
-  if (!h.startsWith('g=v1.')) return null;
+  if (!h.startsWith(`${kind}=v1.`)) return null;
   const parts = h.split('.');
   if (parts.length !== 4) return null;
   const trackId = parts[1];
@@ -324,4 +343,13 @@ export function parseShareLink(hash: string): ShareLink | null {
   const code = parts[3];
   if (!code || code.length > 20000) return null;
   return { trackId, timeMs, code };
+}
+
+export function parseShareLink(hash: string): ShareLink | null {
+  return parseV1Envelope(hash, 'g');
+}
+
+/** Symmetric parser for `#r=` replay envelopes (same validation as ghost links). */
+export function parseReplayLink(hash: string): ShareLink | null {
+  return parseV1Envelope(hash, 'r');
 }

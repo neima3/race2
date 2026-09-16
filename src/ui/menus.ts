@@ -82,6 +82,7 @@ export class MenuManager {
   onCareerHubReturn: () => void = () => {};
   onShareGhost: (track: TrackDef) => Promise<void> = async () => {};
   onFriendRace: (track: TrackDef) => void = () => {};
+  onWatchFriendReplay: (track: TrackDef) => void = () => {};
   onStartDaily: () => void = () => {};
   onShareDaily: () => Promise<void> = async () => {};
   onStartWeekly: () => void = () => {};
@@ -866,6 +867,25 @@ export class MenuManager {
     this.friendScreen.classList.remove('hidden');
   }
 
+  /** v9 P3: #r= import card — WATCH drops the friend's lap straight into the theater. */
+  showFriendReplay(track: TrackDef, timeMs: number): void {
+    this.friendScreen.replaceChildren();
+    const panel = el('div', 'panel friend-panel');
+    panel.style.setProperty('--accent', track.accentName);
+    panel.append(el('div', 'fh-title', 'REPLAY'));
+    panel.append(el('h2', 'screen-title', 'FRIEND REPLAY'));
+    panel.append(el('div', 'friend-track', track.name.toUpperCase()));
+    panel.append(el('div', 'friend-time', formatTimePrecise(timeMs)));
+    const watch = el('button', 'menu-btn primary', 'WATCH');
+    watch.addEventListener('click', () => this.onWatchFriendReplay(track));
+    const dismiss = el('button', 'menu-btn', 'DISMISS');
+    dismiss.addEventListener('click', () => this.show('title'));
+    panel.append(watch, dismiss);
+    this.friendScreen.append(panel);
+    this.hideAll();
+    this.friendScreen.classList.remove('hidden');
+  }
+
   private refreshDailyStreak(): void {
     if (!this.dailyStreakEl) return;
     const streak = this.save.daily.streak;
@@ -1065,7 +1085,7 @@ export class MenuManager {
   showToast(text: string): void {
     if (!this.toastEl) {
       this.toastEl = el('div', 'menu-toast');
-      this.root.append(this.toastEl);
+      document.body.append(this.toastEl);
     }
     this.toastEl.textContent = text;
     this.toastEl.classList.remove('show');

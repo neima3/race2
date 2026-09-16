@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { el, formatTime } from './common';
 import type { GhostSample } from '../game/race';
 import type { CameraMode } from '../render/camera';
+import type { TrackVariant } from '../track/defs';
 
 /**
  * Replay theater (v8 P8) — session replay buffer, deterministic sample lookup and
@@ -14,6 +15,10 @@ export interface ReplayEntry {
   samples: GhostSample[];
   timeMs: number;
   dateMs: number;
+  /** Variant the lap was recorded under (undefined = day); non-day laps are not shareable. */
+  variant?: TrackVariant;
+  /** v9 P3: imported from a #r= friend link — watched directly, never shareable. */
+  imported?: boolean;
 }
 
 const BUFFER_MAX = 5;
@@ -113,6 +118,8 @@ interface TheaterOpts {
   totalMs: number;
   index: number;
   count: number;
+  /** Title prefix — 'REPLAY' by default, 'FRIEND REPLAY' for imported #r= laps. */
+  label?: string;
 }
 
 /**
@@ -129,6 +136,7 @@ export class TheaterUI {
   onSpeed: (speed: number) => void = () => {};
   onCamera: () => void = () => {};
   onAutoCuts: (on: boolean) => void = () => {};
+  onShare: () => void = () => {};
   onExit: () => void = () => {};
   onPrev: () => void = () => {};
   onNext: () => void = () => {};
@@ -141,6 +149,7 @@ export class TheaterUI {
   private playBtn: HTMLElement;
   private camBtn: HTMLElement;
   private cutsBtn: HTMLElement;
+  private shareBtn: HTMLElement;
   private spdBtns: HTMLElement[] = [];
   private shown = false;
   private dragging = false;
@@ -204,10 +213,12 @@ export class TheaterUI {
     this.camBtn.addEventListener('click', () => this.onCamera());
     this.cutsBtn = el('button', 'theater-btn', 'AUTO CUTS ON');
     this.cutsBtn.addEventListener('click', () => this.onAutoCuts(!this.cutsBtn.classList.contains('on')));
+    this.shareBtn = el('button', 'theater-btn share hidden', 'SHARE REPLAY');
+    this.shareBtn.addEventListener('click', () => this.onShare());
     const hint = el('div', 'theater-hint', 'SPACE PLAY &middot; &larr;&rarr; SEEK &middot; 1/2/3 SPEED &middot; C CAM &middot; ESC EXIT');
     const exitBtn = el('button', 'theater-btn exit', 'EXIT');
     exitBtn.addEventListener('click', () => this.onExit());
-    row.append(this.playBtn, speeds, this.camBtn, this.cutsBtn, hint, exitBtn);
+    row.append(this.playBtn, speeds, this.camBtn, this.cutsBtn, this.shareBtn, hint, exitBtn);
 
     this.bar = el('div', 'theater-bar');
     this.bar.append(head, scrubRow, row);
@@ -261,7 +272,7 @@ export class TheaterUI {
 
   show(opts: TheaterOpts): void {
     this.totalMs = Math.max(1, opts.totalMs);
-    this.titleEl.innerHTML = `REPLAY &middot; ${opts.trackName.toUpperCase()} &middot; <b>${opts.index + 1}/${opts.count}</b>`;
+    this.titleEl.innerHTML = `${opts.label ?? 'REPLAY'} &middot; ${opts.trackName.toUpperCase()} &middot; <b>${opts.index + 1}/${opts.count}</b>`;
     this.lastTimeText = '';
     this.root.classList.remove('hidden');
     this.shown = true;
@@ -308,6 +319,11 @@ export class TheaterUI {
   setAutoCuts(on: boolean): void {
     this.cutsBtn.textContent = `AUTO CUTS ${on ? 'ON' : 'OFF'}`;
     this.cutsBtn.classList.toggle('on', on);
+  }
+
+  /** v9 P3: SHARE REPLAY is visible only for real recorded day-condition laps. */
+  setShareVisible(visible: boolean): void {
+    this.shareBtn.classList.toggle('hidden', !visible);
   }
 
   /** Briefly fade the bar so a director cut reads cleanly (skipped while scrubbing). */

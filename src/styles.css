@@ -555,6 +555,7 @@ button {
 
 .menu-toast {
   position: fixed;
+  z-index: 60; /* own layer: must read above the theater bar (40) */
   left: 50%;
   bottom: 9vh;
   transform: translateX(-50%) translateY(14px);
@@ -2036,7 +2037,7 @@ button {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 18;
+  z-index: 40; /* above .menu-layer (30): the theater is the active UI during replay */
 }
 
 .theater-bar {
