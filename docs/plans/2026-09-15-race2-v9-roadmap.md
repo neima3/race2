@@ -4,7 +4,7 @@
 - [x] Phase 1: Free-play variant picker — dusk/night/rain for any track
 - [x] Phase 2: Slipstream drafting — race behind cars for extra speed
 - [x] Phase 3: Replay sharing — `#r=` codes watch a friend's lap in the theater
-- [ ] Phase 4: Rival roster +4 (champion finale) — start/finish banter
+- [x] Phase 4: Rival roster +4 (champion finale) — start/finish banter
 - [ ] Phase 5: New-feature achievements + balance + full QA sweep
 - [ ] Phase 6: v2.4.0 + deploy + live verify
 

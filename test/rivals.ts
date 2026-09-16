@@ -3,7 +3,8 @@ import { TrackCurve } from '../src/track/curve';
 import { TRACKS } from '../src/track/defs';
 import { CarPhysics } from '../src/physics/car';
 import { RaceController } from '../src/game/race';
-import { RivalManager, pickLineup, type Standing } from '../src/game/rivals';
+import { RivalManager, pickLineup, RIVAL_ROSTER, tauntFor, type Standing } from '../src/game/rivals';
+import { DEFAULT_TUNING } from '../src/physics/car';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
 import { DraftTracker } from '../src/game/draft';
@@ -282,6 +283,73 @@ for (const def of RACE_TRACKS) {
   else fail(`slow-mo: race clock diverged (delta ${Math.abs(normal.timeMs - dilated.timeMs).toFixed(2)}ms)`);
 }
 
+// v9 P4: champion tier tuning + banter table
+{
+  const def = TRACKS[0];
+  const curve = new TrackCurve(def.points, true);
+  const sov = RIVAL_ROSTER.find((r) => r.name === 'SOVEREIGN')!;
+  const apex = RIVAL_ROSTER.find((r) => r.name === 'APEX')!;
+  const rm = new RivalManager(curve, def, new THREE.Group(), false, [sov, apex]);
+  const champ = rm.rivals[0];
+  const pro = rm.rivals[1];
+  if (
+    Math.abs(champ.car.tuning.accel - DEFAULT_TUNING.accel * 1.07) < 1e-9 &&
+    Math.abs(champ.car.tuning.maxSpeed - DEFAULT_TUNING.maxSpeed * 1.04) < 1e-9
+  ) {
+    pass(`champion tuning: accel ${champ.car.tuning.accel.toFixed(2)} (= default x1.07), maxSpeed ${champ.car.tuning.maxSpeed.toFixed(2)} (= default x1.04)`);
+  } else {
+    fail(`champion tuning wrong: accel=${champ.car.tuning.accel} maxSpeed=${champ.car.tuning.maxSpeed}`);
+  }
+  if (
+    Math.abs(pro.car.tuning.accel - DEFAULT_TUNING.accel * 1.05) < 1e-9 &&
+    Math.abs(pro.car.tuning.maxSpeed - DEFAULT_TUNING.maxSpeed * 1.025) < 1e-9 &&
+    champ.car.tuning.maxSpeed > pro.car.tuning.maxSpeed &&
+    champ.car.tuning.accel > pro.car.tuning.accel
+  ) {
+    pass(`champion strictly above pro tier: top ${champ.car.tuning.maxSpeed.toFixed(2)} vs ${pro.car.tuning.maxSpeed.toFixed(2)}, accel ${champ.car.tuning.accel.toFixed(2)} vs ${pro.car.tuning.accel.toFixed(2)}`);
+  } else {
+    fail(`pro tier deltas drifted or champion not above pro: pro accel=${pro.car.tuning.accel} max=${pro.car.tuning.maxSpeed}`);
+  }
+  if (champ.skill.pace === 1.0 && champ.skill.lookaheadScale === 1.15 && champ.skill.steerNoise === 0 && champ.skill.lookaheadJitter === 0) {
+    pass('champion autopilot skill = pro params with pace 1.0');
+  } else {
+    fail(`champion skill wrong: pace=${champ.skill.pace} ls=${champ.skill.lookaheadScale}`);
+  }
+  if (rm.hasChampion() && !new RivalManager(curve, def, new THREE.Group(), false, pickLineup(def.id)).hasChampion() && rm.presets[0].name === 'SOVEREIGN') {
+    pass('hasChampion() detects champion grids only; presets expose the lineup');
+  } else {
+    fail('hasChampion()/presets plumbing broken');
+  }
+  if (RIVAL_ROSTER.length === 12 && RIVAL_ROSTER.every((r) => (r.tauntStart ?? '').length > 0 && (r.tauntStart ?? '').length <= 48 && (r.tauntFinish ?? '').length > 0 && (r.tauntFinish ?? '').length <= 48)) {
+    pass(`banter table complete: 12/12 rivals carry start+finish one-liners (all <=48 chars)`);
+  } else {
+    fail('banter table incomplete or lines too long: ' + RIVAL_ROSTER.map((r) => `${r.name}:${(r.tauntStart ?? '').length}/${(r.tauntFinish ?? '').length}`).join(' '));
+  }
+  if (tauntFor('VESPER', 'start') === 'VESPER: TRY TO KEEP UP.' && tauntFor('VESPER', 'finish') === 'VESPER: REMATCH. NOW.' && tauntFor('NOBODY', 'start') === null) {
+    pass('tauntFor composes NAME: LINE and returns null for unknown rivals');
+  } else {
+    fail(`tauntFor broken: '${tauntFor('VESPER', 'start')}' / '${tauntFor('VESPER', 'finish')}'`);
+  }
+  const starts = new Set(RIVAL_ROSTER.map((r) => r.tauntStart));
+  const finishes = new Set(RIVAL_ROSTER.map((r) => r.tauntFinish));
+  if (starts.size === 12 && finishes.size === 12) {
+    pass('all 12 start + 12 finish lines are distinct');
+  } else {
+    fail(`banter lines repeat: ${starts.size} starts / ${finishes.size} finishes`);
+  }
+  if (RIVAL_ROSTER.slice(0, 8).every((r) => r.tier === (['easy', 'easy', 'easy', 'mid', 'mid', 'mid', 'pro', 'pro'] as const)[RIVAL_ROSTER.indexOf(r)])) {
+    pass('legacy 8 presets keep their tiers (frozen roster order)');
+  } else {
+    fail('legacy preset tiers/order changed');
+  }
+  const newcomerTiers = RIVAL_ROSTER.slice(8).map((r) => `${r.name}:${r.tier}`).join(',');
+  if (newcomerTiers === 'NOVA:mid,KESTREL:pro,VESUVIUS:pro,SOVEREIGN:champion') {
+    pass(`newcomers appended in order: ${newcomerTiers}`);
+  } else {
+    fail(`newcomer roster wrong: ${newcomerTiers}`);
+  }
+}
+
 // Aggregate assertions
 for (const r of results) {
   if (!r.finished) fail(`${r.track}: player did not finish`);
@@ -295,6 +363,6 @@ for (const r of results) {
 if (results.length >= 2 && results.every((r) => r.playerPos === 1)) fail('player is always P1 — tiers need tuning');
 if (results.length >= 2 && results.every((r) => r.playerPos === 4)) fail('player is always P4 — tiers need tuning');
 
-const total = 2 + results.length * 6 + 2 + 4;
+const total = 2 + results.length * 6 + 2 + 4 + 9;
 console.log(`\nrivals test: ${total - failures}/${total} checks passed`);
 if (failures > 0) process.exit(1);

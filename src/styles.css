@@ -2017,6 +2017,15 @@ button {
   animation: countPop 1.4s ease-out forwards;
 }
 
+/* v9 P4 rival banter — a quoted one-liner, quieter than system splashes */
+.finish-flash.splash-banter {
+  font-size: clamp(20px, 4.2vw, 42px);
+  letter-spacing: 0.04em;
+  color: #f2f5ff;
+  text-shadow: 0 0 34px rgba(160, 190, 255, 0.65), 0 4px 24px rgba(0, 0, 0, 0.6);
+  animation: countPop 1.6s ease-out forwards;
+}
+
 .finish-flash.splash-good {
   font-size: clamp(26px, 5vw, 54px);
   color: #35ff7a;

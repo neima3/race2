@@ -13,6 +13,8 @@ export interface CupDef {
   trackIds: string[];
   variants?: TrackVariant[];
   paceBias?: number;
+  /** v9 P4: the final race swaps its last 'pro' slot for the champion (SOVEREIGN). */
+  championFinal?: boolean;
 }
 
 export const CUP_POINTS = [25, 18, 15, 12];
@@ -63,6 +65,7 @@ export const CUPS: CupDef[] = [
     tiers: ['easy', 'mid', 'pro'],
     trackIds: ['salt-flats', 'harbor-nine', 'ring-runner', 'serpents-tail'],
     variants: ['day', 'night', 'dusk', 'rain'],
+    championFinal: true,
   },
 ];
 
@@ -81,8 +84,22 @@ export function cupRaceTrack(cup: CupDef, raceIndex: number): TrackDef {
   return def;
 }
 
+/** Resolved tier grid for one cup race — championFinal cups swap their final 'pro' slot
+ *  for the champion tier (grand tour R4 closes against SOVEREIGN). Deterministic. */
+export function cupRaceTiers(cup: CupDef, raceIndex: number): RivalTier[] {
+  if (cup.championFinal && raceIndex === cup.trackIds.length - 1) {
+    const idx = cup.tiers.lastIndexOf('pro');
+    if (idx >= 0) {
+      const tiers = cup.tiers.slice();
+      tiers[idx] = 'champion';
+      return tiers;
+    }
+  }
+  return cup.tiers;
+}
+
 export function cupLineup(cup: CupDef, raceIndex: number): RivalPreset[] {
-  return pickLineup(cup.trackIds[raceIndex], raceIndex + 1, cup.tiers).map((p) => (cup.paceBias ? { ...p, paceBias: cup.paceBias } : p));
+  return pickLineup(cup.trackIds[raceIndex], raceIndex + 1, cupRaceTiers(cup, raceIndex)).map((p) => (cup.paceBias ? { ...p, paceBias: cup.paceBias } : p));
 }
 
 export function cupRaceVariant(cup: CupDef, raceIndex: number): TrackVariant {

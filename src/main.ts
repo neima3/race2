@@ -55,7 +55,7 @@ import {
   type WeeklyDef,
   type WeeklyPanelData,
 } from './game/weekly';
-import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
+import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, tauntFor, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
 import { variantWritesRecords } from './game/variants';
 import { DraftTracker, gapAhead, DRAFT_GAP_MIN, DRAFT_GAP_MAX } from './game/draft';
 
@@ -132,6 +132,10 @@ class Game {
   private traffic: TrafficManager | null = null;
   private rivalLineup: RivalPreset[] | null = null;
   private rivalsBuiltWith: string | null = null;
+  private championInRace = false;
+  private championBeaten = false;
+  private banterIdx = 0;
+  private banterPending: { line: string; atMs: number } | null = null;
   private playerDraft = new DraftTracker();
   private draftGap = -1;
   private playerRef = { dist: 0, lateral: 0 };
@@ -1048,6 +1052,11 @@ class Game {
     this.rivals = new RivalManager(curve, def, this.trackGroup, this.quality !== 'low', this.rivalLineup ?? undefined, { night: VARIANTS[variant].headlights });
     this.rivals.rain = VARIANTS[variant].rain;
     this.rivals.onKnockout = (ev) => this.onKnockoutEvent(ev);
+    this.rivals.onRivalFinish = (name) => {
+      if (!this.rivalMode || this.race?.phase !== 'racing') return;
+      const line = tauntFor(name, 'finish');
+      if (line) this.hud.showSplash(line, 'splash-banter', 1700);
+    };
     this.rivalsBuiltWith = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
 
     this.traffic?.dispose();
@@ -1099,10 +1108,16 @@ class Game {
       this.rivals.placeOnGrid();
       this.rivals.setVisible(true);
       this.hud.showRivalHUD();
+      this.championInRace = this.rivals.hasChampion();
+      this.championBeaten = false;
+      this.banterPending = null;
     } else {
       this.car!.placeAtFrame(0, 8);
       this.rivals?.setVisible(false);
       this.hud.hideRivalHUD();
+      this.championInRace = false;
+      this.championBeaten = false;
+      this.banterPending = null;
     }
     if (this.trafficMode && this.traffic) {
       this.traffic.place(this.car!.state.trackDist);
@@ -1400,6 +1415,17 @@ class Game {
         this.rig.addPunch(this.rivalMode ? 13 : 8);
       }
       window.setTimeout(() => this.hud.clearCenter(), 900);
+      // v9 P4 banter: the strongest rival (champion when present) trash-talks on GO.
+      // Deferred via the frame loop (banterPending) rather than setTimeout so the
+      // splash lands even under aggressive timer throttling (headless QA).
+      if (this.rivalMode && this.rivals && this.rivals.presets.length > 0) {
+        const presets = this.rivals.presets;
+        const champion = presets.find((p) => p.tier === 'champion');
+        const preset = champion ?? presets[this.banterIdx++ % presets.length];
+        if (preset.tauntStart) {
+          this.banterPending = { line: `${preset.name}: ${preset.tauntStart}`, atMs: performance.now() + 950 };
+        }
+      }
       if (this.tutorialSplashPending) {
         const banner = this.tutorialSplashPending;
         this.tutorialSplashPending = null;
@@ -1477,6 +1503,15 @@ class Game {
       if (this.rivalMode && this.rivals) {
         rivalStandings = this.rivals.freeze(this.race!.totalProgress, r.timeMs);
         console.log('[rivals] finish order: ' + rivalStandings.map((s, i) => `P${i + 1} ${s.name}${s.eliminated ? ' OUT' : s.gapMeters > 0 ? ` +${Math.round(s.gapMeters)}m` : ''}`).join(' | '));
+        // v9 P4 KINGMAKER prep: finished the race ahead of a participating champion
+        if (!r.knockout && this.rivals.hasChampion()) {
+          const pIdx = rivalStandings.findIndex((s) => s.isPlayer);
+          const cIdx = rivalStandings.findIndex((s) => s.name === 'SOVEREIGN');
+          if (pIdx >= 0 && cIdx > pIdx) {
+            this.championBeaten = true;
+            window.dispatchEvent(new CustomEvent('race2:champion-beaten', { detail: { track: this.track.id, position: pIdx + 1, sovereignPosition: cIdx + 1 } }));
+          }
+        }
       }
       if (!r.knockout) {
         const tierBase = r.medal === 'author' ? 0x29e6ff : r.medal === 'gold' ? 0xffcf3f : r.medal === 'silver' ? 0xd7dee8 : r.medal === 'bronze' ? 0xe08d4f : 0x29e6ff;
@@ -2186,6 +2221,13 @@ class Game {
     }
     if (steps === 8) this.acc = 0;
 
+    // v9 P4: GO banter fires ~950ms after the start, driven by the frame loop
+    if (this.banterPending && this.state === 'racing' && this.race?.phase === 'racing' && performance.now() >= this.banterPending.atMs) {
+      const line = this.banterPending.line;
+      this.banterPending = null;
+      this.hud.showSplash(line, 'splash-banter', 1600);
+    }
+
     const s = this.car!.state;
     if (!Number.isFinite(s.pos.x + s.pos.y + s.pos.z + s.vel.x + s.vel.y + s.vel.z)) {
       this.race!.respawnAtCheckpoint();
@@ -2472,6 +2514,7 @@ declare global {
       rivals: () => object;
       draft: () => object;
       standings: () => object;
+      champion: () => object;
       career: () => object;
       friend: () => object | null;
       overtake: () => string;
@@ -2633,6 +2676,7 @@ window.__race2 = {
     if (!game['rivalMode'] || !rivals || !race) return [];
     return rivals.standings(race.totalProgress);
   },
+  champion: () => ({ inRace: game['championInRace'], beaten: game['championBeaten'] }),
   overtake: () => {
     const pos = game['lastPlayerPos'] > 1 ? game['lastPlayerPos'] - 1 : 2;
     game['triggerOvertake'](pos, true);

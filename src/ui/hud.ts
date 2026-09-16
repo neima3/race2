@@ -416,10 +416,10 @@ export class HUD {
     this.centerEl.innerHTML = `<div class="finish-flash ${medalClass}">${label}</div>`;
   }
 
-  showSplash(text: string, cls: string): void {
+  showSplash(text: string, cls: string, ttl = 2400): void {
     const splash = el('div', `finish-flash ${cls}`, text);
     this.centerEl.replaceChildren();
     this.centerEl.append(splash);
-    window.setTimeout(() => splash.remove(), 2400);
+    window.setTimeout(() => splash.remove(), ttl);
   }
 }

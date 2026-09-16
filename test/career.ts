@@ -3,15 +3,18 @@ import { TrackCurve } from '../src/track/curve';
 import { TRACKS } from '../src/track/defs';
 import { CarPhysics } from '../src/physics/car';
 import { RaceController } from '../src/game/race';
-import { RivalManager, pickLineup, RIVAL_ROSTER, type Standing } from '../src/game/rivals';
+import { RivalManager, pickLineup, RIVAL_ROSTER, V230_POOL_DEPTH, type Standing } from '../src/game/rivals';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
 import { rivalAchievementState, achievementPops } from '../src/game/achievements';
+import { dailyFor } from '../src/game/daily';
+import { weeklyFor } from '../src/game/weekly';
 import {
   CUPS,
   CUP_POINTS,
   cupById,
   cupLineup,
+  cupRaceTiers,
   cupUnlock,
   cupRaceTrack,
   cupStandings,
@@ -115,6 +118,123 @@ const PLAYER_PAINT = 0x29e6ff;
   const allRaces = [0, 1, 2, 3].map((i) => cupLineup(street, i).map((r) => r.name).join('/'));
   expect(new Set(allRaces).size > 1, 'lineups differ across cup races');
   expect([0, 1, 2, 3].every((i) => JSON.stringify(cupLineup(street, i)) === JSON.stringify(cupLineup(street, i))), 'every cup race lineup stable under repeated calls');
+}
+
+// ---------- 3b. v9 P4: roster +4 — legacy lineups byte-frozen, champion finale ----------
+{
+  const sprint = cupById('sprint-cup')!;
+  const street = cupById('street-cup')!;
+  const gauntlet = cupById('gauntlet-cup')!;
+  const tour = cupById('grand-tour')!;
+
+  // Lineup names for every pre-existing cup slot, captured at v2.3.0 (pre-roster-growth)
+  // via a pre-change dump. Any reshuffle here is a determinism regression.
+  const FROZEN_CUPS: Record<string, string[]> = {
+    'sprint-cup': ['JUNO/ROOKIE/SABLE', 'ROOKIE/JUNO/ONYX', 'HALCYON/ROOKIE/SABLE', 'HALCYON/ROOKIE/MIRAGE'],
+    'street-cup': ['SABLE/APEX/VESPER', 'SABLE/APEX/VESPER', 'ONYX/VESPER/APEX', 'MIRAGE/APEX/VESPER'],
+    'gauntlet-cup': ['APEX/VESPER/SABLE', 'APEX/VESPER/MIRAGE', 'VESPER/APEX/MIRAGE', 'VESPER/APEX/ONYX'],
+    'grand-tour': ['ROOKIE/ONYX/APEX', 'JUNO/MIRAGE/APEX', 'ROOKIE/MIRAGE/APEX', 'ROOKIE/SABLE/APEX'],
+  };
+  for (const cup of [sprint, street, gauntlet, tour]) {
+    const expected = FROZEN_CUPS[cup.id];
+    for (let i = 0; i < 4; i++) {
+      if (cup.id === 'grand-tour' && i === 3) continue; // champion slot asserted below
+      const actual = cupLineup(cup, i).map((r) => r.name).join('/');
+      expect(actual === expected[i], `${cup.name} R${i + 1} lineup byte-identical to v2.3.0 (${actual})`);
+    }
+  }
+
+  // Free-play (default grid) frozen across all 14 tracks
+  const FROZEN_FREE: Record<string, string> = {
+    'sunrise-sprint': 'HALCYON/SABLE/APEX', 'canyon-twist': 'ROOKIE/ONYX/VESPER', 'sky-loop': 'HALCYON/MIRAGE/APEX',
+    'grand-gauntlet': 'JUNO/MIRAGE/VESPER', 'dune-rush': 'HALCYON/MIRAGE/APEX', 'serpents-tail': 'JUNO/ONYX/APEX',
+    'neon-vertical': 'ROOKIE/SABLE/APEX', 'gauntlet-ii': 'HALCYON/MIRAGE/APEX', 'twilight-gauntlet': 'JUNO/SABLE/APEX',
+    'neon-circuit': 'ROOKIE/MIRAGE/VESPER', 'ring-runner': 'JUNO/SABLE/VESPER', 'volt-alley': 'JUNO/SABLE/VESPER',
+    'salt-flats': 'ROOKIE/ONYX/VESPER', 'harbor-nine': 'ROOKIE/ONYX/APEX',
+  };
+  expect(TRACKS.every((t) => (FROZEN_FREE[t.id] ?? '') !== ''), 'every track has a captured v2.3.0 free-play baseline');
+  expect(
+    TRACKS.map((t) => pickLineup(t.id).map((r) => r.name).join('/')).join('|') === TRACKS.map((t) => FROZEN_FREE[t.id]).join('|'),
+    'free-play lineups byte-identical to v2.3.0 on all 14 tracks',
+  );
+
+  // Daily rotation (30 days ending 2026-09-15) frozen
+  const FROZEN_DAILY: Record<string, string> = {
+    '20260915': 'ROOKIE/APEX/VESPER', '20260914': 'JUNO/APEX/VESPER', '20260913': 'HALCYON/APEX/VESPER',
+    '20260912': 'HALCYON/APEX/VESPER', '20260911': 'ROOKIE/VESPER/APEX', '20260910': 'JUNO/APEX/VESPER',
+    '20260909': 'HALCYON/APEX/VESPER', '20260908': 'HALCYON/APEX/VESPER', '20260907': 'HALCYON/VESPER/APEX',
+    '20260906': 'JUNO/APEX/VESPER', '20260905': 'JUNO/APEX/VESPER', '20260904': 'HALCYON/VESPER/APEX',
+    '20260903': 'JUNO/APEX/VESPER', '20260902': 'HALCYON/VESPER/APEX', '20260901': 'ROOKIE/APEX/VESPER',
+    '20260831': 'ROOKIE/APEX/VESPER', '20260830': 'HALCYON/APEX/VESPER', '20260829': 'ROOKIE/VESPER/APEX',
+    '20260828': 'HALCYON/VESPER/APEX', '20260827': 'ROOKIE/VESPER/APEX', '20260826': 'JUNO/VESPER/APEX',
+    '20260825': 'JUNO/VESPER/APEX', '20260824': 'HALCYON/VESPER/APEX', '20260823': 'JUNO/VESPER/APEX',
+    '20260822': 'ROOKIE/APEX/VESPER', '20260821': 'JUNO/VESPER/APEX', '20260820': 'HALCYON/VESPER/APEX',
+    '20260819': 'ROOKIE/VESPER/APEX', '20260818': 'HALCYON/VESPER/APEX', '20260817': 'ROOKIE/VESPER/APEX',
+  };
+  const dailyKeys = Object.keys(FROZEN_DAILY);
+  expect(dailyKeys.length === 30, 'daily baseline covers 30 days');
+  expect(
+    dailyKeys.every((k) => dailyFor(k).lineup.map((r) => r.name).join('/') === FROZEN_DAILY[k]),
+    'daily lineups byte-identical to v2.3.0 across the 30-day baseline',
+  );
+  expect(
+    dailyKeys.every((k) => JSON.stringify(dailyFor(k).lineup) === JSON.stringify(dailyFor(k).lineup)),
+    'daily lineups deterministic under repeated calls',
+  );
+
+  // Weekly lineups frozen (sampled weeks, mid+mid+pro grids)
+  const FROZEN_WEEKLY: Record<string, string> = {
+    '2026W36': 'SABLE/ONYX/APEX|ONYX/MIRAGE/APEX|SABLE/MIRAGE/APEX',
+    '2026W37': 'ONYX/MIRAGE/APEX|SABLE/ONYX/APEX|ONYX/SABLE/APEX',
+    '2026W38': 'SABLE/ONYX/VESPER|ONYX/MIRAGE/APEX|ONYX/SABLE/APEX',
+    '2026W39': 'ONYX/SABLE/APEX|MIRAGE/ONYX/APEX|SABLE/MIRAGE/APEX',
+  };
+  expect(
+    Object.keys(FROZEN_WEEKLY).every((wk) => weeklyFor(wk).lineups.map((lu) => lu.map((r) => r.name).join('/')).join('|') === FROZEN_WEEKLY[wk]),
+    'weekly lineups byte-identical to v2.3.0 on sampled weeks',
+  );
+
+  // Champion finale: grand tour R4 replaces the pro slot with SOVEREIGN
+  const r4 = cupLineup(tour, 3);
+  expect(r4.map((r) => r.name).join('/') === 'ROOKIE/SABLE/SOVEREIGN', `grand tour R4: SOVEREIGN replaces the pro pick (got ${r4.map((r) => r.name).join('/')})`);
+  expect(r4.map((r) => r.tier).join('/') === 'easy/mid/champion', 'grand tour R4 grid resolves easy/mid/champion');
+  expect(cupRaceTiers(tour, 3).join('/') === 'easy/mid/champion', 'cupRaceTiers: final race swaps pro -> champion');
+  expect(cupRaceTiers(tour, 0).join('/') === 'easy/mid/pro' && cupRaceTiers(tour, 2).join('/') === 'easy/mid/pro', 'cupRaceTiers: races 1-3 keep the base grid');
+  expect(JSON.stringify(cupLineup(tour, 3)) === JSON.stringify(cupLineup(tour, 3)), 'grand tour R4 lineup deterministic');
+  expect(r4.every((r) => r.paceBias === undefined), 'grand tour R4 presets carry no pace bias');
+
+  // Roster pools grew; legacy presets untouched
+  expect(RIVAL_ROSTER.length === 12, `roster grew to 12 presets (got ${RIVAL_ROSTER.length})`);
+  const poolSizes = (['easy', 'mid', 'pro', 'champion'] as const).map((t) => `${t}:${RIVAL_ROSTER.filter((r) => r.tier === t).length}`).join(',');
+  expect(poolSizes === 'easy:3,mid:4,pro:4,champion:1', `tier pools are easy:3 mid:4 pro:4 champion:1 (${poolSizes})`);
+  expect(V230_POOL_DEPTH.pro === 2 && V230_POOL_DEPTH.champion === 0, 'frozen pool depths: pro slice 2, champion always full pool');
+  const frozen8 = RIVAL_ROSTER.slice(0, 8).map((r) => `${r.name}:${r.tier}:0x${r.paint.toString(16)}:${r.body}`).join('|');
+  expect(
+    frozen8 === 'ROOKIE:easy:0xff4d6d:standard|HALCYON:easy:0xe8f2ff:standard|JUNO:easy:0xffb52e:tank|SABLE:mid:0x7dff6e:standard|MIRAGE:mid:0xc8ff2e:aero|ONYX:mid:0xd78a4a:tank|APEX:pro:0xb44dff:standard|VESPER:pro:0x29e6ff:aero',
+    'existing 8 rival presets byte-identical (name/tier/paint/body)',
+  );
+  expect(pickLineup('probe-track', 0, ['champion']).map((r) => r.name).join('/') === 'SOVEREIGN', 'champion-tier slot always resolves SOVEREIGN');
+  expect(pickLineup('probe-track', 7, ['champion', 'champion']).every((r) => r.name === 'SOVEREIGN'), 'champion pool of 1 saturates repeat slots (capacity guard keeps cups clear of this)');
+
+  // Deep slot keys (beyond the frozen depth) draw from the grown pool — this is where
+  // KESTREL/VESUVIUS/NOVA enter rotation without touching legacy lineups
+  const deep = pickLineup('probe-track', 0, ['pro', 'pro', 'pro']);
+  expect(new Set(deep.map((r) => r.name)).size === 3, `3-deep pro slot picks 3 distinct pros (${deep.map((r) => r.name).join('/')})`);
+  expect(deep.every((r) => ['APEX', 'VESPER', 'KESTREL', 'VESUVIUS'].includes(r.name)), 'deep pro picks come from the grown pro pool');
+  expect(deep.some((r) => r.name === 'KESTREL' || r.name === 'VESUVIUS'), 'deep pro slot reaches the new pro presets');
+  expect(JSON.stringify(deep) === JSON.stringify(pickLineup('probe-track', 0, ['pro', 'pro', 'pro'])), 'deep-slot pick deterministic');
+  const deepMid = pickLineup('probe-track', 0, ['mid', 'mid', 'mid', 'mid']);
+  expect(new Set(deepMid.map((r) => r.name)).size === 4 && deepMid.some((r) => r.name === 'NOVA'), '4-deep mid slot picks distinct mids incl. NOVA');
+
+  // Resolved per-race grids stay within roster capacity (incl. the champion swap)
+  for (const cup of [sprint, street, gauntlet, tour]) {
+    for (let i = 0; i < 4; i++) {
+      const need = new Map<string, number>();
+      for (const t of cupRaceTiers(cup, i)) need.set(t, (need.get(t) ?? 0) + 1);
+      const ok = [...need].every(([tier, n]) => n <= RIVAL_ROSTER.filter((r) => r.tier === tier).length);
+      expect(ok, `${cup.name} R${i + 1}: resolved grid ${cupRaceTiers(cup, i).join('+')} within roster capacity`);
+    }
+  }
 }
 
 // ---------- 4. Unlock gating + ?alltracks bypass ----------

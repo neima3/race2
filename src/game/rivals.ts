@@ -8,7 +8,7 @@ import { autopilotDrive, type AutoPilotState } from '../systems/autopilot';
 import { updateBoostPads, computeOnSlick, moverOverlap, applyMoverScrub, resetPads, surfaceGripFor, type PadState } from './rules';
 import { DraftTracker, gapAhead, DRAFT_GAP_MIN, DRAFT_GAP_MAX } from './draft';
 
-export type RivalTier = 'easy' | 'mid' | 'pro';
+export type RivalTier = 'easy' | 'mid' | 'pro' | 'champion';
 
 export interface RivalPreset {
   name: string;
@@ -16,18 +16,44 @@ export interface RivalPreset {
   paint: number;
   body: CarBodyStyle;
   paceBias?: number;
+  /** v9 P4 banter — one-liners splashed on GO and when this rival takes the flag. */
+  tauntStart?: string;
+  tauntFinish?: string;
 }
 
 export const RIVAL_ROSTER: RivalPreset[] = [
-  { name: 'ROOKIE', tier: 'easy', paint: 0xff4d6d, body: 'standard' },
-  { name: 'HALCYON', tier: 'easy', paint: 0xe8f2ff, body: 'standard' },
-  { name: 'JUNO', tier: 'easy', paint: 0xffb52e, body: 'tank' },
-  { name: 'SABLE', tier: 'mid', paint: 0x7dff6e, body: 'standard' },
-  { name: 'MIRAGE', tier: 'mid', paint: 0xc8ff2e, body: 'aero' },
-  { name: 'ONYX', tier: 'mid', paint: 0xd78a4a, body: 'tank' },
-  { name: 'APEX', tier: 'pro', paint: 0xb44dff, body: 'standard' },
-  { name: 'VESPER', tier: 'pro', paint: 0x29e6ff, body: 'aero' },
+  { name: 'ROOKIE', tier: 'easy', paint: 0xff4d6d, body: 'standard', tauntStart: "FRESH TIRES, FULL TANK!", tauntFinish: "I FINISHED! THAT'S THE WIN." },
+  { name: 'HALCYON', tier: 'easy', paint: 0xe8f2ff, body: 'standard', tauntStart: 'SMOOTH IS FAST. WATCH.', tauntFinish: 'CLEAN RACE. WELL DRIVEN.' },
+  { name: 'JUNO', tier: 'easy', paint: 0xffb52e, body: 'tank', tauntStart: 'HEAVY METAL, HEAVIER GRIP.', tauntFinish: 'ALL TANK, NO TRICKS!' },
+  { name: 'SABLE', tier: 'mid', paint: 0x7dff6e, body: 'standard', tauntStart: 'QUIET CAR, LOUD RESULTS.', tauntFinish: 'CLOSE ONE. NEXT TIME.' },
+  { name: 'MIRAGE', tier: 'mid', paint: 0xc8ff2e, body: 'aero', tauntStart: "BLINK AND YOU'RE BEHIND.", tauntFinish: 'STILL STANDING. BARELY.' },
+  { name: 'ONYX', tier: 'mid', paint: 0xd78a4a, body: 'tank', tauntStart: 'SOLID AS STONE.', tauntFinish: 'STONE-COLD AND STEADY.' },
+  { name: 'APEX', tier: 'pro', paint: 0xb44dff, body: 'standard', tauntStart: 'EVERY CORNER IS MINE.', tauntFinish: 'AS CALCULATED. ALMOST.' },
+  { name: 'VESPER', tier: 'pro', paint: 0x29e6ff, body: 'aero', tauntStart: 'TRY TO KEEP UP.', tauntFinish: 'REMATCH. NOW.' },
+  { name: 'NOVA', tier: 'mid', paint: 0xff3dd2, body: 'standard', tauntStart: 'NEW STAR, SAME FIRE.', tauntFinish: 'STILL BURNING BRIGHT.' },
+  { name: 'KESTREL', tier: 'pro', paint: 0xff5c39, body: 'aero', tauntStart: 'EYES ON THE PRIZE.', tauntFinish: 'CLEAN PASS. WELL FLOWN.' },
+  { name: 'VESUVIUS', tier: 'pro', paint: 0xffe14d, body: 'tank', tauntStart: 'FEEL THE HEAT YET?', tauntFinish: 'ERUPTED RIGHT ON TIME.' },
+  { name: 'SOVEREIGN', tier: 'champion', paint: 0xffd23d, body: 'standard', tauntStart: 'THE THRONE STAYS MINE.', tauntFinish: 'KNEEL. THEN TRY AGAIN.' },
 ];
+
+/**
+ * v9 P4: roster depth at v2.3.0 per tier. pickLineup slots within this depth draw
+ * from the frozen v2.3.0 slice (in roster order) so every seeded lineup shipped in
+ * cups/daily/weekly/free-play stays byte-identical as the roster grows; deeper slot
+ * keys (n > depth) and the champion tier draw from the full pool.
+ */
+export const V230_POOL_DEPTH: Record<RivalTier, number> = { easy: 3, mid: 3, pro: 2, champion: 0 };
+
+export function rosterPreset(name: string): RivalPreset | null {
+  return RIVAL_ROSTER.find((r) => r.name === name) ?? null;
+}
+
+/** Banter line for a rival, e.g. "VESPER: REMATCH. NOW." — null when unset/unknown. */
+export function tauntFor(name: string, kind: 'start' | 'finish'): string | null {
+  const p = rosterPreset(name);
+  const line = kind === 'start' ? p?.tauntStart : p?.tauntFinish;
+  return p && line ? `${p.name}: ${line}` : null;
+}
 
 export function hashSeed(s: string): number {
   let h = 2166136261 >>> 0;
@@ -55,7 +81,9 @@ export function pickLineup(trackId: string, cupSlot = 0, tiers: RivalTier[] = ['
     const n = (tierSeen.get(tier) ?? 0) + 1;
     tierSeen.set(tier, n);
     const key = n === 1 ? tier : `${tier}:${n}`;
-    let pool = RIVAL_ROSTER.filter((r) => r.tier === tier);
+    const fullPool = RIVAL_ROSTER.filter((r) => r.tier === tier);
+    const depth = V230_POOL_DEPTH[tier];
+    let pool = n <= depth ? fullPool.slice(0, depth) : fullPool;
     if (n > 1) {
       const remaining = pool.filter((p) => !picked.some((q) => q.name === p.name));
       if (remaining.length > 0) pool = remaining;
@@ -82,12 +110,14 @@ const TIER_PARAMS: Record<RivalTier, { pace: number; lookaheadJitter: number; st
   easy: { pace: 0.94, lookaheadJitter: -0.12, steerNoise: 0.05, lookaheadScale: 1.3 },
   mid: { pace: 0.955, lookaheadJitter: 0.04, steerNoise: 0.03, lookaheadScale: 1.3 },
   pro: { pace: 1.0, lookaheadJitter: 0, steerNoise: 0, lookaheadScale: 1.15 },
+  champion: { pace: 1.0, lookaheadJitter: 0, steerNoise: 0, lookaheadScale: 1.15 },
 };
 
 const TIER_TUNING: Record<RivalTier, { accel: number; maxSpeed: number }> = {
   easy: { accel: 0.94, maxSpeed: 0.975 },
   mid: { accel: 0.97, maxSpeed: 0.985 },
   pro: { accel: 1.05, maxSpeed: 1.025 },
+  champion: { accel: 1.07, maxSpeed: 1.04 },
 };
 
 export const DEFAULT_RIVAL_LAPS = 2;
@@ -184,6 +214,8 @@ const tmpColor = new THREE.Color();
 
 export class RivalManager {
   readonly rivals: Rival[] = [];
+  /** v9 P4: the presets this manager was built from (banter/champion lookups). */
+  readonly presets: RivalPreset[];
   totalLaps = DEFAULT_RIVAL_LAPS;
   rain = false;
   knockout = false;
@@ -192,6 +224,8 @@ export class RivalManager {
    *  hold player-only — drafting trains outpace the rubber band's dead zone. Off by default. */
   draftEnabled = false;
   onKnockout: (ev: KnockoutEvent) => void = () => {};
+  /** v9 P4: fires when a rival takes the flag mid-race (finish-banter hook). */
+  onRivalFinish: (name: string, paint: number) => void = () => {};
   private curve: TrackCurve;
   private def: TrackDef;
   private frozen: Standing[] | null = null;
@@ -208,6 +242,7 @@ export class RivalManager {
   constructor(curve: TrackCurve, def: TrackDef, parent: THREE.Group, shadows: boolean, lineup: RivalPreset[] = pickLineup(def.id), opts: { night?: boolean } = {}) {
     this.curve = curve;
     this.def = def;
+    this.presets = lineup;
     for (const preset of lineup) {
       const visual = buildCarVisual(preset.paint, false, preset.body, opts.night === true);
       visual.group.visible = false;
@@ -483,6 +518,7 @@ export class RivalManager {
               r.finished = true;
               r.finishRank = ++this.finishCounter;
               r.finishTimeMs = this.raceClockMs;
+              this.onRivalFinish(r.skill.name, r.skill.paint);
             }
           }
         }
@@ -493,6 +529,11 @@ export class RivalManager {
 
   allFinished(): boolean {
     return this.rivals.every((r) => r.finished);
+  }
+
+  /** v9 P4: true when a champion-tier rival is on the grid (SOVEREIGN in grand tour R4). */
+  hasChampion(): boolean {
+    return this.rivals.some((r) => r.skill.tier === 'champion');
   }
 
   setPlayerPaint(paint: number): void {
