@@ -277,3 +277,9 @@ Full gate list re-run green after each fix; final state: typecheck ✓ build ✓
 - QA sweep (subagent): 15-item matrix all PASS after 3 fixes (garage preview rebind, portrait NEAR MISS wrap, rival hint string); perf 191-196 calls rain-rivals, traffic 78-84; migration bug found → lead fixed (pre-v8 profiles force tutorialDone at migration; repro test 19/19).
 - High-contrast HUD option shipped (settings.hudContrast + :root.hud-contrast overrides), verified alpine-day.
 - v2.3.0 bumped (package.json + title credits). AGENTS.md updated (new gates 28/39/16/116/64/73/34, probe 61, v8 architecture, hooks).
+
+## v8 final wrap (2026-09-15)
+- All 10 phases complete; pushed `f78a0d4..58c1c52`, deployed (deployment 2qux986a5pox3rdmwarxx8dn, finished on 58c1c52c), **v2.3.0 live**.
+- Live verification (muted): v2.3.0 + TRAFFIC + WEEKLY + HIGH CONTRAST strings in served bundle; sw controlling page; live traffic race on prod (NEAR MISS counter + ghost delta + traffic pack, `qa/v8-live/01`); weekly card live (`02`).
+- Gates at HEAD (16): typecheck ✅ build ✅ laps 14/14 ✅ rivals 20/20 ✅ career 119/119 ✅ share 34/34 ✅ knockout 50/50 ✅ daily 59/59 ✅ probe 61/61 ✅ allocs PASS ✅ camera 28/28 ✅ ghostbattle 39/39 ✅ traffic 16/16 ✅ weekly 116/116 ✅ stats 64/64 ✅ tutorial 73/73 ✅ replay 34/34 ✅ (+ migration repro 19/19).
+- Grok CLI usage this push: not used (intermittent 5-min timeouts persisted; lead self-review + scoped subagent QA covered it — same outcome as v7).
