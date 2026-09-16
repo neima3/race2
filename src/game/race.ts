@@ -134,6 +134,8 @@ export class RaceController {
   checkpointSplits: number[] = [];
   controlsEnabled = false;
   practice = false;
+  /** v9 P2: slipstream top-speed factor for the player's step (1 = off, byte-identical). */
+  draftFactor = 1;
 
   constructor(
     private car: CarPhysics,
@@ -369,7 +371,7 @@ export class RaceController {
     if (this.phase === 'racing' && !this.practice) {
       this.elapsedMs += dtMs;
     }
-    car.step(dtMs / 1000, input.steer, input.throttle, input.brake, input.drift, true);
+    car.step(dtMs / 1000, input.steer, input.throttle, input.brake, input.drift, true, this.draftFactor);
 
     if (this.practice) {
       this.prevDist = car.state.trackDist;

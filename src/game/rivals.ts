@@ -6,6 +6,7 @@ import { buildCarVisual, contactShadowTexture, type CarVisual, type CarBodyStyle
 import type { ParticleSystem } from '../render/particles';
 import { autopilotDrive, type AutoPilotState } from '../systems/autopilot';
 import { updateBoostPads, computeOnSlick, moverOverlap, applyMoverScrub, resetPads, surfaceGripFor, type PadState } from './rules';
+import { DraftTracker, gapAhead, DRAFT_GAP_MIN, DRAFT_GAP_MAX } from './draft';
 
 export type RivalTier = 'easy' | 'mid' | 'pro';
 
@@ -174,6 +175,7 @@ interface Rival {
   eliminated: boolean;
   koPos: number;
   lapCrossed: boolean;
+  draft: DraftTracker;
 }
 
 const tmpPos = new THREE.Vector3();
@@ -185,6 +187,10 @@ export class RivalManager {
   totalLaps = DEFAULT_RIVAL_LAPS;
   rain = false;
   knockout = false;
+  /** v9 P2: rivals MAY slipstream (machinery kept + flag), but headless balance gates
+   *  (rivals easy+mid, knockout boundary eliminations, career street-cup silver) only
+   *  hold player-only — drafting trains outpace the rubber band's dead zone. Off by default. */
+  draftEnabled = false;
   onKnockout: (ev: KnockoutEvent) => void = () => {};
   private curve: TrackCurve;
   private def: TrackDef;
@@ -238,6 +244,7 @@ export class RivalManager {
         eliminated: false,
         koPos: 0,
         lapCrossed: false,
+        draft: new DraftTracker(),
       });
     }
   }
@@ -247,6 +254,26 @@ export class RivalManager {
     let d = (GRID_START_DIST - k * GRID_GAP) % len;
     if (d < 0) d += len;
     return { dist: d, lateral: k % 2 === 0 ? -GRID_LATERAL : GRID_LATERAL };
+  }
+
+  /** Allocation-free player-side pocket scan (main + headless harnesses share this). */
+  readonly draftScan = { gap: -1, lat: 0 };
+
+  scanPlayerDraft(myDist: number, myLat: number): void {
+    const s = this.draftScan;
+    s.gap = -1;
+    s.lat = 0;
+    const len = this.curve.length;
+    for (const r of this.rivals) {
+      if (r.eliminated) continue;
+      const g = gapAhead(len, myDist, r.car.state.trackDist);
+      if (g < DRAFT_GAP_MIN || g > DRAFT_GAP_MAX) continue;
+      const dl = Math.abs(r.car.state.lateral - myLat);
+      if (s.gap < 0 || dl < s.lat) {
+        s.gap = g;
+        s.lat = dl;
+      }
+    }
   }
 
   placeOnGrid(): void {
@@ -280,6 +307,7 @@ export class RivalManager {
       r.eliminated = false;
       r.koPos = 0;
       r.lapCrossed = false;
+      r.draft.reset();
       r.visual.group.visible = true;
       resetPads(r.pads);
     }
@@ -289,7 +317,7 @@ export class RivalManager {
     for (const r of this.rivals) r.visual.group.visible = on;
   }
 
-  update(dtMs: number, mode: RivalMode, playerProgress: number, movers: MoverSnapshot[] | null = null, playerLapEff = 0): void {
+  update(dtMs: number, mode: RivalMode, playerProgress: number, movers: MoverSnapshot[] | null = null, playerLapEff = 0, playerRef: { dist: number; lateral: number } | null = null): void {
     const dt = dtMs / 1000;
     if (mode === 'racing') this.raceClockMs += dtMs;
     for (const r of this.rivals) r.lapCrossed = false;
@@ -325,7 +353,31 @@ export class RivalManager {
         this.respawnRival(r);
         continue;
       }
-      car.step(dt, res.steer, res.throttle, res.brake, false, true);
+      let draftGap = -1;
+      let draftLat = 0;
+      if (this.draftEnabled) {
+        const len = this.curve.length;
+        if (playerRef) {
+          const g = gapAhead(len, car.state.trackDist, playerRef.dist);
+          if (g >= DRAFT_GAP_MIN && g <= DRAFT_GAP_MAX) {
+            draftGap = g;
+            draftLat = Math.abs(playerRef.lateral - car.state.lateral);
+          }
+        }
+        for (const o of this.rivals) {
+          if (o === r || o.eliminated) continue;
+          const g = gapAhead(len, car.state.trackDist, o.car.state.trackDist);
+          if (g < DRAFT_GAP_MIN || g > DRAFT_GAP_MAX) continue;
+          const dl = Math.abs(o.car.state.lateral - car.state.lateral);
+          if (draftGap < 0 || dl < draftLat) {
+            draftGap = g;
+            draftLat = dl;
+          }
+        }
+      }
+      if (car.state.wallHit > 0.3) r.draft.reset();
+      r.draft.update(dt, draftGap, draftLat);
+      car.step(dt, res.steer, res.throttle, res.brake, false, true, r.draft.factor());
       updateBoostPads(car, this.def, r.pads, dtMs);
       if (movers) {
         for (let i = 0; i < movers.length; i++) {
@@ -390,7 +442,7 @@ export class RivalManager {
     }
   }
 
-  private respawnRival(r: Rival): void {
+  private   respawnRival(r: Rival): void {
     const cps = this.def.checkpoints;
     const targetDist = r.nextCheckpoint === 0 ? 8 : cps[r.nextCheckpoint - 1].dist;
     r.car.placeAt(targetDist, 0);
@@ -398,6 +450,7 @@ export class RivalManager {
     r.stuckMs = 0;
     r.ap.smooth = 0;
     r.pads.lastBoostIndex = -1;
+    r.draft.reset();
   }
 
   private trackProgress(r: Rival): void {

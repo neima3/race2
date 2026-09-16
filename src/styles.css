@@ -1347,6 +1347,19 @@ button {
 
 .hud-nearmiss.hidden { display: none; }
 
+/* v9 P2 slipstream chip */
+.hud-draft {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent);
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  text-shadow: 0 0 14px rgba(41, 230, 255, 0.75), 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.hud-draft.hidden { display: none; }
+
 .hud-nearmiss.bump {
   animation: nmBump 0.45s ease-out;
 }

@@ -184,7 +184,7 @@ export class CarPhysics {
     this.state.vel.addScaledVector(forward, Math.max(0, target - fs));
   }
 
-  step(dt: number, steer: number, throttle: number, brake: number, drift: boolean, controlsEnabled: boolean): void {
+  step(dt: number, steer: number, throttle: number, brake: number, drift: boolean, controlsEnabled: boolean, draftFactor = 1): void {
     const s = this.state;
     const t = this.tuning;
 
@@ -212,7 +212,7 @@ export class CarPhysics {
 
       if (controlsEnabled) {
         const boostFactor = s.boostTime > 0 ? 1.26 : 1;
-        const maxS = t.maxSpeed * boostFactor;
+        const maxS = t.maxSpeed * boostFactor * draftFactor;
         if (throttle > 0 && brake < 0.05) {
           const accelTaper = Math.max(0.25, 1 - Math.max(0, vF) / maxS);
           vF += throttle * t.accel * accelTaper * dt * (s.boostTime > 0 ? 1.8 : 1);

@@ -6,6 +6,7 @@ import { RaceController } from '../src/game/race';
 import { RivalManager, pickLineup, type Standing } from '../src/game/rivals';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
+import { DraftTracker } from '../src/game/draft';
 
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
   getItem: () => null,
@@ -115,6 +116,8 @@ for (const def of RACE_TRACKS) {
   race.countdownMs = 1;
 
   const ap = { smooth: 0 };
+  const draft = new DraftTracker();
+  const playerRef = { dist: 0, lateral: 0 };
   let input = { steer: 0, throttle: 0, brake: 0, drift: false, lookBack: false, respawn: false, restart: false, cameraToggle: false, pause: false, photo: false };
   let pendingRespawn = false;
   let recover = 0;
@@ -160,8 +163,13 @@ for (const def of RACE_TRACKS) {
         };
       }
     }
+    rivals.scanPlayerDraft(car.state.trackDist, car.state.lateral);
+    draft.update(simDt, rivals.draftScan.gap, rivals.draftScan.lat);
+    race.draftFactor = draft.factor();
+    playerRef.dist = car.state.trackDist;
+    playerRef.lateral = car.state.lateral;
     race.update(simDt * 1000, input);
-    rivals.update(simDt * 1000, race.phase === 'countdown' ? 'countdown' : 'racing', race.totalProgress);
+    rivals.update(simDt * 1000, race.phase === 'countdown' ? 'countdown' : 'racing', race.totalProgress, null, 0, playerRef);
     wall += simDt * 1000;
     speedNow = car.state.speed;
     latNow = car.state.lateral;

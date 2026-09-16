@@ -31,6 +31,7 @@ export class HUD {
   private battleRankEl: HTMLElement;
   private lapEl: HTMLElement;
   private nearMissEl: HTMLElement;
+  private draftEl: HTMLElement;
   private toastTimer: number | null = null;
   private countdownNum: HTMLElement | null = null;
   driftPoints = 0;
@@ -88,7 +89,8 @@ export class HUD {
     this.cpEl = el('div', 'hud-cp');
     this.lapEl = el('div', 'hud-lap hidden');
     this.nearMissEl = el('div', 'hud-nearmiss hidden');
-    cpWrap.append(this.lapEl, this.cpEl, this.nearMissEl);
+    this.draftEl = el('div', 'hud-draft hidden', 'SLIPSTREAM');
+    cpWrap.append(this.lapEl, this.cpEl, this.nearMissEl, this.draftEl);
     topBar.append(this.trackNameEl, timerWrap, cpWrap);
 
     this.speedEl = el('div', 'hud-speed', '0');
@@ -260,6 +262,7 @@ export class HUD {
     this.posFlashEl.classList.remove('show', 'up', 'down');
     this.battleRankEl.classList.add('hidden');
     this.setGhostDeltaCount(0);
+    this.setDraft(false);
     this.root.classList.remove('hidden');
   }
 
@@ -392,6 +395,11 @@ export class HUD {
     this.nearMissEl.classList.remove('bump');
     void this.nearMissEl.offsetWidth;
     this.nearMissEl.classList.add('bump');
+  }
+
+  /** v9 P2 slipstream chip — visible while the draft perk is live. */
+  setDraft(active: boolean): void {
+    this.draftEl.classList.toggle('hidden', !active);
   }
 
   showNearMissFlash(): void {

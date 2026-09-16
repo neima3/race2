@@ -4,6 +4,7 @@ import { TRACKS } from '../src/track/defs';
 import { CarPhysics } from '../src/physics/car';
 import { RaceController, type RaceEvents } from '../src/game/race';
 import { RivalManager, pickLineup, KNOCKOUT_LAPS, type KnockoutEvent, type Standing } from '../src/game/rivals';
+import { DraftTracker } from '../src/game/draft';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
 
@@ -135,6 +136,8 @@ function runKnockoutRace(
   race.countdownMs = 1;
 
   const ap = { smooth: 0 };
+  const draft = new DraftTracker();
+  const playerRef = { dist: 0, lateral: 0 };
   let input = { steer: 0, throttle: 0, brake: 0, drift: false, lookBack: false, respawn: false, restart: false, cameraToggle: false, pause: false, photo: false };
   let pendingRespawn = false;
   let recover = 0;
@@ -180,9 +183,14 @@ function runKnockoutRace(
       }
     }
     const prevLaps = race.completedLaps;
+    rivals.scanPlayerDraft(car.state.trackDist, car.state.lateral);
+    draft.update(simDt, rivals.draftScan.gap, rivals.draftScan.lat);
+    race.draftFactor = draft.factor();
+    playerRef.dist = car.state.trackDist;
+    playerRef.lateral = car.state.lateral;
     race.update(simDt * 1000, input);
     const playerLapEff = race.phase === 'racing' && race.completedLaps > prevLaps ? race.completedLaps : 0;
-    rivals.update(simDt * 1000, race.phase === 'countdown' ? 'countdown' : 'racing', race.totalProgress, null, playerLapEff);
+    rivals.update(simDt * 1000, race.phase === 'countdown' ? 'countdown' : 'racing', race.totalProgress, null, playerLapEff, playerRef);
     wall += simDt * 1000;
     speedNow = car.state.speed;
     latNow = car.state.lateral;

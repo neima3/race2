@@ -57,6 +57,8 @@ import {
 } from './game/weekly';
 import { RivalManager, DEFAULT_RIVAL_LAPS, KNOCKOUT_LAPS, type RivalMode, type Standing, type RivalPreset, type KnockoutEvent } from './game/rivals';
 import { variantWritesRecords } from './game/variants';
+import { DraftTracker, gapAhead, DRAFT_GAP_MIN, DRAFT_GAP_MAX } from './game/draft';
+
 import {
   TutorialRun,
   TUTORIAL_TRACK_ID,
@@ -130,6 +132,9 @@ class Game {
   private traffic: TrafficManager | null = null;
   private rivalLineup: RivalPreset[] | null = null;
   private rivalsBuiltWith: string | null = null;
+  private playerDraft = new DraftTracker();
+  private draftGap = -1;
+  private playerRef = { dist: 0, lateral: 0 };
   private careerRace: { cup: CupDef; raceIndex: number } | null = null;
   private hudAcc = 0;
   private mapAcc = 0;
@@ -969,6 +974,7 @@ class Game {
     this.traffic?.dispose();
     this.traffic = new TrafficManager(curve, def, this.trackGroup);
     this.traffic.onContact = (pos) => {
+      this.playerDraft.reset();
       this.audio.crash();
       this.particles.wallSparks(pos.clone(), new THREE.Vector3(0, 1, 0));
       this.input.rumble(0.9, 0.7, 200);
@@ -995,6 +1001,8 @@ class Game {
     this.mapAcc = 0;
     this.lastPlayerPos = 0;
     this.overtakeCooldownUntil = 0;
+    this.playerDraft.reset();
+    this.draftGap = -1;
     this.lastPodiumOrder = null;
     this.exitPodium();
     const lineupSig = this.rivalLineup ? this.rivalLineup.map((r) => `${r.name}:${r.paint}`).join('|') : null;
@@ -1368,6 +1376,7 @@ class Game {
       }
     } else if (ev === 'finish') {
       const r = payload as RaceEvents['finish'];
+      this.hud.setDraft(false);
       // v8 P8: keep the just-driven time-trial replay in the session buffer
       // (same availability rule as the WATCH REPLAY button: time-trial only).
       if (!this.rivalMode && !this.trafficMode) {
@@ -1559,6 +1568,34 @@ class Game {
       isFinal,
       trophy,
     };
+  }
+
+  /** v9 P2 slipstream: scan rival/traffic targets (ghosts never draft) + step the player's tracker. */
+  private updatePlayerDraft(dt: number): void {
+    const car = this.car;
+    const curve = this.curve;
+    if (!car || !curve) return;
+    const s = car.state;
+    if (s.wallHit > 0.3) this.playerDraft.reset();
+    let bestGap = -1;
+    let bestLat = 0;
+    if (this.rivalMode && this.rivals) {
+      this.rivals.scanPlayerDraft(s.trackDist, s.lateral);
+      bestGap = this.rivals.draftScan.gap;
+      bestLat = this.rivals.draftScan.lat;
+    } else if (this.trafficMode && this.traffic) {
+      for (const c of this.traffic.cars) {
+        const g = gapAhead(curve.length, s.trackDist, c.dist);
+        if (g < DRAFT_GAP_MIN || g > DRAFT_GAP_MAX) continue;
+        const dl = Math.abs(c.lat - s.lateral);
+        if (bestGap < 0 || dl < bestLat) {
+          bestGap = g;
+          bestLat = dl;
+        }
+      }
+    }
+    this.playerDraft.update(dt, bestGap, bestLat);
+    this.draftGap = bestGap;
   }
 
   private checkOvertake(order: Standing[]): void {
@@ -2028,8 +2065,13 @@ class Game {
 
     this.acc += dt * timeScale;
     let steps = 0;
+    // v9 P2: slipstream lives in the free rival/knockout + traffic modes; career/daily/
+    // weekly are ledger-balanced (career street-cup silver pin) and keep pre-draft physics.
+    const draftMode = (this.rivalMode && !this.careerRace && !this.dailyRace && !this.weeklyRace) || this.trafficMode;
     while (this.acc >= simDt && steps < 8) {
       const prevLaps = this.race!.completedLaps;
+      if (draftMode) this.updatePlayerDraft(simDt);
+      this.race!.draftFactor = draftMode ? this.playerDraft.factor() : 1;
       this.race!.update(simDt * 1000, input);
       if (this.rivalMode && this.rivals) {
         const mode: RivalMode = this.race!.phase === 'countdown' ? 'countdown' : 'racing';
@@ -2037,7 +2079,9 @@ class Game {
           this.knockoutMode && this.race!.phase === 'racing' && this.race!.completedLaps > prevLaps
             ? this.race!.completedLaps
             : 0;
-        this.rivals.update(simDt * 1000, mode, this.race!.totalProgress, this.moverSnap, playerLapEff);
+        this.playerRef.dist = this.car!.state.trackDist;
+        this.playerRef.lateral = this.car!.state.lateral;
+        this.rivals.update(simDt * 1000, mode, this.race!.totalProgress, this.moverSnap, playerLapEff, this.playerRef);
       }
       if (this.trafficMode && this.traffic) {
         this.traffic.update(simDt * 1000, this.car!, this.race!.phase === 'racing');
@@ -2188,11 +2232,14 @@ class Game {
 
       const liveDelta = null;
       const speedRatio = Math.min(1, Math.abs(s.forwardSpeed) / 58);
+      this.hud.setDraft(this.playerDraft.active);
       const sl = document.getElementById('speedlines');
       if (sl) {
         const hood = this.rig.mode === 'hood';
         const start = hood ? 0.45 : 0.62;
-        sl.style.opacity = this.save.settings.reducedMotion ? '0' : String(Math.min(1, Math.max(0, (speedRatio - start) / 0.38) * (hood ? 1 : 0.85)));
+        let op = Math.min(1, Math.max(0, (speedRatio - start) / 0.38) * (hood ? 1 : 0.85));
+        if (this.playerDraft.active && !this.save.settings.reducedMotion) op = Math.max(op, 0.5);
+        sl.style.opacity = this.save.settings.reducedMotion ? '0' : String(op);
       }
       const vg = document.getElementById('vignette');
       if (vg) vg.style.opacity = this.save.settings.reducedMotion ? '0.2' : String(0.25 + speedRatio * 0.45);
@@ -2328,6 +2375,7 @@ declare global {
       mute: () => void;
       finishLine: () => void;
       rivals: () => object;
+      draft: () => object;
       standings: () => object;
       career: () => object;
       friend: () => object | null;
@@ -2441,6 +2489,12 @@ window.__race2 = {
         daily: !!game['dailyRace'],
         weekly: !!game['weeklyRace'],
         autoDbg: game['autoDbg'],
+        draft: {
+          charge: +game['playerDraft'].charge.toFixed(2),
+          active: game['playerDraft'].active,
+          gap: Math.round(game['draftGap']),
+          factor: +game['playerDraft'].factor().toFixed(2),
+        },
     };
   },
       respawn: () => game['race']?.respawnAtCheckpoint(),
@@ -2463,6 +2517,7 @@ window.__race2 = {
     }
   },
   rivals: () => game['rivals']?.telemetry() ?? [],
+  draft: () => ({ charge: +game['playerDraft'].charge.toFixed(2), active: game['playerDraft'].active, gap: Math.round(game['draftGap']), factor: +game['playerDraft'].factor().toFixed(2) }),
   traffic: () => ({ mode: game['trafficMode'], ...(game['traffic']?.telemetry() ?? { count: 0, nearMisses: 0, credited: 0, collisions: 0, cars: [] }) }),
   friend: () => {
     const fg = game['friendGhost'];
