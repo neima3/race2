@@ -47,3 +47,8 @@
 
 ## Phase 6 (lead)
 - v2.4.0 bumped (package.json + title credits); AGENTS.md updated (variants/draft/replay-share/roster + new gates).
+
+## v9 final wrap (2026-09-15)
+- All 6 phases complete; pushed `e272aab..a78e903`, deployed (deployment m6tlqoeovrnvwqkzkkwa9cec, finished on a78e9038), **v2.4.0 live**.
+- Live verification (muted): v2.4.0 + SLIPSTREAM + VARIANT + FRIEND REPLAY + SOVEREIGN strings in served bundle; `variant()` hook live; night rival race completed on prod (RACE RESULT P2 +1.0s, `qa/v9-live/01`).
+- Gates at HEAD (19): typecheck ✅ build ✅ laps 14/14 ✅ rivals 29/29 ✅ career 173/173 ✅ share 51/51 ✅ knockout 50/50 ✅ daily 59/59 ✅ probe 61/61 ✅ allocs PASS ✅ camera 28/28 ✅ ghostbattle 39/39 ✅ traffic 16/16 ✅ weekly 116/116 ✅ stats 80/80 ✅ tutorial 73/73 ✅ replay 34/34 ✅ variants ✅ draft 21/21 ✅ (migration repro 19/19).
