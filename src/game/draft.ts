@@ -23,6 +23,10 @@ export class DraftTracker {
   charge = 0;
   /** Perk live (charge >= DRAFT_ACTIVE_MIN) — drives the HUD chip. */
   active = false;
+  /** Cumulative seconds the perk has been live (v9 P5 DRAFT KING). Never cleared
+   *  by reset() — collisions/respawns erase the pocket, not the race tally; a new
+   *  race zeroes the field directly. */
+  draftTime = 0;
   /** Previous in-pocket gap: the pocket only builds while CLOSING on the car ahead
    *  (slipstream is a catch/slingshot reward, not matched-following cruise). */
   private prevGap = Number.NaN;
@@ -47,6 +51,7 @@ export class DraftTracker {
     else this.charge = Math.max(0, this.charge - dt / DRAFT_DECAY_TIME);
     this.prevGap = pocket ? gap : Number.NaN;
     this.active = this.charge >= DRAFT_ACTIVE_MIN;
+    if (this.active) this.draftTime += dt;
   }
 
   /** Top-speed multiplier for CarPhysics.step (byte-identical 1 when inactive). */

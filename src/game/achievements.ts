@@ -6,6 +6,8 @@ import type { SaveManager } from '../core/save';
 export const GHOSTBUST_MARGIN_MS = 2000;
 /** Near misses required in ONE traffic run for THREAD THE NEEDLE (v8 P9). */
 export const NEEDLE_NEAR_MISSES = 5;
+/** Cumulative active-slipstream seconds a rival finish needs for DRAFT KING (v9 P5). */
+export const DRAFT_KING_SECONDS = 8;
 
 export interface RivalAchievementState {
   rivalWins: number;
@@ -23,6 +25,16 @@ export interface RivalAchievementState {
   tutorialDone: number;
   /** Earned locked paints (v8 PAINT COLLECTOR denominator = PAINT_LOCK_IDS.length). */
   paintsUnlocked: number;
+  /** Races finished with >= DRAFT_KING_SECONDS cumulative slipstream (v9 P5). */
+  draftKingRaces: number;
+  /** Solo night-variant races completed (v9 P5 STORM CHASER). */
+  nightRaces: number;
+  /** Solo rain-variant races completed (v9 P5 STORM CHASER). */
+  rainRaces: number;
+  /** Replays shared (v9 P5 DIRECTOR). */
+  replaysShared: number;
+  /** Times SOVEREIGN was beaten (v9 P5 KINGMAKER). */
+  championBeaten: number;
 }
 
 const GRAND_TOUR_CUP = 'grand-tour';
@@ -40,6 +52,11 @@ export function rivalAchievementState(save: SaveManager): RivalAchievementState 
     weeklyGold: Object.values(save.weekly.best).some((b) => b.position === 1) ? 1 : 0,
     tutorialDone: save.settings.tutorialDone === true ? 1 : 0,
     paintsUnlocked: save.unlocks.paints.length,
+    draftKingRaces: save.stats.draftKingRaces,
+    nightRaces: save.stats.nightRaces,
+    rainRaces: save.stats.rainRaces,
+    replaysShared: save.stats.replaysShared,
+    championBeaten: save.stats.championBeaten,
   };
 }
 
@@ -66,6 +83,10 @@ const RIVAL_ACHIEVEMENTS: { id: string; name: string; done: (s: RivalAchievement
   { id: 'weekly-warrior', name: 'WEEKLY WARRIOR', done: (s) => s.weeklyGold >= 1 },
   { id: 'fresh-grad', name: 'FRESH GRAD', done: (s) => s.tutorialDone >= 1 },
   { id: 'paint-collector', name: 'PAINT COLLECTOR', done: (s) => s.paintsUnlocked >= PAINT_LOCK_IDS.length },
+  { id: 'draft-king', name: 'DRAFT KING', done: (s) => s.draftKingRaces >= 1 },
+  { id: 'storm-chaser', name: 'STORM CHASER', done: (s) => s.nightRaces >= 1 && s.rainRaces >= 1 },
+  { id: 'director', name: 'DIRECTOR', done: (s) => s.replaysShared >= 1 },
+  { id: 'kingmaker', name: 'KINGMAKER', done: (s) => s.championBeaten >= 1 },
 ];
 
 export function achievementPops(before: RivalAchievementState, after: RivalAchievementState): AchievementPop[] {

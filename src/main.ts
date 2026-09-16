@@ -73,7 +73,7 @@ import {
 import { computeOnSlick, moverOverlap, applyMoverScrub, surfaceGripFor } from './game/rules';
 import { TrafficManager, NEAR_MISS_BONUS_MS, NEAR_MISS_MAX_CREDITED, type TrafficFinishData } from './systems/traffic';
 import { cupRaceTrack, cupLineup, cupRaceVariant, applyRaceResult, cupStandings, cupTrophy, cupComplete, startCupRun, type CupDef, type CareerPanelData } from './game/career';
-import { achievementPops, achievementList, rivalAchievementState, GHOSTBUST_MARGIN_MS, NEEDLE_NEAR_MISSES, type RivalAchievementState } from './game/achievements';
+import { achievementPops, achievementList, rivalAchievementState, GHOSTBUST_MARGIN_MS, NEEDLE_NEAR_MISSES, DRAFT_KING_SECONDS, type RivalAchievementState } from './game/achievements';
 import { driverStats } from './game/stats';
 import { checkPaintUnlocks, PAINT_LOCK_INFO, paintUnlockState } from './game/unlocks';
 import { PAINT_LOCK_IDS, type PaintLockId } from './render/car-model';
@@ -417,6 +417,17 @@ class Game {
     });
     window.addEventListener('pointerdown', () => this.audio.ensureContext(), { once: true });
     window.addEventListener('keydown', () => this.audio.ensureContext(), { once: true });
+    // v9 P5 DIRECTOR: a replay share outside any finish flow still earns its stat + pop.
+    window.addEventListener('race2:replay-shared', () => {
+      const before = rivalAchievementState(this.save);
+      this.save.addStats({ replaysShared: 1 });
+      this.announceAchievementPops(before);
+    });
+    // v9 P5 KINGMAKER: stat only — the finish flow captured achvBefore before this
+    // event fires, so its pop announcement (1400ms later) picks the flip up.
+    window.addEventListener('race2:champion-beaten', () => {
+      this.save.addStats({ championBeaten: 1 });
+    });
 
     this.applyAudioSettings();
     this.lastT = performance.now();
@@ -1090,6 +1101,7 @@ class Game {
     this.lastPlayerPos = 0;
     this.overtakeCooldownUntil = 0;
     this.playerDraft.reset();
+    this.playerDraft.draftTime = 0;
     this.draftGap = -1;
     this.lastPodiumOrder = null;
     this.exitPodium();
@@ -1531,6 +1543,8 @@ class Game {
             wallHits: this.lapWalls,
             cleanLaps: this.lapWalls === 0 ? 1 : 0,
             distanceKm: this.curve ? this.curve.length / 1000 : 0,
+            nightRaces: this.variant === 'night' ? 1 : 0,
+            rainRaces: this.variant === 'rain' ? 1 : 0,
           });
           this.lapDrift = 0;
           this.lapAir = 0;
@@ -1555,7 +1569,11 @@ class Game {
             const beaten = rivalStandings.slice(Math.max(0, pos)).filter((s) => !s.isPlayer && !s.eliminated).map((s) => s.name);
             const winsBy: Record<string, number> = {};
             for (const name of beaten) winsBy[name] = (winsBy[name] ?? 0) + 1;
-            this.save.addStats({ knockoutWins: pos === 1 ? 1 : 0, rivalWinsBy: winsBy });
+            this.save.addStats({
+              knockoutWins: pos === 1 ? 1 : 0,
+              rivalWinsBy: winsBy,
+              draftKingRaces: this.playerDraft.draftTime >= DRAFT_KING_SECONDS ? 1 : 0,
+            });
           }
         } else if (this.trafficMode) {
           // traffic is a standalone time mode — only the per-track traffic-best ledger
@@ -1581,7 +1599,12 @@ class Game {
           const beaten = rivalStandings.slice(Math.max(0, pos)).filter((s) => !s.isPlayer).map((s) => s.name);
           const winsBy: Record<string, number> = {};
           for (const name of beaten) winsBy[name] = (winsBy[name] ?? 0) + 1;
-          this.save.addStats({ rivalWins: pos === 1 ? 1 : 0, rivalsBeaten: beaten, rivalWinsBy: winsBy });
+          this.save.addStats({
+            rivalWins: pos === 1 ? 1 : 0,
+            rivalsBeaten: beaten,
+            rivalWinsBy: winsBy,
+            draftKingRaces: this.playerDraft.draftTime >= DRAFT_KING_SECONDS ? 1 : 0,
+          });
         } else if (!this.rivalMode && this.friendRaceActive) {
           // v8 P9 GHOSTBUSTER: the FRIEND finish row's delta is player − ghost (negative = beat)
           const friendRow = (r.ghostResults ?? []).find((g) => g.label === 'FRIEND');
@@ -2632,6 +2655,7 @@ window.__race2 = {
           active: game['playerDraft'].active,
           gap: Math.round(game['draftGap']),
           factor: +game['playerDraft'].factor().toFixed(2),
+          time: +game['playerDraft'].draftTime.toFixed(1),
         },
     };
   },
@@ -2655,7 +2679,7 @@ window.__race2 = {
     }
   },
   rivals: () => game['rivals']?.telemetry() ?? [],
-  draft: () => ({ charge: +game['playerDraft'].charge.toFixed(2), active: game['playerDraft'].active, gap: Math.round(game['draftGap']), factor: +game['playerDraft'].factor().toFixed(2) }),
+  draft: () => ({ charge: +game['playerDraft'].charge.toFixed(2), active: game['playerDraft'].active, gap: Math.round(game['draftGap']), factor: +game['playerDraft'].factor().toFixed(2), time: +game['playerDraft'].draftTime.toFixed(1) }),
   traffic: () => ({ mode: game['trafficMode'], ...(game['traffic']?.telemetry() ?? { count: 0, nearMisses: 0, credited: 0, collisions: 0, cars: [] }) }),
   friend: () => {
     const fg = game['friendGhost'];

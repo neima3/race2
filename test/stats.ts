@@ -4,6 +4,7 @@ import { paintSelectState } from '../src/systems/garage';
 import { checkPaintUnlocks, paintUnlockState, PAINT_LOCK_INFO } from '../src/game/unlocks';
 import { driverStats } from '../src/game/stats';
 import { weekKeyFor } from '../src/game/weekly';
+import { achievementList, achievementPops, rivalAchievementState } from '../src/game/achievements';
 import type { UnlockSave } from '../src/core/save';
 
 // Map-backed storage mock that survives simulated reloads (same pattern as test/career.ts).
@@ -268,6 +269,56 @@ const SAVE_KEY = 'race2.save.v1';
   );
   const unlocksShape: UnlockSave = { paints: [...PAINT_LOCK_IDS] };
   expect(unlocksShape.paints.length === 4, 'UnlockSave accepts the full lock set');
+}
+
+// ---------- 12. v9 P5 achievements: draft-king / storm-chaser / director / kingmaker ----------
+{
+  const V9_IDS = ['draft-king', 'storm-chaser', 'director', 'kingmaker'];
+  const V9_NAMES: Record<string, string> = {
+    'draft-king': 'DRAFT KING',
+    'storm-chaser': 'STORM CHASER',
+    director: 'DIRECTOR',
+    kingmaker: 'KINGMAKER',
+  };
+  store.clear();
+  const save = new SaveManager();
+  const before = rivalAchievementState(save); // snapshot before any flip
+  const list = achievementList(save);
+  expect(list.length === 15, `achievement roster grew to 15 rows (got ${list.length})`);
+  expect(new Set(list.map((a) => a.id)).size === 15, 'achievement ids unique');
+  for (const id of V9_IDS) {
+    const row = list.find((a) => a.id === id);
+    expect(!!row && !row.done && row.name === V9_NAMES[id], `fresh profile: ${id} (${V9_NAMES[id]}) present and locked`);
+  }
+  // DRAFT KING: one qualifying rival finish flips it
+  save.addStats({ draftKingRaces: 1 });
+  expect(achievementList(save).find((a) => a.id === 'draft-king')!.done === true, 'draftKingRaces=1 flips DRAFT KING');
+  // STORM CHASER: needs a night race AND a rain race
+  save.addStats({ nightRaces: 1 });
+  expect(achievementList(save).find((a) => a.id === 'storm-chaser')!.done === false, 'night only: STORM CHASER still locked');
+  save.addStats({ rainRaces: 1 });
+  expect(achievementList(save).find((a) => a.id === 'storm-chaser')!.done === true, 'night + rain flips STORM CHASER');
+  // DIRECTOR / KINGMAKER: single counters
+  save.addStats({ replaysShared: 1 });
+  expect(achievementList(save).find((a) => a.id === 'director')!.done === true, 'replaysShared=1 flips DIRECTOR');
+  save.addStats({ championBeaten: 1 });
+  expect(achievementList(save).find((a) => a.id === 'kingmaker')!.done === true, 'championBeaten=1 flips KINGMAKER');
+  // counters accumulate (addStats is additive, not one-shot)
+  save.addStats({ championBeaten: 1, nightRaces: 1 });
+  expect(save.stats.championBeaten === 2 && save.stats.nightRaces === 2 && save.stats.rainRaces === 1, 'v9 counters accumulate additively');
+  // pops fire exactly for the fresh flips (before = snapshot taken pre-flip)
+  const pops = achievementPops(before, rivalAchievementState(save));
+  expect(pops.length === 4 && V9_IDS.every((id) => pops.some((p) => p.id === id)), `one pass pops all four v9 ids (${pops.map((p) => p.id).join(',')})`);
+  // repeat sweep is quiet (idempotent pops)
+  expect(achievementPops(rivalAchievementState(save), rivalAchievementState(save)).length === 0, 'no pops when nothing new is earned');
+  // sanitize + round-trip: garbage/negative/null → 0, valid values persist (fractions allowed, like totalDrift)
+  store.set(STATS_KEY, JSON.stringify({ draftKingRaces: 'x', nightRaces: 3, rainRaces: -4, replaysShared: 2, championBeaten: null }));
+  const reloaded = new SaveManager();
+  expect(
+    reloaded.stats.draftKingRaces === 0 && reloaded.stats.nightRaces === 3 && reloaded.stats.rainRaces === 0 && reloaded.stats.replaysShared === 2 && reloaded.stats.championBeaten === 0,
+    `corrupt v9 stat fields sanitize to 0/valid (${JSON.stringify({ d: reloaded.stats.draftKingRaces, n: reloaded.stats.nightRaces, r: reloaded.stats.rainRaces, s: reloaded.stats.replaysShared, c: reloaded.stats.championBeaten })})`,
+  );
+  expect(achievementList(reloaded).find((a) => a.id === 'storm-chaser')!.done === false, 'sanitized night=3/rain=0 keeps STORM CHASER locked (needs both)');
 }
 
 console.log(`\nstats test: ${checks - failures}/${checks} checks passed`);

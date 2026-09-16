@@ -18,6 +18,7 @@ import {
   DRAFT_ACTIVE_MIN,
   DRAFT_TOP_SPEED,
 } from '../src/game/draft';
+import { DRAFT_KING_SECONDS } from '../src/game/achievements';
 
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
   getItem: () => null,
@@ -114,6 +115,22 @@ check(
   for (let i = 0; i < 60; i++) t.update(simDt, 6, 0);
   t.reset();
   check(t.charge === 0 && !t.active && t.factor() === 1, 'reset: collision clears charge/active/factor');
+}
+
+// 4b. Cumulative draft time (v9 P5 DRAFT KING): accrues while active, survives reset(), no decay credit
+{
+  const t = new DraftTracker();
+  for (let i = 0; i < 60; i++) t.update(simDt, 6 - (i % 100) * 0.02, 0); // 0.5s closing → active ~0.25s
+  const afterBuild = t.draftTime;
+  check(afterBuild > 0.2 && afterBuild < 0.3, `draftTime: accrues only while active (got ${afterBuild.toFixed(3)}s after 0.5s build)`);
+  t.reset();
+  check(Math.abs(t.draftTime - afterBuild) < 1e-9, 'draftTime: collision reset() does NOT clear the race tally');
+  for (let i = 0; i < 60; i++) t.update(simDt, -1, 0); // 0.5s out of pocket
+  check(Math.abs(t.draftTime - afterBuild) < 1e-9, 'draftTime: out-of-pocket steps add nothing');
+  const t2 = new DraftTracker();
+  t2.update(simDt, -1, 0);
+  check(t2.draftTime === 0, 'draftTime: fresh tracker starts at zero');
+  check(DRAFT_KING_SECONDS === 8, 'DRAFT_KING_SECONDS threshold is 8s');
 }
 
 // 5. Pocket window edges (closing within the window builds; window/lat rejects hold at any speed)
@@ -279,6 +296,7 @@ check(
 
   const ap = { smooth: 0 };
   const playerRef = { dist: 0, lateral: 0 };
+  const playerTracker = new DraftTracker();
   let input = { steer: 0, throttle: 0, brake: 0, drift: false, lookBack: false, respawn: false, restart: false, cameraToggle: false, pause: false, photo: false };
   let pendingRespawn = false;
   let recover = 0;
@@ -315,7 +333,12 @@ check(
     }
     playerRef.dist = car.state.trackDist;
     playerRef.lateral = car.state.lateral;
+    // production wiring (main.ts updatePlayerDraft): scan → step tracker → feed the factor
+    rivals.scanPlayerDraft(playerRef.dist, playerRef.lateral);
+    playerTracker.update(simDt, rivals.draftScan.gap, rivals.draftScan.lat);
+    race.draftFactor = playerTracker.factor();
     race.update(simDt * 1000, input);
+    race.draftFactor = 1;
     rivals.update(simDt * 1000, race.phase === 'countdown' ? 'countdown' : 'racing', race.totalProgress, null, 0, playerRef);
     wall += simDt * 1000;
     if (race.phase === 'racing') {
@@ -329,8 +352,12 @@ check(
   check(race.completedLaps === 2, `rivals-draft: completedLaps=${race.completedLaps}`);
   check(maxGap < 120, `rivals-draft: rubber-band gap ${maxGap.toFixed(1)}m < 120m with drafting on`);
   check(events.filter((e) => e === 'checkpoint').length === def.checkpoints.length * 2, 'rivals-draft: per-lap checkpoints correct');
+  check(
+    playerTracker.draftTime > 2 && playerTracker.draftTime < 30,
+    `draft-king balance: autopilot 2-lap rival race accumulates ${playerTracker.draftTime.toFixed(2)}s slipstream (achievable band 2-30s, DRAFT KING needs ${DRAFT_KING_SECONDS}s)`,
+  );
 }
 
-const total = 15;
+const total = 21;
 console.log(`\ndraft test: ${total - failures}/${total} checks passed`);
 if (failures > 0) process.exit(1);

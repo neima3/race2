@@ -181,6 +181,16 @@ export interface LifetimeStats {
   friendGhostBusts: number;
   /** Traffic runs finished with >= 5 near misses (v8 P9 THREAD THE NEEDLE). Additive. */
   trafficNeedles: number;
+  /** Rival/knockout races finished with >= 8s cumulative slipstream (v9 P5 DRAFT KING). Additive. */
+  draftKingRaces: number;
+  /** Solo night-variant races completed (v9 P5 STORM CHASER half 1). Additive. */
+  nightRaces: number;
+  /** Solo rain-variant races completed (v9 P5 STORM CHASER half 2). Additive. */
+  rainRaces: number;
+  /** Replays shared via #r= link (v9 P5 DIRECTOR). Additive. */
+  replaysShared: number;
+  /** Times SOVEREIGN was beaten in a proper finish (v9 P5 KINGMAKER). Additive. */
+  championBeaten: number;
 }
 
 const DEFAULT_STATS: LifetimeStats = {
@@ -198,6 +208,11 @@ const DEFAULT_STATS: LifetimeStats = {
   rivalWinsBy: {},
   friendGhostBusts: 0,
   trafficNeedles: 0,
+  draftKingRaces: 0,
+  nightRaces: 0,
+  rainRaces: 0,
+  replaysShared: 0,
+  championBeaten: 0,
 };
 
 function sanitizeWinBy(v: unknown): Record<string, number> {
@@ -233,6 +248,11 @@ function sanitizeStats(v: Stored<Partial<LifetimeStats>>): LifetimeStats {
     rivalWinsBy: sanitizeWinBy(v.rivalWinsBy),
     friendGhostBusts: num(v.friendGhostBusts),
     trafficNeedles: num(v.trafficNeedles),
+    draftKingRaces: num(v.draftKingRaces),
+    nightRaces: num(v.nightRaces),
+    rainRaces: num(v.rainRaces),
+    replaysShared: num(v.replaysShared),
+    championBeaten: num(v.championBeaten),
   };
 }
 
@@ -458,6 +478,11 @@ export class SaveManager {
       rivalWinsBy: winsBy,
       friendGhostBusts: this._stats.friendGhostBusts + (delta.friendGhostBusts ?? 0),
       trafficNeedles: this._stats.trafficNeedles + (delta.trafficNeedles ?? 0),
+      draftKingRaces: this._stats.draftKingRaces + (delta.draftKingRaces ?? 0),
+      nightRaces: this._stats.nightRaces + (delta.nightRaces ?? 0),
+      rainRaces: this._stats.rainRaces + (delta.rainRaces ?? 0),
+      replaysShared: this._stats.replaysShared + (delta.replaysShared ?? 0),
+      championBeaten: this._stats.championBeaten + (delta.championBeaten ?? 0),
     };
     try {
       localStorage.setItem(STATS_KEY, JSON.stringify({ ...this._stats, schemaVersion: SCHEMA_VERSION }));

@@ -712,6 +712,10 @@ export class MenuManager {
       { name: 'Weekly Warrior', desc: 'Gold trophy in a weekly event', done: ra.weeklyGold >= 1, progress: `${ra.weeklyGold}/1` },
       { name: 'Fresh Grad', desc: 'Complete the tutorial', done: ra.tutorialDone >= 1, progress: `${ra.tutorialDone}/1` },
       { name: 'Paint Collector', desc: `Unlock all ${PAINT_LOCK_IDS.length} locked paints`, done: ra.paintsUnlocked >= PAINT_LOCK_IDS.length, progress: `${Math.min(ra.paintsUnlocked, PAINT_LOCK_IDS.length)}/${PAINT_LOCK_IDS.length}` },
+      { name: 'Draft King', desc: 'Finish a rival race with 8s+ total slipstream', done: ra.draftKingRaces >= 1, progress: `${Math.min(ra.draftKingRaces, 1)}/1` },
+      { name: 'Storm Chaser', desc: 'Complete a night AND a rain variant race', done: ra.nightRaces >= 1 && ra.rainRaces >= 1, progress: `${Math.min(ra.nightRaces, 1) + Math.min(ra.rainRaces, 1)}/2` },
+      { name: 'Director', desc: 'Share a replay link', done: ra.replaysShared >= 1, progress: `${Math.min(ra.replaysShared, 1)}/1` },
+      { name: 'Kingmaker', desc: 'Beat SOVEREIGN, the champion', done: ra.championBeaten >= 1, progress: `${Math.min(ra.championBeaten, 1)}/1` },
     ];
     const list = el('div', 'achv-list');
     for (const a of defs) {

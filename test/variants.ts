@@ -1,12 +1,11 @@
 import * as THREE from 'three';
 import { TrackCurve } from '../src/track/curve';
-import { TRACKS, type TrackVariant } from '../src/track/defs';
+import { TRACKS, THEMES, type TrackDef, type TrackVariant } from '../src/track/defs';
 import { CarPhysics } from '../src/physics/car';
 import { RaceController } from '../src/game/race';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
 import { variantWritesRecords } from '../src/game/variants';
-import { THEMES } from '../src/track/defs';
 
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
   getItem: () => null,
@@ -32,8 +31,7 @@ function pass(msg: string): void {
   console.log(`PASS ${msg}`);
 }
 
-function runVariantLap(variant: TrackVariant): { finished: boolean; timeMs: number; steps: number; nan: boolean; save: SaveManager } {
-  const def = TRACKS[0];
+function runVariantLap(variant: TrackVariant, def: TrackDef = TRACKS[0]): { finished: boolean; timeMs: number; steps: number; nan: boolean; save: SaveManager } {
   const curve = new TrackCurve(def.points, true);
   const car = new CarPhysics(curve);
   const save = new SaveManager();
@@ -94,7 +92,28 @@ for (const v of variants) {
   else pass('day race writes PB through the real finish path');
 }
 
-// 5. Variants defined for all four themes (no theme lacks a night/dusk/rain mapping)
+// 5. STORM CHASER balance (v9 P5): night + rain laps complete on 3 tracks headless
+//    (sunrise-sprint above; dune-rush + harbor-nine here — grip plumbing is shared
+//    with cup weather, so a clean finish proves the variant surfaces hold up).
+{
+  const ids = ['dune-rush', 'harbor-nine'];
+  for (const id of ids) {
+    const def = TRACKS.find((t) => t.id === id);
+    if (!def) {
+      fail(`track ${id} not in TRACKS`);
+      continue;
+    }
+    for (const v of ['night', 'rain'] as TrackVariant[]) {
+      const r = runVariantLap(v, def);
+      if (!r.finished) fail(`${id} ${v} lap did not finish (steps=${r.steps})`);
+      else if (r.nan) fail(`${id} ${v} lap produced NaN position`);
+      else if (r.timeMs < 8000 || r.timeMs > 90000) fail(`${id} ${v} lap time implausible: ${r.timeMs}ms`);
+      else pass(`${id} ${v} lap finished: ${(r.timeMs / 1000).toFixed(2)}s`);
+    }
+  }
+}
+
+// 6. Variants defined for all four themes (no theme lacks a night/dusk/rain mapping)
 {
   let missing = 0;
   for (const themeId of Object.keys(THEMES) as (keyof typeof THEMES)[]) {

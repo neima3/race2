@@ -5,7 +5,7 @@
 - [x] Phase 2: Slipstream drafting — race behind cars for extra speed
 - [x] Phase 3: Replay sharing — `#r=` codes watch a friend's lap in the theater
 - [x] Phase 4: Rival roster +4 (champion finale) — start/finish banter
-- [ ] Phase 5: New-feature achievements + balance + full QA sweep
+- [x] Phase 5: New-feature achievements + balance + full QA sweep
 - [ ] Phase 6: v2.4.0 + deploy + live verify
 
 **Goal statement (full ambition):** Deepen the racing itself and complete the social loop: pick dusk, night or rain for any free-play race, earn speed by drafting behind rivals and traffic like a real racer, send a friend a code that plays your actual lap in their replay theater, and give the rival roster a champion to chase — shipped as v2.4.0, all gates green, live-verified muted.
