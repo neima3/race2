@@ -582,9 +582,9 @@ export class MenuManager {
     }
     wrap.append(paints);
 
-    const unlocks = bodyUnlocks(this.totalStars(), hasCupTrophy(this.save));
+    const unlocks = bodyUnlocks(this.totalStars(), hasCupTrophy(this.save), this.save.stats.championBeaten);
     const bodies = el('div', 'body-grid');
-    for (const b of ['standard', 'aero', 'tank'] as CarBodyStyle[]) {
+    for (const b of ['standard', 'aero', 'tank', 'glide'] as CarBodyStyle[]) {
       const unlock = unlocks[b];
       const stats = bodyStatRatios(b);
       const selected = b === profile.body && unlock.unlocked;
@@ -612,7 +612,11 @@ export class MenuManager {
       statRows.append(bar('SPEED', stats.speed), bar('GRIP', stats.grip), bar('DRIFT', stats.drift), bar('ACCEL', stats.accel));
       card.append(statRows);
       card.addEventListener('click', () => {
-        if (!unlock.unlocked || b === this.save.profile.body) return;
+        if (!unlock.unlocked) {
+          this.showToast(`LOCKED — ${unlock.req}`);
+          return;
+        }
+        if (b === this.save.profile.body) return;
         this.save.updateProfile({ body: b });
         for (const s of bodies.children) s.classList.remove('selected');
         card.classList.add('selected');

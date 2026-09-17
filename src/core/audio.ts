@@ -1,6 +1,6 @@
 import { getPattern, type MusicTheme } from './music';
 
-export type EngineVoice = 'standard' | 'aero' | 'tank';
+export type EngineVoice = 'standard' | 'aero' | 'tank' | 'glide';
 
 /** Per-body engine timbre (v8 P7): real synth deltas keyed by the player body. Rivals stay neutral. */
 export interface EngineTimbre {
@@ -15,6 +15,7 @@ const ENGINE_TIMBRE: Record<EngineVoice, EngineTimbre> = {
   standard: { osc1: 'sawtooth', osc2: 'square', cutoffMul: 1, freqMul: 1, sub: 0.5 },
   aero: { osc1: 'sawtooth', osc2: 'sawtooth', cutoffMul: 1.3, freqMul: 1.03, sub: 0.42 },
   tank: { osc1: 'square', osc2: 'square', cutoffMul: 0.75, freqMul: 0.92, sub: 0.7 },
+  glide: { osc1: 'sawtooth', osc2: 'triangle', cutoffMul: 1.1, freqMul: 0.97, sub: 0.55 },
 };
 
 /** Absolute gain ceilings per bus/layer — asserted in test/probe.ts (v8 P7). */

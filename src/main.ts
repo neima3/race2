@@ -11,7 +11,7 @@ function curveLen(def: TrackDef): number {
 }
 import { buildTrackMeshes, buildTutorialRig, type TrackMeshes, type TutorialRig } from './track/builder';
 import { CarPhysics, BODY_TUNING } from './physics/car';
-import { buildCarVisual, contactShadowTexture, type CarVisual } from './render/car-model';
+import { buildCarVisual, contactShadowTexture, type CarBodyStyle, type CarVisual } from './render/car-model';
 import { SkidMarks } from './render/skidmarks';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -121,7 +121,7 @@ class Game {
   private meshes: TrackMeshes | null = null;
   private curve: TrackCurve | null = null;
   private car: CarPhysics | null = null;
-  private sceneBody: 'standard' | 'aero' | 'tank' = 'standard';
+  private sceneBody: CarBodyStyle = 'standard';
   private carVisual: CarVisual | null = null;
   private ghostVisuals: CarVisual[] = [];
   private race: RaceController | null = null;
@@ -425,8 +425,14 @@ class Game {
     });
     // v9 P5 KINGMAKER: stat only — the finish flow captured achvBefore before this
     // event fires, so its pop announcement (1400ms later) picks the flip up.
+    // v10 P1: the same crossing unlocks the GLIDE body (championBeaten >= 1).
     window.addEventListener('race2:champion-beaten', () => {
+      const before = this.save.stats.championBeaten;
       this.save.addStats({ championBeaten: 1 });
+      if (before === 0) {
+        this.menu.showToast('NEW BODY UNLOCKED — GLIDE');
+        this.audio.unlockChime();
+      }
     });
 
     this.applyAudioSettings();
@@ -967,7 +973,7 @@ class Game {
     this.loadTrackIntoScene(this.track);
   }
 
-  private applyPlayerStyle(_paint: number, body: 'standard' | 'aero' | 'tank'): void {
+  private applyPlayerStyle(_paint: number, body: CarBodyStyle): void {
     this.audio.setEngineBody(body);
     this.garage.applyTo(this.carVisual!, null);
     for (let i = 0; i < this.ghostVisuals.length; i++) {

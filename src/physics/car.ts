@@ -34,12 +34,17 @@ export const DEFAULT_TUNING: CarTuning = {
   boostKick: 1,
 };
 
-export type CarBodyId = 'standard' | 'aero' | 'tank';
+export type CarBodyId = 'standard' | 'aero' | 'tank' | 'glide';
 
 export const BODY_TUNING: Record<CarBodyId, Partial<CarTuning>> = {
   standard: {},
   aero: { maxSpeed: 60.9, grip: 7.2, driftGrip: 1.976 },
   tank: { maxSpeed: 55.68, grip: 7.95, boostKick: 1.08, accel: 35.7 },
+  // GLIDE (v10 P1): drift identity — longest, most controllable slides.
+  // driftGrip -10% (drift-mode lateral decay 1.71 vs 1.90: slides persist ~12% longer
+  // and score higher on twisty tracks — measured, see test/tmp/drift-balance.ts),
+  // accel -4%, grip -2%, top speed neutral.
+  glide: { driftGrip: 1.71, accel: 32.64, grip: 7.35 },
 };
 
 export interface CarState {

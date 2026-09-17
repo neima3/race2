@@ -11,7 +11,7 @@ export interface CarVisual {
   setBodyPose(roll: number, pitch: number, squash: number): void;
 }
 
-export type CarBodyStyle = 'standard' | 'aero' | 'tank';
+export type CarBodyStyle = 'standard' | 'aero' | 'tank' | 'glide';
 
 // ---- contact shadow blob: one soft radial-gradient texture shared by player + rivals ----
 let contactShadowTex: THREE.Texture | null = null;
@@ -158,16 +158,33 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarB
     color: new THREE.Color(paintColor).offsetHSL(0.5, 0, 0.08),
   });
 
-  const chassisH = style === 'tank' ? 0.45 : 0.34;
+  const chassisH = style === 'tank' ? 0.45 : style === 'glide' ? 0.32 : 0.34;
+  const chassisW = style === 'tank' ? 1.95 : style === 'glide' ? 1.6 : style === 'aero' ? 1.55 : 1.7;
   const stripeY = chassisH / 2 + 0.42 + 0.011;
-  const pontoonW = style === 'tank' ? 0.34 : style === 'aero' ? 0.2 : 0.26;
-  const wingW = style === 'aero' ? 2.25 : style === 'tank' ? 1.7 : 1.9;
+  const pontoonW = style === 'tank' ? 0.34 : style === 'aero' ? 0.2 : style === 'glide' ? 0.22 : 0.26;
+  const wingW = style === 'aero' ? 2.25 : style === 'glide' ? 2.0 : style === 'tank' ? 1.7 : 1.9;
   const wingH = style === 'aero' ? 0.06 : 0.09;
+  // GLIDE long-tail: the wing rides the extended tail deck, not the chassis rear.
+  const glideTail = style === 'glide';
+  const wingPos: [number, number, number] = glideTail ? [0, 0.98, -2.12] : [0, 1.02, -1.72];
+  const endplatePos: [number, number, number] = glideTail ? [0, 0.98, -2.12] : [0, 1.02, -1.72];
+
+  const glideExtras: PartSpec[] = glideTail
+    ? [
+        // long-tail deck stretches the silhouette behind the rear axle
+        { geo: new THREE.BoxGeometry(1.5, 0.24, 0.95), pos: [0, 0.39, -1.98] },
+        { geo: new THREE.BoxGeometry(0.09, 0.44, 0.28), pos: [-0.6, 0.72, -2.12] },
+        { geo: new THREE.BoxGeometry(0.09, 0.44, 0.28), pos: [0.6, 0.72, -2.12] },
+        // stacked lower wing element — the "extension"
+        { geo: new THREE.BoxGeometry(1.62, 0.05, 0.36), pos: [0, 0.8, -2.36] },
+      ]
+    : [];
 
   const bodyCastGeo = sharedGeo(`bodyCast:${style}`, () => bakeParts([
-    { geo: new THREE.BoxGeometry(style === 'tank' ? 1.95 : style === 'aero' ? 1.55 : 1.7, chassisH, 3.4), pos: [0, 0.42, 0] },
+    { geo: new THREE.BoxGeometry(chassisW, chassisH, 3.4), pos: [0, 0.42, 0] },
     { geo: sharedGeo('nose', noseGeometry), pos: [0, 0.05, -1.55] },
-    { geo: new THREE.BoxGeometry(wingW, wingH, 0.5), pos: [0, 1.02, -1.72] },
+    { geo: new THREE.BoxGeometry(wingW, wingH, 0.5), pos: wingPos },
+    ...glideExtras,
   ]));
   const darkCastGeo = sharedGeo(`darkCast:${style}`, () => bakeParts([
     { geo: new THREE.BoxGeometry(pontoonW, 0.26, 2.1), pos: [-(1.7 / 2 + pontoonW / 2 - 0.02), 0.4, -0.35] },
@@ -179,6 +196,7 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarB
     { geo: new THREE.TorusGeometry(0.38, 0.05, 6, 14, Math.PI), rot: [-Math.PI / 2, 0, 0], pos: [0, 0.84, -0.1] },
     { geo: new THREE.BoxGeometry(0.1, 0.4, 0.3), pos: [0, 0.82, -1.7] },
     { geo: new THREE.BoxGeometry(0.7, 0.4, 1.3), pos: [0, 0.72, -1.0] },
+    ...(glideTail ? ([{ geo: new THREE.BoxGeometry(1.4, 0.16, 0.34), pos: [0, 0.27, -2.32] }] as PartSpec[]) : []),
   ]));
   const accent2Geo = sharedGeo(`accent2:${style}`, () => bakeParts([
     { geo: new THREE.BoxGeometry(0.14, 0.02, 1.4), pos: [-0.22, stripeY, 0.6] },
@@ -194,9 +212,9 @@ export function buildCarVisual(paintColor = 0x29e6ff, ghost = false, style: CarB
   const helmetGeo = sharedGeo('helmet', () => bakeParts([
     { geo: new THREE.SphereGeometry(0.24, 10, 8), pos: [0, 0.86, -0.18] },
   ]));
-  const accentGeo = sharedGeo('accent', () => bakeParts([
-    { geo: new THREE.BoxGeometry(0.06, 0.3, 0.6), pos: [-0.85, 1.02, -1.72] },
-    { geo: new THREE.BoxGeometry(0.06, 0.3, 0.6), pos: [0.85, 1.02, -1.72] },
+  const accentGeo = sharedGeo(`accent:${style}`, () => bakeParts([
+    { geo: new THREE.BoxGeometry(0.06, 0.3, 0.6), pos: [-0.85, endplatePos[1], endplatePos[2]] },
+    { geo: new THREE.BoxGeometry(0.06, 0.3, 0.6), pos: [0.85, endplatePos[1], endplatePos[2]] },
   ]));
   const lampGeo = sharedGeo('lamp', () => bakeParts([
     { geo: new THREE.BoxGeometry(0.28, 0.1, 0.06), pos: [-0.5, 0.42, 1.78] },

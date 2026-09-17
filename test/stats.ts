@@ -1,6 +1,7 @@
 import { SaveManager } from '../src/core/save';
-import { PAINTS, PAINT_LOCK_IDS, type PaintLockId } from '../src/render/car-model';
-import { paintSelectState } from '../src/systems/garage';
+import { PAINTS, PAINT_LOCK_IDS, type PaintLockId, type CarBodyStyle } from '../src/render/car-model';
+import { paintSelectState, bodyUnlocks, bodyStatRatios } from '../src/systems/garage';
+import { BODY_TUNING } from '../src/physics/car';
 import { checkPaintUnlocks, paintUnlockState, PAINT_LOCK_INFO } from '../src/game/unlocks';
 import { driverStats } from '../src/game/stats';
 import { weekKeyFor } from '../src/game/weekly';
@@ -38,6 +39,7 @@ function expect(cond: boolean, msg: string): void {
 
 const STATS_KEY = 'race2.stats.v1';
 const SAVE_KEY = 'race2.save.v1';
+const PLAYER_KEY = 'race2.player.v1';
 
 // ---------- 1. Paint roster: 6 free (byte-identical) + 4 locked ----------
 {
@@ -319,6 +321,55 @@ const SAVE_KEY = 'race2.save.v1';
     `corrupt v9 stat fields sanitize to 0/valid (${JSON.stringify({ d: reloaded.stats.draftKingRaces, n: reloaded.stats.nightRaces, r: reloaded.stats.rainRaces, s: reloaded.stats.replaysShared, c: reloaded.stats.championBeaten })})`,
   );
   expect(achievementList(reloaded).find((a) => a.id === 'storm-chaser')!.done === false, 'sanitized night=3/rain=0 keeps STORM CHASER locked (needs both)');
+}
+
+// ---------- 13. v10 P1 GLIDE body: tuning pins, champion unlock, stat bars, sanitize ----------
+{
+  // tuning literals: the three existing bodies byte-identical, glide identity deltas
+  expect(Object.keys(BODY_TUNING.standard).length === 0, 'standard tuning stays empty (neutral)');
+  expect(
+    BODY_TUNING.aero.maxSpeed === 60.9 && BODY_TUNING.aero.grip === 7.2 && BODY_TUNING.aero.driftGrip === 1.976,
+    'aero tuning unchanged (v5 literals)',
+  );
+  expect(
+    BODY_TUNING.tank.maxSpeed === 55.68 && BODY_TUNING.tank.grip === 7.95 && BODY_TUNING.tank.boostKick === 1.08 && BODY_TUNING.tank.accel === 35.7,
+    'tank tuning unchanged (v5 literals)',
+  );
+  expect(
+    BODY_TUNING.glide.driftGrip === 1.71 && BODY_TUNING.glide.accel === 32.64 && BODY_TUNING.glide.grip === 7.35 && BODY_TUNING.glide.maxSpeed === undefined,
+    'glide tuning: drift identity deltas, top speed neutral',
+  );
+
+  // stat bars: glide owns the DRIFT bar (longest in the garage)
+  const driftRatios = (['standard', 'aero', 'tank', 'glide'] as CarBodyStyle[]).map((b) => bodyStatRatios(b).drift);
+  expect(
+    driftRatios[3] === 1.1 && Math.max(...driftRatios) === driftRatios[3],
+    `glide DRIFT bar tops the garage (${driftRatios.map((r) => r.toFixed(2)).join('/')})`,
+  );
+  const g = bodyStatRatios('glide');
+  expect(g.speed === 1 && Math.abs(g.grip - 0.98) < 1e-9 && Math.abs(g.accel - 0.96) < 1e-9, 'glide speed neutral, grip 0.98x, accel 0.96x');
+
+  // unlock gate: championBeaten >= 1, idempotent, no side effects on other bodies
+  store.clear();
+  const save = new SaveManager();
+  const locked = bodyUnlocks(0, false, save.stats.championBeaten);
+  expect(!locked.glide.unlocked && locked.glide.req === 'BEAT SOVEREIGN', 'glide locked on fresh profile (BEAT SOVEREIGN)');
+  expect(locked.standard.unlocked && !locked.aero.unlocked && !locked.tank.unlocked, 'fresh-profile state of other bodies unchanged');
+  save.addStats({ championBeaten: 1 });
+  const now = bodyUnlocks(0, false, save.stats.championBeaten);
+  expect(now.glide.unlocked, 'glide unlocks exactly at championBeaten=1');
+  expect(!now.aero.unlocked && !now.tank.unlocked, 'champion win does not leak aero/tank');
+  save.addStats({ championBeaten: 1 });
+  expect(bodyUnlocks(0, false, save.stats.championBeaten).glide.unlocked, 'glide stays unlocked as championBeaten accumulates');
+
+  // selection persists through reload; corrupt body sanitizes to standard
+  save.updateProfile({ body: 'glide' });
+  const reloaded = new SaveManager();
+  expect(reloaded.profile.body === 'glide', 'glide selection persists through reload');
+  store.set(PLAYER_KEY, JSON.stringify({ paint: 0x29e6ff, body: 'glidee' }));
+  expect(new SaveManager().profile.body === 'standard', 'corrupt body string sanitizes to standard');
+  store.set(PLAYER_KEY, JSON.stringify({ paint: 0x29e6ff, body: 'glide' }));
+  expect(new SaveManager().profile.body === 'glide', 'valid stored glide body loads');
 }
 
 console.log(`\nstats test: ${checks - failures}/${checks} checks passed`);

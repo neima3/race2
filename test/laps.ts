@@ -19,7 +19,7 @@ import { RAIN_GRIP_MULT, SURFACE_GRIP_FLOOR, combinedGripMultiplier } from '../s
 
 const bodyArg = process.argv.find((a) => a.startsWith('--body='));
 const bodyRaw = bodyArg ? bodyArg.split('=')[1] : 'standard';
-const body: CarBodyId = bodyRaw === 'aero' || bodyRaw === 'tank' ? bodyRaw : 'standard';
+const body: CarBodyId = bodyRaw === 'aero' || bodyRaw === 'tank' || bodyRaw === 'glide' ? bodyRaw : 'standard';
 const bodyTuning = BODY_TUNING[body];
 
 const results: { track: string; ok: boolean; timeMs: number; ghost: string | null }[] = [];

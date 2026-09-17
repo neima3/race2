@@ -157,7 +157,7 @@ function sanitizeWeekly(v: unknown): WeeklySave {
 
 export interface PlayerProfile {
   paint: number;
-  body: 'standard' | 'aero' | 'tank';
+  body: 'standard' | 'aero' | 'tank' | 'glide';
 }
 
 export interface LifetimeStats {
@@ -443,7 +443,7 @@ export class SaveManager {
         const parsed = JSON.parse(raw) as Stored<Partial<PlayerProfile>>;
         this.noteSchemaVersion(parsed.schemaVersion);
         const profile: PlayerProfile = { ...DEFAULT_PROFILE, ...parsed };
-        if (profile.body !== 'standard' && profile.body !== 'aero' && profile.body !== 'tank') profile.body = 'standard';
+        if (profile.body !== 'standard' && profile.body !== 'aero' && profile.body !== 'tank' && profile.body !== 'glide') profile.body = 'standard';
         return profile;
       }
     } catch {

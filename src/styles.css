@@ -1013,10 +1013,11 @@ button {
   transform: scale(1.06);
 }
 
-.body-grid { display: flex; gap: 10px; width: 100%; }
+.body-grid { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
 
 .body-card {
-  flex: 1;
+  flex: 1 1 230px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;

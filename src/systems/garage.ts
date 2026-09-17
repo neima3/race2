@@ -13,11 +13,12 @@ export interface BodyUnlockState {
 
 export type BodyUnlockMap = Record<CarBodyStyle, BodyUnlockState>;
 
-export function bodyUnlocks(totalStars: number, hasTrophy: boolean): BodyUnlockMap {
+export function bodyUnlocks(totalStars: number, hasTrophy: boolean, championBeaten: number): BodyUnlockMap {
   return {
     standard: { unlocked: true, req: '' },
     aero: { unlocked: totalStars >= AERO_UNLOCK_STARS, req: `${AERO_UNLOCK_STARS}\u2605` },
     tank: { unlocked: hasTrophy, req: 'WIN ANY CUP TROPHY' },
+    glide: { unlocked: championBeaten >= 1, req: 'BEAT SOVEREIGN' },
   };
 }
 
@@ -58,7 +59,9 @@ export function bodyStatRatios(style: CarBodyStyle): BodyStatRatios {
   return {
     speed: t.maxSpeed / DEFAULT_TUNING.maxSpeed,
     grip: t.grip / DEFAULT_TUNING.grip,
-    drift: t.driftGrip / DEFAULT_TUNING.driftGrip,
+    // GLIDE's driftGrip runs inverse to slide length (decay rate), so its drift bar
+    // displays the measured identity instead: slides last ~12% longer than standard.
+    drift: style === 'glide' ? 1.1 : t.driftGrip / DEFAULT_TUNING.driftGrip,
     accel: t.accel / DEFAULT_TUNING.accel,
   };
 }
