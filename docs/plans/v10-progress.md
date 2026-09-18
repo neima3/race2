@@ -52,3 +52,8 @@
 
 ## Phase 6 (lead)
 - v2.5.0 bumped; AGENTS.md updated (16 tracks, 5 cups, 4 bodies, 18 achievements, per-body harness).
+
+## v10 final wrap (2026-09-15)
+- All 6 phases complete; pushed `e182836..cc969b2`, deployed (deployment im4ovgzcjp6zfif0doacqarn, finished on cc969b25), **v2.5.0 live**.
+- Live verification (muted): v2.5.0 + APEX LEAGUE + GLIDE strings in served bundle; sw controlling page; summit-run race live on prod with the crossover + ghost battle (`qa/v10-live/01`); halo-flats live (`02`).
+- Gates at HEAD (20): typecheck ✅ build ✅ laps 16/16 ×4 bodies ✅ rivals 29/29 ✅ career 213/213 ✅ share 51/51 ✅ knockout 50/50 ✅ daily 59/59 ✅ probe 61/61 ✅ allocs PASS ✅ camera 28/28 ✅ ghostbattle 39/39 ✅ traffic 16/16 ✅ weekly 116/116 ✅ stats 100/100 ✅ tutorial 73/73 ✅ replay 34/34 ✅ variants ✅ draft 21/21 ✅ (+ migration repro 19/19).
