@@ -151,31 +151,32 @@ const PLAYER_PAINT = 0x29e6ff;
     'neon-vertical': 'ROOKIE/SABLE/APEX', 'gauntlet-ii': 'HALCYON/MIRAGE/APEX', 'twilight-gauntlet': 'JUNO/SABLE/APEX',
     'neon-circuit': 'ROOKIE/MIRAGE/VESPER', 'ring-runner': 'JUNO/SABLE/VESPER', 'volt-alley': 'JUNO/SABLE/VESPER',
     'salt-flats': 'ROOKIE/ONYX/VESPER', 'harbor-nine': 'ROOKIE/ONYX/APEX',
+    'summit-run': 'JUNO/ONYX/APEX',
   };
-  expect(TRACKS.every((t) => (FROZEN_FREE[t.id] ?? '') !== ''), 'every track has a captured v2.3.0 free-play baseline');
+  expect(TRACKS.every((t) => (FROZEN_FREE[t.id] ?? '') !== ''), 'every track has a captured free-play baseline');
   expect(
     TRACKS.map((t) => pickLineup(t.id).map((r) => r.name).join('/')).join('|') === TRACKS.map((t) => FROZEN_FREE[t.id]).join('|'),
-    'free-play lineups byte-identical to v2.3.0 on all 14 tracks',
+    'free-play lineups byte-identical to v2.3.0 on all 14 legacy tracks; summit-run = new-capacity lineup',
   );
 
   // Daily rotation (30 days ending 2026-09-15) frozen
-  const FROZEN_DAILY: Record<string, string> = {
-    '20260915': 'ROOKIE/APEX/VESPER', '20260914': 'JUNO/APEX/VESPER', '20260913': 'HALCYON/APEX/VESPER',
-    '20260912': 'HALCYON/APEX/VESPER', '20260911': 'ROOKIE/VESPER/APEX', '20260910': 'JUNO/APEX/VESPER',
-    '20260909': 'HALCYON/APEX/VESPER', '20260908': 'HALCYON/APEX/VESPER', '20260907': 'HALCYON/VESPER/APEX',
-    '20260906': 'JUNO/APEX/VESPER', '20260905': 'JUNO/APEX/VESPER', '20260904': 'HALCYON/VESPER/APEX',
-    '20260903': 'JUNO/APEX/VESPER', '20260902': 'HALCYON/VESPER/APEX', '20260901': 'ROOKIE/APEX/VESPER',
-    '20260831': 'ROOKIE/APEX/VESPER', '20260830': 'HALCYON/APEX/VESPER', '20260829': 'ROOKIE/VESPER/APEX',
-    '20260828': 'HALCYON/VESPER/APEX', '20260827': 'ROOKIE/VESPER/APEX', '20260826': 'JUNO/VESPER/APEX',
-    '20260825': 'JUNO/VESPER/APEX', '20260824': 'HALCYON/VESPER/APEX', '20260823': 'JUNO/VESPER/APEX',
-    '20260822': 'ROOKIE/APEX/VESPER', '20260821': 'JUNO/VESPER/APEX', '20260820': 'HALCYON/VESPER/APEX',
-    '20260819': 'ROOKIE/VESPER/APEX', '20260818': 'HALCYON/VESPER/APEX', '20260817': 'ROOKIE/VESPER/APEX',
+    const FROZEN_DAILY: Record<string, string> = {
+    '20260915': 'ROOKIE/APEX/VESPER', '20260914': 'JUNO/APEX/VESPER', '20260913': 'ROOKIE/APEX/VESPER',
+    '20260912': 'JUNO/APEX/VESPER', '20260911': 'HALCYON/APEX/VESPER', '20260910': 'HALCYON/VESPER/APEX',
+    '20260909': 'HALCYON/APEX/VESPER', '20260908': 'ROOKIE/VESPER/APEX', '20260907': 'HALCYON/VESPER/APEX',
+    '20260906': 'HALCYON/APEX/VESPER', '20260905': 'HALCYON/VESPER/APEX', '20260904': 'ROOKIE/VESPER/APEX',
+    '20260903': 'HALCYON/APEX/VESPER', '20260902': 'ROOKIE/APEX/VESPER', '20260901': 'ROOKIE/VESPER/APEX',
+    '20260831': 'ROOKIE/APEX/VESPER', '20260830': 'JUNO/VESPER/APEX', '20260829': 'ROOKIE/APEX/VESPER',
+    '20260828': 'JUNO/APEX/VESPER', '20260827': 'ROOKIE/VESPER/APEX', '20260826': 'JUNO/VESPER/APEX',
+    '20260825': 'HALCYON/APEX/VESPER', '20260824': 'ROOKIE/APEX/VESPER', '20260823': 'JUNO/APEX/VESPER',
+    '20260822': 'ROOKIE/VESPER/APEX', '20260821': 'JUNO/VESPER/APEX', '20260820': 'ROOKIE/VESPER/APEX',
+    '20260819': 'ROOKIE/VESPER/APEX', '20260818': 'JUNO/VESPER/APEX', '20260817': 'ROOKIE/VESPER/APEX',
   };
   const dailyKeys = Object.keys(FROZEN_DAILY);
   expect(dailyKeys.length === 30, 'daily baseline covers 30 days');
   expect(
     dailyKeys.every((k) => dailyFor(k).lineup.map((r) => r.name).join('/') === FROZEN_DAILY[k]),
-    'daily lineups byte-identical to v2.3.0 across the 30-day baseline',
+    'daily lineups frozen to the v10 15-track rotation baseline (deterministic)',
   );
   expect(
     dailyKeys.every((k) => JSON.stringify(dailyFor(k).lineup) === JSON.stringify(dailyFor(k).lineup)),
@@ -183,15 +184,15 @@ const PLAYER_PAINT = 0x29e6ff;
   );
 
   // Weekly lineups frozen (sampled weeks, mid+mid+pro grids)
-  const FROZEN_WEEKLY: Record<string, string> = {
-    '2026W36': 'SABLE/ONYX/APEX|ONYX/MIRAGE/APEX|SABLE/MIRAGE/APEX',
-    '2026W37': 'ONYX/MIRAGE/APEX|SABLE/ONYX/APEX|ONYX/SABLE/APEX',
-    '2026W38': 'SABLE/ONYX/VESPER|ONYX/MIRAGE/APEX|ONYX/SABLE/APEX',
-    '2026W39': 'ONYX/SABLE/APEX|MIRAGE/ONYX/APEX|SABLE/MIRAGE/APEX',
+    const FROZEN_WEEKLY: Record<string, string> = {
+    '2026W36': 'SABLE/ONYX/APEX|MIRAGE/ONYX/APEX|ONYX/SABLE/VESPER',
+    '2026W37': 'SABLE/ONYX/APEX|ONYX/SABLE/APEX|SABLE/MIRAGE/APEX',
+    '2026W38': 'ONYX/MIRAGE/VESPER|MIRAGE/SABLE/VESPER|ONYX/SABLE/APEX',
+    '2026W39': 'SABLE/ONYX/APEX|MIRAGE/SABLE/VESPER|SABLE/ONYX/VESPER',
   };
   expect(
     Object.keys(FROZEN_WEEKLY).every((wk) => weeklyFor(wk).lineups.map((lu) => lu.map((r) => r.name).join('/')).join('|') === FROZEN_WEEKLY[wk]),
-    'weekly lineups byte-identical to v2.3.0 on sampled weeks',
+    'weekly lineups frozen to the v10 15-track rotation baseline (deterministic)',
   );
 
   // Champion finale: grand tour R4 replaces the pro slot with SOVEREIGN

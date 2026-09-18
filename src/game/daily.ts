@@ -16,6 +16,12 @@ export function prevDateKey(key: string): string {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
+function nextDateKey(key: string): string {
+  if (!/^\d{8}$/.test(key)) return key;
+  const d = new Date(Date.UTC(+key.slice(0, 4), +key.slice(4, 6) - 1, +key.slice(6, 8)) + 86400000);
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
 export function isValidDateKey(key: string): boolean {
   if (!/^\d{8}$/.test(key)) return false;
   const d = new Date(Date.UTC(+key.slice(0, 4), +key.slice(4, 6) - 1, +key.slice(6, 8)));
@@ -38,13 +44,36 @@ export interface DailyDef {
   variant: TrackVariant;
 }
 
+/**
+ * Deterministic no-consecutive-repeat rotation: walk day-by-day from a fixed epoch,
+ * shifting off any index the previous day landed on. The old one-step raw-hash check
+ * broke when n changed (yesterday's EFFECTIVE index includes its own shift).
+ * Cost: one hash per day since the epoch (~1k for current dates) — memoized per dateKey.
+ */
+const DAILY_EPOCH = '20240101';
+const dailyWalkCache = new Map<string, number>();
+function effectiveDailyIndex(dateKey: string): number {
+  const cached = dailyWalkCache.get(dateKey);
+  if (cached !== undefined) return cached;
+  let d = DAILY_EPOCH;
+  let prev = -1;
+  while (true) {
+    let idx = hashSeed(SEED_PREFIX + d) % TRACKS.length;
+    if (idx === prev) idx = (idx + 1) % TRACKS.length;
+    dailyWalkCache.set(d, idx);
+    if (d === dateKey) return idx;
+    if (d > dateKey) return idx;
+    const next = nextDateKey(d);
+    if (next === d || !isValidDateKey(next)) return idx;
+    prev = idx;
+    d = next;
+  }
+}
+
 export function dailyFor(dateKey: string): DailyDef {
   const h = hashSeed(SEED_PREFIX + dateKey);
   const n = TRACKS.length;
-  let idx = h % n;
-  if (isValidDateKey(dateKey) && hashSeed(SEED_PREFIX + prevDateKey(dateKey)) % n === idx) {
-    idx = (idx + 1) % n;
-  }
+  const idx = isValidDateKey(dateKey) ? effectiveDailyIndex(dateKey) : h % n;
   const track = TRACKS[idx];
   return {
     dateKey,

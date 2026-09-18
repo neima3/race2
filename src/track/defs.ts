@@ -671,4 +671,43 @@ const TRACK_14: TrackDef = {
   medals: { author: 25500, gold: 29000, silver: 34000, bronze: 43500 },
 };
 
-export const TRACKS: TrackDef[] = [TRACK_1, TRACK_2, TRACK_3, TRACK_4, TRACK_5, TRACK_6, TRACK_7, TRACK_8, TRACK_9, TRACK_10, TRACK_11, TRACK_12, TRACK_13, TRACK_14];
+const TRACK_15: TrackDef = {
+  id: 'summit-run',
+  name: 'Summit Run',
+  subtitle: 'Alpine switchbacks to the roof',
+  accent: 0xbfe8ff,
+  accentName: '#bfe8ff',
+  theme: 'alpine',
+  points: [
+    cp(0, 0, 0, 9),
+    cp(0, 0, -50, 9),
+    cp(-12, 2, -98, 9, 8),
+    cp(-42, 5.5, -130, 9, 14),
+    cp(-80, 8.5, -146, 9, 8),
+    cp(-114, 10.5, -158, 9, 2),
+    cp(-134, 12.5, -178, 9, -8),
+    cp(-118, 14.5, -198, 9, -6),
+    cp(-84, 16.5, -208, 9, 0),
+    cp(-52, 18, -216, 9, 4),
+    cp(-34, 20, -236, 9, 2),
+    cp(-52, 22, -256, 9, 4),
+    cp(-82, 24, -264, 9, 2),
+    cp(-108, 26, -266, 9, 0),
+    cp(-118, 24.5, -290, 9, -4),
+    cp(-84, 21.5, -306, 9, 2),
+    cp(-28, 17.5, -302, 9, 0),
+    cp(30, 13.5, -282, 9, 4),
+    cp(74, 10.5, -242, 9, 6),
+    cp(92, 8, -180, 9, 6),
+    cp(88, 6, -110, 9, 2),
+    cp(66, 4.2, -48, 9, 0),
+    cp(44, 2.4, 6, 9, -2),
+    cp(18, 0.9, 26, 9, 0),
+    cp(6, 0.2, 12, 9, 0),
+  ],
+  checkpoints: [{ dist: 340 }, { dist: 700 }],
+  boosts: [{ dist: 28, lateral: 0, strength: 9 }],
+  medals: { author: 32500, gold: 37000, silver: 43500, bronze: 55500 },
+};
+
+export const TRACKS: TrackDef[] = [TRACK_1, TRACK_2, TRACK_3, TRACK_4, TRACK_5, TRACK_6, TRACK_7, TRACK_8, TRACK_9, TRACK_10, TRACK_11, TRACK_12, TRACK_13, TRACK_14, TRACK_15];
