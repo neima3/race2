@@ -6,7 +6,7 @@
 - [x] Phase 3: Track #16 — halo-flats (mesa rings speed-lap)
 - [x] Phase 4: 5th cup — APEX LEAGUE + achievements
 - [x] Phase 5: Balance + full QA sweep
-- [ ] Phase 6: v2.5.0 + deploy + live verify
+- [x] Phase 6: v2.5.0 + deploy + live verify
 
 **Goal statement (full ambition):** Give veterans new metal and new miles: a fourth car whose entire identity is drift, two authored tracks that exercise the v7 visual language (one technical alpine climb, one mesa ring-runner sprint), and a fifth cup that turns the new content into a pro-tier championship with the champion to beat — shipped as v2.5.0, harness 16/16, every gate green, live-verified muted.
 

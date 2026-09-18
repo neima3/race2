@@ -227,7 +227,7 @@ export class MenuManager {
     });
     buttons.append(play, daily, weekly, career, garage, stats, achievements, settings);
     const hint = el('div', 'title-hint', 'Keyboard · Touch · Gamepad supported');
-    const credits = el('div', 'title-credits', `v2.4.0 — built with Three.js · © 2026 neima.me`);
+    const credits = el('div', 'title-credits', `v2.5.0 — built with Three.js · © 2026 neima.me`);
     screen.append(logo, buttons, hint, credits);
     return screen;
   }
