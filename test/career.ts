@@ -144,7 +144,8 @@ const PLAYER_PAINT = 0x29e6ff;
     }
   }
 
-  // Free-play (default grid) frozen across all 14 tracks
+  // Free-play (default grid) frozen across all 14 legacy tracks + summit-run;
+  // halo-flats (v10 P3) draws its own new-capacity entry
   const FROZEN_FREE: Record<string, string> = {
     'sunrise-sprint': 'HALCYON/SABLE/APEX', 'canyon-twist': 'ROOKIE/ONYX/VESPER', 'sky-loop': 'HALCYON/MIRAGE/APEX',
     'grand-gauntlet': 'JUNO/MIRAGE/VESPER', 'dune-rush': 'HALCYON/MIRAGE/APEX', 'serpents-tail': 'JUNO/ONYX/APEX',
@@ -152,47 +153,49 @@ const PLAYER_PAINT = 0x29e6ff;
     'neon-circuit': 'ROOKIE/MIRAGE/VESPER', 'ring-runner': 'JUNO/SABLE/VESPER', 'volt-alley': 'JUNO/SABLE/VESPER',
     'salt-flats': 'ROOKIE/ONYX/VESPER', 'harbor-nine': 'ROOKIE/ONYX/APEX',
     'summit-run': 'JUNO/ONYX/APEX',
+    'halo-flats': 'JUNO/ONYX/APEX',
   };
   expect(TRACKS.every((t) => (FROZEN_FREE[t.id] ?? '') !== ''), 'every track has a captured free-play baseline');
   expect(
     TRACKS.map((t) => pickLineup(t.id).map((r) => r.name).join('/')).join('|') === TRACKS.map((t) => FROZEN_FREE[t.id]).join('|'),
-    'free-play lineups byte-identical to v2.3.0 on all 14 legacy tracks; summit-run = new-capacity lineup',
+    'free-play lineups byte-identical to v2.3.0 on all 14 legacy tracks; summit-run + halo-flats = new-capacity lineups',
   );
 
-  // Daily rotation (30 days ending 2026-09-15) frozen
+  // Daily rotation (30 days ending 2026-09-15) frozen — regenerated for the v10 P3
+  // 16-track rotation (TRACKS.length 15 -> 16 shifts the deterministic walk)
     const FROZEN_DAILY: Record<string, string> = {
-    '20260915': 'ROOKIE/APEX/VESPER', '20260914': 'JUNO/APEX/VESPER', '20260913': 'ROOKIE/APEX/VESPER',
-    '20260912': 'JUNO/APEX/VESPER', '20260911': 'HALCYON/APEX/VESPER', '20260910': 'HALCYON/VESPER/APEX',
-    '20260909': 'HALCYON/APEX/VESPER', '20260908': 'ROOKIE/VESPER/APEX', '20260907': 'HALCYON/VESPER/APEX',
-    '20260906': 'HALCYON/APEX/VESPER', '20260905': 'HALCYON/VESPER/APEX', '20260904': 'ROOKIE/VESPER/APEX',
-    '20260903': 'HALCYON/APEX/VESPER', '20260902': 'ROOKIE/APEX/VESPER', '20260901': 'ROOKIE/VESPER/APEX',
-    '20260831': 'ROOKIE/APEX/VESPER', '20260830': 'JUNO/VESPER/APEX', '20260829': 'ROOKIE/APEX/VESPER',
-    '20260828': 'JUNO/APEX/VESPER', '20260827': 'ROOKIE/VESPER/APEX', '20260826': 'JUNO/VESPER/APEX',
-    '20260825': 'HALCYON/APEX/VESPER', '20260824': 'ROOKIE/APEX/VESPER', '20260823': 'JUNO/APEX/VESPER',
-    '20260822': 'ROOKIE/VESPER/APEX', '20260821': 'JUNO/VESPER/APEX', '20260820': 'ROOKIE/VESPER/APEX',
-    '20260819': 'ROOKIE/VESPER/APEX', '20260818': 'JUNO/VESPER/APEX', '20260817': 'ROOKIE/VESPER/APEX',
+    '20260915': 'ROOKIE/APEX/VESPER', '20260914': 'JUNO/VESPER/APEX', '20260913': 'HALCYON/APEX/VESPER',
+    '20260912': 'ROOKIE/APEX/VESPER', '20260911': 'HALCYON/VESPER/APEX', '20260910': 'ROOKIE/VESPER/APEX',
+    '20260909': 'HALCYON/APEX/VESPER', '20260908': 'HALCYON/APEX/VESPER', '20260907': 'ROOKIE/VESPER/APEX',
+    '20260906': 'HALCYON/VESPER/APEX', '20260905': 'JUNO/APEX/VESPER', '20260904': 'JUNO/APEX/VESPER',
+    '20260903': 'ROOKIE/VESPER/APEX', '20260902': 'HALCYON/VESPER/APEX', '20260901': 'JUNO/VESPER/APEX',
+    '20260831': 'JUNO/APEX/VESPER', '20260830': 'ROOKIE/VESPER/APEX', '20260829': 'JUNO/APEX/VESPER',
+    '20260828': 'HALCYON/APEX/VESPER', '20260827': 'JUNO/APEX/VESPER', '20260826': 'JUNO/VESPER/APEX',
+    '20260825': 'JUNO/APEX/VESPER', '20260824': 'ROOKIE/VESPER/APEX', '20260823': 'HALCYON/APEX/VESPER',
+    '20260822': 'ROOKIE/APEX/VESPER', '20260821': 'JUNO/APEX/VESPER', '20260820': 'ROOKIE/VESPER/APEX',
+    '20260819': 'ROOKIE/APEX/VESPER', '20260818': 'HALCYON/APEX/VESPER', '20260817': 'ROOKIE/VESPER/APEX',
   };
   const dailyKeys = Object.keys(FROZEN_DAILY);
   expect(dailyKeys.length === 30, 'daily baseline covers 30 days');
   expect(
     dailyKeys.every((k) => dailyFor(k).lineup.map((r) => r.name).join('/') === FROZEN_DAILY[k]),
-    'daily lineups frozen to the v10 15-track rotation baseline (deterministic)',
+    'daily lineups frozen to the v10 16-track rotation baseline (deterministic)',
   );
   expect(
     dailyKeys.every((k) => JSON.stringify(dailyFor(k).lineup) === JSON.stringify(dailyFor(k).lineup)),
     'daily lineups deterministic under repeated calls',
   );
 
-  // Weekly lineups frozen (sampled weeks, mid+mid+pro grids)
+  // Weekly lineups frozen (sampled weeks, mid+mid+pro grids) — regenerated for 16 tracks
     const FROZEN_WEEKLY: Record<string, string> = {
-    '2026W36': 'SABLE/ONYX/APEX|MIRAGE/ONYX/APEX|ONYX/SABLE/VESPER',
-    '2026W37': 'SABLE/ONYX/APEX|ONYX/SABLE/APEX|SABLE/MIRAGE/APEX',
-    '2026W38': 'ONYX/MIRAGE/VESPER|MIRAGE/SABLE/VESPER|ONYX/SABLE/APEX',
-    '2026W39': 'SABLE/ONYX/APEX|MIRAGE/SABLE/VESPER|SABLE/ONYX/VESPER',
+    '2026W36': 'ONYX/SABLE/APEX|MIRAGE/ONYX/APEX|MIRAGE/SABLE/APEX',
+    '2026W37': 'SABLE/MIRAGE/APEX|MIRAGE/ONYX/VESPER|ONYX/SABLE/APEX',
+    '2026W38': 'SABLE/MIRAGE/APEX|ONYX/SABLE/VESPER|MIRAGE/SABLE/APEX',
+    '2026W39': 'SABLE/MIRAGE/APEX|MIRAGE/ONYX/VESPER|ONYX/MIRAGE/VESPER',
   };
   expect(
     Object.keys(FROZEN_WEEKLY).every((wk) => weeklyFor(wk).lineups.map((lu) => lu.map((r) => r.name).join('/')).join('|') === FROZEN_WEEKLY[wk]),
-    'weekly lineups frozen to the v10 15-track rotation baseline (deterministic)',
+    'weekly lineups frozen to the v10 16-track rotation baseline (deterministic)',
   );
 
   // Champion finale: grand tour R4 replaces the pro slot with SOVEREIGN

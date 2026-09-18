@@ -710,4 +710,40 @@ const TRACK_15: TrackDef = {
   medals: { author: 32500, gold: 37000, silver: 43500, bronze: 55500 },
 };
 
-export const TRACKS: TrackDef[] = [TRACK_1, TRACK_2, TRACK_3, TRACK_4, TRACK_5, TRACK_6, TRACK_7, TRACK_8, TRACK_9, TRACK_10, TRACK_11, TRACK_12, TRACK_13, TRACK_14, TRACK_15];
+const TRACK_16: TrackDef = {
+  id: 'halo-flats',
+  name: 'Halo Flats',
+  subtitle: 'Thread five halos flat out',
+  accent: 0x7dffdf,
+  accentName: '#7dffdf',
+  theme: 'mesa',
+  variant: 'night',
+  points: [
+    cp(0, 0, 0, 11, 0),
+    cp(0, 0, -70, 11, 4),
+    cp(-38.1, 0, -161.9, 10.5, 9),
+    cp(-130, 0, -200, 10.5, 10),
+    cp(-221.9, 0, -161.9, 10.5, 9),
+    cp(-260, 0, -70, 10.5, 4),
+    cp(-260, 0, 0, 11, 4),
+    cp(-221.9, 0, 91.9, 10.5, 7),
+    cp(-130, 0, 130, 10.5, 8),
+    cp(-38.1, 0, 91.9, 10.5, 7),
+    cp(-7.8, 0, 44.5, 11, 3),
+  ],
+  checkpoints: [{ dist: 330 }, { dist: 660 }],
+  boosts: [
+    { dist: 40, lateral: 0, strength: 10 },
+    { dist: 515, lateral: 0, strength: 10 },
+  ],
+  rings: [
+    { dist: 38, lateral: 0, height: 1.6, radius: 3.8 },
+    { dist: 180, lateral: 0, height: 2, radius: 3.8 },
+    { dist: 274, lateral: 2.8, height: 2, radius: 3.8 },
+    { dist: 370, lateral: 3.5, height: 2, radius: 3.8 },
+    { dist: 750, lateral: 0, height: 2, radius: 3.8 },
+  ],
+  medals: { author: 24000, gold: 27500, silver: 32000, bronze: 41500 },
+};
+
+export const TRACKS: TrackDef[] = [TRACK_1, TRACK_2, TRACK_3, TRACK_4, TRACK_5, TRACK_6, TRACK_7, TRACK_8, TRACK_9, TRACK_10, TRACK_11, TRACK_12, TRACK_13, TRACK_14, TRACK_15, TRACK_16];
