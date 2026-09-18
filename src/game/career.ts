@@ -15,6 +15,9 @@ export interface CupDef {
   paceBias?: number;
   /** v9 P4: the final race swaps its last 'pro' slot for the champion (SOVEREIGN). */
   championFinal?: boolean;
+  /** v10 P4: custom unlock replacing the default track chain — named tracks must be
+   *  unlocked via the natural chain AND a trophy in the named cup is required. */
+  unlock?: { chainTrackIds: string[]; trophyOfCupId: string };
 }
 
 export const CUP_POINTS = [25, 18, 15, 12];
@@ -67,6 +70,19 @@ export const CUPS: CupDef[] = [
     variants: ['day', 'night', 'dusk', 'rain'],
     championFinal: true,
   },
+  {
+    id: 'apex-league',
+    name: 'APEX LEAGUE',
+    subtitle: 'All-pro, dusk to rain, for the throne',
+    gridLabel: 'ALL-PRO GRID',
+    accent: 0xffd23d,
+    accentName: '#ffd23d',
+    tiers: ['pro', 'pro', 'pro'],
+    trackIds: ['summit-run', 'halo-flats', 'volt-alley', 'grand-gauntlet'],
+    variants: ['dusk', 'night', 'day', 'rain'],
+    championFinal: true,
+    unlock: { chainTrackIds: ['grand-gauntlet', 'volt-alley'], trophyOfCupId: 'grand-tour' },
+  },
 ];
 
 export function cupById(id: string): CupDef | null {
@@ -118,6 +134,20 @@ export function cupUnlock(
   forceAll: boolean,
 ): { unlocked: boolean; reason: string | null } {
   if (forceAll) return { unlocked: true, reason: null };
+  if (cup.unlock) {
+    for (const id of cup.unlock.chainTrackIds) {
+      const idx = tracks.findIndex((t) => t.id === id);
+      if (idx <= 0) continue;
+      if (!hasMedal(save, tracks[idx - 1])) {
+        return { unlocked: false, reason: `UNLOCK ${tracks[idx].name.toUpperCase()}` };
+      }
+    }
+    const gate = cupById(cup.unlock.trophyOfCupId);
+    if (gate && !save.cupSave(gate.id).finishes.some((f) => f.trophy)) {
+      return { unlocked: false, reason: `${gate.name.toUpperCase()} TROPHY` };
+    }
+    return { unlocked: true, reason: null };
+  }
   for (const id of cup.trackIds) {
     const idx = tracks.findIndex((t) => t.id === id);
     if (idx <= 0) continue;

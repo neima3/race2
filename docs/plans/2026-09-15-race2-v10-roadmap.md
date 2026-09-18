@@ -4,7 +4,7 @@
 - [x] Phase 1: 4th car body — GLIDE (drift identity)
 - [x] Phase 2: Track #15 — summit-run (alpine technical)
 - [x] Phase 3: Track #16 — halo-flats (mesa rings speed-lap)
-- [ ] Phase 4: 5th cup — APEX LEAGUE + achievements
+- [x] Phase 4: 5th cup — APEX LEAGUE + achievements
 - [ ] Phase 5: Balance + full QA sweep
 - [ ] Phase 6: v2.5.0 + deploy + live verify
 

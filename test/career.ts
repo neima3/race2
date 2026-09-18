@@ -6,7 +6,7 @@ import { RaceController } from '../src/game/race';
 import { RivalManager, pickLineup, RIVAL_ROSTER, V230_POOL_DEPTH, type Standing } from '../src/game/rivals';
 import { SaveManager } from '../src/core/save';
 import { autopilotDrive } from '../src/systems/autopilot';
-import { rivalAchievementState, achievementPops } from '../src/game/achievements';
+import { rivalAchievementState, achievementPops, achievementList } from '../src/game/achievements';
 import { dailyFor } from '../src/game/daily';
 import { weeklyFor } from '../src/game/weekly';
 import {
@@ -96,17 +96,20 @@ const PLAYER_PAINT = 0x29e6ff;
   const sprint = cupById('sprint-cup')!;
   const gauntlet = cupById('gauntlet-cup')!;
   const tour = cupById('grand-tour')!;
+  const apex = cupById('apex-league')!;
   const l0 = cupLineup(street, 0);
   expect(JSON.stringify(l0) === JSON.stringify(cupLineup(street, 0)), 'cup lineup deterministic for (track, slot)');
   expect(l0.every((r) => r.tier !== 'easy') && l0.some((r) => r.tier === 'pro'), 'street cup grid is mid+pro mix (medium)');
   expect(new Set(cupLineup(sprint, 0).map((r) => r.tier)).toString() === new Set(['easy', 'mid']).toString(), 'sprint cup grid is easy+mid mix (forgiving)');
   expect(cupLineup(gauntlet, 2).some((r) => r.tier === 'pro'), 'gauntlet cup grid includes pro');
   expect(cupLineup(gauntlet, 0).every((r) => r.tier !== 'easy'), 'gauntlet cup grid has no easy slots (spicy)');
+  expect(apex.tiers.every((t) => t === 'pro'), 'apex league grid is all-pro (pro-heavy, 3 slots within the 4-pro roster)');
+  expect(JSON.stringify(cupRaceTiers(apex, 3)) === JSON.stringify(['pro', 'pro', 'champion']), 'apex league R4 resolves pro/pro/champion');
   const tourTiers = tour.tiers;
   expect(tourTiers.filter((t) => t === 'easy').length === 1 && tourTiers.filter((t) => t === 'mid').length >= 1 && tourTiers.filter((t) => t === 'pro').length >= 1, `grand tour grid is a mixed easy/mid/pro field (${tourTiers.join('+')})`);
   // a tier may not claim more grid slots than the roster has members for it —
   // overflow re-picks from the full pool and duplicates a rival name in one race
-  for (const cup of [sprint, street, gauntlet, tour]) {
+  for (const cup of [sprint, street, gauntlet, tour, apex]) {
     const need = new Map<string, number>();
     for (const t of cup.tiers) need.set(t, (need.get(t) ?? 0) + 1);
     for (const [tier, n] of need) {
@@ -126,6 +129,7 @@ const PLAYER_PAINT = 0x29e6ff;
   const street = cupById('street-cup')!;
   const gauntlet = cupById('gauntlet-cup')!;
   const tour = cupById('grand-tour')!;
+  const apex = cupById('apex-league')!;
 
   // Lineup names for every pre-existing cup slot, captured at v2.3.0 (pre-roster-growth)
   // via a pre-change dump. Any reshuffle here is a determinism regression.
@@ -134,13 +138,16 @@ const PLAYER_PAINT = 0x29e6ff;
     'street-cup': ['SABLE/APEX/VESPER', 'SABLE/APEX/VESPER', 'ONYX/VESPER/APEX', 'MIRAGE/APEX/VESPER'],
     'gauntlet-cup': ['APEX/VESPER/SABLE', 'APEX/VESPER/MIRAGE', 'VESPER/APEX/MIRAGE', 'VESPER/APEX/ONYX'],
     'grand-tour': ['ROOKIE/ONYX/APEX', 'JUNO/MIRAGE/APEX', 'ROOKIE/MIRAGE/APEX', 'ROOKIE/SABLE/APEX'],
+    // v10 P4: apex league is NEW content — its lineups are new-capacity (deep pro slot
+    // reaches KESTREL/VESUVIUS) and frozen from birth so future roster growth can't move them
+    'apex-league': ['APEX/VESPER/VESUVIUS', 'APEX/VESPER/VESUVIUS', 'APEX/VESPER/KESTREL', 'APEX/VESPER/SOVEREIGN'],
   };
-  for (const cup of [sprint, street, gauntlet, tour]) {
+  for (const cup of [sprint, street, gauntlet, tour, apex]) {
     const expected = FROZEN_CUPS[cup.id];
     for (let i = 0; i < 4; i++) {
-      if (cup.id === 'grand-tour' && i === 3) continue; // champion slot asserted below
+      if ((cup.id === 'grand-tour' || cup.id === 'apex-league') && i === 3) continue; // champion slot asserted below
       const actual = cupLineup(cup, i).map((r) => r.name).join('/');
-      expect(actual === expected[i], `${cup.name} R${i + 1} lineup byte-identical to v2.3.0 (${actual})`);
+      expect(actual === expected[i], `${cup.name} R${i + 1} lineup byte-identical to baseline (${actual})`);
     }
   }
 
@@ -207,6 +214,17 @@ const PLAYER_PAINT = 0x29e6ff;
   expect(JSON.stringify(cupLineup(tour, 3)) === JSON.stringify(cupLineup(tour, 3)), 'grand tour R4 lineup deterministic');
   expect(r4.every((r) => r.paceBias === undefined), 'grand tour R4 presets carry no pace bias');
 
+  // v10 P4: apex league — R4 is the champion defense (SOVEREIGN at grand-gauntlet rain)
+  expect(apex.trackIds.join(',') === 'summit-run,halo-flats,volt-alley,grand-gauntlet', 'apex league: summit-run → halo-flats → volt-alley → grand-gauntlet');
+  expect(apex.variants?.join(',') === 'dusk,night,day,rain', 'apex league variants: dusk/night/day/rain');
+  const apexR4 = cupLineup(apex, 3);
+  expect(apexR4.map((r) => r.name).join('/') === 'APEX/VESPER/SOVEREIGN', `apex league R4: SOVEREIGN closes the cup (got ${apexR4.map((r) => r.name).join('/')})`);
+  expect(apexR4.map((r) => r.tier).join('/') === 'pro/pro/champion', 'apex league R4 grid resolves pro/pro/champion');
+  expect(cupRaceTiers(apex, 0).join('/') === 'pro/pro/pro' && cupRaceTiers(apex, 2).join('/') === 'pro/pro/pro', 'apex league races 1-3 keep the all-pro grid');
+  expect(apexR4.every((r) => r.paceBias === undefined), 'apex league R4 presets carry no pace bias');
+  expect(apexR4.some((r) => r.name === 'SOVEREIGN') && apexR4.filter((r) => r.name === 'SOVEREIGN').length === 1, 'exactly one SOVEREIGN on the apex R4 grid');
+  expect(JSON.stringify(cupLineup(apex, 3)) === JSON.stringify(cupLineup(apex, 3)), 'apex league R4 lineup deterministic');
+
   // Roster pools grew; legacy presets untouched
   expect(RIVAL_ROSTER.length === 12, `roster grew to 12 presets (got ${RIVAL_ROSTER.length})`);
   const poolSizes = (['easy', 'mid', 'pro', 'champion'] as const).map((t) => `${t}:${RIVAL_ROSTER.filter((r) => r.tier === t).length}`).join(',');
@@ -231,7 +249,7 @@ const PLAYER_PAINT = 0x29e6ff;
   expect(new Set(deepMid.map((r) => r.name)).size === 4 && deepMid.some((r) => r.name === 'NOVA'), '4-deep mid slot picks distinct mids incl. NOVA');
 
   // Resolved per-race grids stay within roster capacity (incl. the champion swap)
-  for (const cup of [sprint, street, gauntlet, tour]) {
+  for (const cup of [sprint, street, gauntlet, tour, apex]) {
     for (let i = 0; i < 4; i++) {
       const need = new Map<string, number>();
       for (const t of cupRaceTiers(cup, i)) need.set(t, (need.get(t) ?? 0) + 1);
@@ -250,16 +268,20 @@ const PLAYER_PAINT = 0x29e6ff;
   const street = cupById('street-cup')!;
   const gauntlet = cupById('gauntlet-cup')!;
   const tour = cupById('grand-tour')!;
-  for (const c of [sprint, street, gauntlet, tour]) {
+  const apex = cupById('apex-league')!;
+  for (const c of [sprint, street, gauntlet, tour, apex]) {
     const u = cupUnlock(c, TRACKS, save, false);
     expect(!u.unlocked && !!u.reason, `fresh profile: ${c.name} locked (${u.reason})`);
   }
   expect(cupUnlock(street, TRACKS, save, true).unlocked, '?alltracks bypass unlocks cups');
+  expect(cupUnlock(apex, TRACKS, save, true).unlocked, '?alltracks bypass unlocks the apex league too');
+  expect(cupUnlock(apex, TRACKS, save, false).reason === 'UNLOCK GRAND GAUNTLET', `apex chain surfaces the first missing track (${cupUnlock(apex, TRACKS, save, false).reason})`);
   // Medal T1..T7 → sprint (T1,T2,T5,T8) enterable, street/gauntlet still locked
   for (let i = 0; i < 7; i++) save.submitTime(TRACKS[i].id, TRACKS[i].medals.bronze - 1000, null);
   expect(cupUnlock(sprint, TRACKS, save, false).unlocked, 'sprint cup unlocked after medals on T1-T7');
   expect(!cupUnlock(gauntlet, TRACKS, save, false).unlocked, 'gauntlet cup still locked');
   expect(!cupUnlock(street, TRACKS, save, false).unlocked, 'street cup still locked');
+  expect(cupUnlock(apex, TRACKS, save, false).reason === 'UNLOCK VOLT ALLEY', `grand-gauntlet chain met, volt-alley next (${cupUnlock(apex, TRACKS, save, false).reason})`);
   for (let i = 7; i < 10; i++) save.submitTime(TRACKS[i].id, TRACKS[i].medals.bronze - 1000, null);
   expect(cupUnlock(gauntlet, TRACKS, save, false).unlocked, 'gauntlet cup unlocked after medals on T1-T10');
   expect(!cupUnlock(street, TRACKS, save, false).unlocked, `street cup locked until T11 medaled (${cupUnlock(street, TRACKS, save, false).reason})`);
@@ -270,6 +292,11 @@ const PLAYER_PAINT = 0x29e6ff;
   expect(!cupUnlock(tour, TRACKS, save, false).unlocked, `grand tour locked until salt-flats medaled (${cupUnlock(tour, TRACKS, save, false).reason})`);
   save.submitTime(TRACKS[12].id, TRACKS[12].medals.bronze - 1000, null);
   expect(cupUnlock(tour, TRACKS, save, false).unlocked, 'grand tour unlocked after medals through salt-flats');
+  expect(cupUnlock(apex, TRACKS, save, false).reason === 'GRAND TOUR TROPHY', `both chain tracks unlocked — GT trophy is the last gate (${cupUnlock(apex, TRACKS, save, false).reason})`);
+  save.recordCupFinish('grand-tour', { positions: [1, 2, 3, 4], points: 92, trophy: 'gold', dateMs: 99 });
+  expect(cupUnlock(apex, TRACKS, save, false).unlocked, 'apex league unlocks with the grand tour trophy in hand');
+  save.recordCupFinish('grand-tour', { positions: [4, 3, 2, 1], points: 48, trophy: null, dateMs: 100 });
+  expect(cupUnlock(apex, TRACKS, save, false).unlocked, 'a trophy-less GT finish does not re-lock the apex league');
 }
 
 // ---------- 5. Mid-cup quit + resume (persisted through simulated reload) ----------
@@ -477,7 +504,7 @@ function runCupRace(raceIndex: number, cupId: string, save: SaveManager): { stan
   expect(Object.keys(s.cups).length === 0, 'time-trial writes create no cup state');
   expect(s.careerRun === null, 'time-trial writes create no career run');
   expect(s.tracks['sunrise-sprint'].bestTimeMs === 17500, 'time-trial PB still written');
-  expect(CUPS.length === 4 && CUPS.every((c) => c.trackIds.length === 4), '4 cups × 4 races defined');
+  expect(CUPS.length === 5 && CUPS.every((c) => c.trackIds.length === 4), '5 cups × 4 races defined');
   expect(CUPS.every((c) => c.trackIds.every((id) => TRACKS.some((t) => t.id === id))), 'all cup track ids exist in TRACKS');
 }
 
@@ -530,6 +557,53 @@ function runCupRace(raceIndex: number, cupId: string, save: SaveManager): { stan
   const tourist = achievementPops({ rivalWins: 1, cupsWithTrophy: 3, rivalsBeaten: 8, friendGhostRaces: 1, tourist: 0 }, { rivalWins: 1, cupsWithTrophy: 4, rivalsBeaten: 8, friendGhostRaces: 1, tourist: 1 }).map((p) => p.name).join(',');
   expect(tourist === 'TOURIST', `TOURIST pops when the grand tour trophy lands (${tourist})`);
   expect(achievementPops(st, st).length === 0, 'no pops when nothing newly satisfied');
+}
+
+// ---------- 10b. v10 P4 achievements: apex-champion / glide-rider / ringmaster ----------
+{
+  const V10_IDS = ['apex-champion', 'glide-rider', 'ringmaster'];
+  const V10_NAMES: Record<string, string> = {
+    'apex-champion': 'APEX CHAMPION',
+    'glide-rider': 'GLIDE RIDER',
+    ringmaster: 'RINGMASTER',
+  };
+  store.clear();
+  const save = new SaveManager();
+  const before = rivalAchievementState(save);
+  const list = achievementList(save);
+  expect(list.length === 18, `achievement roster grew to 18 rows (got ${list.length})`);
+  expect(new Set(list.map((a) => a.id)).size === 18, 'achievement ids unique');
+  for (const id of V10_IDS) {
+    const row = list.find((a) => a.id === id);
+    expect(!!row && !row.done && row.name === V10_NAMES[id], `fresh profile: ${id} (${V10_NAMES[id]}) present and locked`);
+  }
+  // APEX CHAMPION: gold trophy on the apex league flips it; silver/bronze do not
+  save.recordCupFinish('apex-league', { positions: [2, 1, 3, 4], points: 71, trophy: 'silver', dateMs: 1 });
+  expect(achievementList(save).find((a) => a.id === 'apex-champion')!.done === false, 'apex silver: APEX CHAMPION still locked');
+  const beforePops = rivalAchievementState(save); // silver already banked (CUP CADET popped there)
+  save.recordCupFinish('apex-league', { positions: [1, 2, 3, 4], points: 88, trophy: 'gold', dateMs: 2 });
+  expect(achievementList(save).find((a) => a.id === 'apex-champion')!.done === true, 'apex gold flips APEX CHAMPION');
+  expect(rivalAchievementState(save).apexGold === 1, 'apexGold derived state on');
+  // GLIDE RIDER: a glide-body rival win flips it
+  save.addStats({ glideWins: 1 });
+  expect(achievementList(save).find((a) => a.id === 'glide-rider')!.done === true, 'glideWins=1 flips GLIDE RIDER');
+  // RINGMASTER: one perfect halo-flats ring lap flips it
+  save.addStats({ ringPerfectLaps: 1 });
+  expect(achievementList(save).find((a) => a.id === 'ringmaster')!.done === true, 'ringPerfectLaps=1 flips RINGMASTER');
+  // pops fire exactly for the fresh flips
+  const pops = achievementPops(beforePops, rivalAchievementState(save));
+  expect(pops.length === 3 && V10_IDS.every((id) => pops.some((p) => p.id === id)), `one pass pops all three v10 ids (${pops.map((p) => p.id).join(',')})`);
+  // repeat sweep is quiet (idempotent pops)
+  expect(achievementPops(rivalAchievementState(save), rivalAchievementState(save)).length === 0, 'no pops when nothing new is earned');
+  // counters accumulate + sanitize + round-trip
+  save.addStats({ glideWins: 1, ringPerfectLaps: 2 });
+  store.set('race2.stats.v1', JSON.stringify({ glideWins: 'x', ringPerfectLaps: -3 }));
+  const reloaded = new SaveManager();
+  expect(reloaded.stats.glideWins === 0 && reloaded.stats.ringPerfectLaps === 0, 'corrupt v10 stat fields sanitize to 0');
+  // apex trophy ledger persists (derived apexGold survives reload)
+  expect(rivalAchievementState(reloaded).apexGold === 1, 'apex gold trophy round-trips through reload');
+  // cupsWithTrophy now counts 5 cups; apex counts toward it
+  expect(rivalAchievementState(save).cupsWithTrophy === 1, 'apex league trophy counts toward cupsWithTrophy');
 }
 
 console.log(`\ncareer test: ${checks - failures}/${checks} checks passed`);

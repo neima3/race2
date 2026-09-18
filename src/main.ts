@@ -199,6 +199,8 @@ class Game {
   private photoUi: HTMLElement | null = null;
   private readonly photoFilters = ['none', 'sepia(0.5) saturate(1.3)', 'hue-rotate(180deg) saturate(1.2)', 'grayscale(1)'];
   private ringsHit = new Set<string>();
+  /** v10 P4 RINGMASTER: rings hit within the current lap window. */
+  private ringLapHits = 0;
   private driftScore = 0;
   private driftMode = false;
   private tutorialMode = false;
@@ -1208,6 +1210,7 @@ class Game {
     this.race!.start();
     this.hud.setLapCounter(this.rivalMode ? `LAP ${this.race!.lapNumber}/${this.race!.totalLaps}` : null);
     this.ringsHit.clear();
+    this.ringLapHits = 0;
     this.driftScore = 0;
     const ghostN = this.race!.ghostCount();
     for (let i = 0; i < this.ghostVisuals.length; i++) {
@@ -1490,6 +1493,7 @@ class Game {
     } else if (ev === 'lap') {
       const l = payload as RaceEvents['lap'];
       this.hud.setLapCounter(`LAP ${l.lap}/${l.totalLaps}`);
+      this.closeRingLap();
     } else if (ev === 'finalLap') {
       this.hud.setLapCounter('FINAL LAP');
       if (this.rivalMode && this.race!.phase === 'racing') {
@@ -1507,6 +1511,8 @@ class Game {
         if (rec.length >= 10) this.replayBuffer.push({ trackId: this.track.id, samples: rec, timeMs: r.timeMs, dateMs: Date.now(), variant: this.variant });
       }
       const achvBefore: RivalAchievementState = rivalAchievementState(this.save);
+      // v10 P4 RINGMASTER: the final crossing emits finish (not lap) — close the window here
+      this.closeRingLap();
       if (r.knockout) {
         this.audio.crash();
         this.input.rumble(0.9, 0.6, 300);
@@ -1577,6 +1583,7 @@ class Game {
             for (const name of beaten) winsBy[name] = (winsBy[name] ?? 0) + 1;
             this.save.addStats({
               knockoutWins: pos === 1 ? 1 : 0,
+              glideWins: pos === 1 && this.save.profile.body === 'glide' ? 1 : 0,
               rivalWinsBy: winsBy,
               draftKingRaces: this.playerDraft.draftTime >= DRAFT_KING_SECONDS ? 1 : 0,
             });
@@ -1607,6 +1614,7 @@ class Game {
           for (const name of beaten) winsBy[name] = (winsBy[name] ?? 0) + 1;
           this.save.addStats({
             rivalWins: pos === 1 ? 1 : 0,
+            glideWins: pos === 1 && this.save.profile.body === 'glide' ? 1 : 0,
             rivalsBeaten: beaten,
             rivalWinsBy: winsBy,
             draftKingRaces: this.playerDraft.draftTime >= DRAFT_KING_SECONDS ? 1 : 0,
@@ -1653,6 +1661,13 @@ class Game {
     for (const pop of achievementPops(before, rivalAchievementState(this.save))) {
       this.menu.showToast(`ACHIEVEMENT UNLOCKED — ${pop.name}`);
     }
+  }
+
+  /** v10 P4 RINGMASTER: close the current lap's ring window; a full set on halo-flats credits the stat. */
+  private closeRingLap(): void {
+    const total = this.track.id === 'halo-flats' ? this.track.rings?.length ?? 0 : 0;
+    if (total > 0 && this.ringLapHits >= total) this.save.addStats({ ringPerfectLaps: 1 });
+    this.ringLapHits = 0;
   }
 
   /** Paint unlock sweep: fires at the trigger events AND on boot (migrated stats). Idempotent per lock id. */
@@ -2369,6 +2384,7 @@ class Game {
           if (this.ringsHit.has(key)) continue;
           if (s.pos.distanceTo(ring.pos) < ring.radius) {
             this.ringsHit.add(key);
+            this.ringLapHits++;
             this.car!.applyBoost(7, 1.2);
             this.audio.boost();
             this.shake(0.4);

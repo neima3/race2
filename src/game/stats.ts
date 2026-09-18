@@ -14,7 +14,7 @@ export interface DriverStats {
   nearMisses: number;
   rivalWins: number;
   knockoutWins: number;
-  /** All-time trophy finishes across the four cups, by metal. */
+  /** All-time trophy finishes across the cups, by metal. */
   trophies: { gold: number; silver: number; bronze: number };
   bestDailyStreak: number;
   bestWeeklyStreak: number;

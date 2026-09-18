@@ -35,9 +35,16 @@ export interface RivalAchievementState {
   replaysShared: number;
   /** Times SOVEREIGN was beaten (v9 P5 KINGMAKER). */
   championBeaten: number;
+  /** 1 when the APEX LEAGUE has a gold trophy finish (v10 P4). */
+  apexGold: number;
+  /** Rival/knockout races won in the GLIDE body (v10 P4). */
+  glideWins: number;
+  /** halo-flats laps with every ring hit (v10 P4). */
+  ringPerfectLaps: number;
 }
 
 const GRAND_TOUR_CUP = 'grand-tour';
+const APEX_LEAGUE_CUP = 'apex-league';
 
 export function rivalAchievementState(save: SaveManager): RivalAchievementState {
   const cupsWithTrophy = CUPS.filter((c) => save.cupSave(c.id).finishes.some((f) => f.trophy)).length;
@@ -57,6 +64,9 @@ export function rivalAchievementState(save: SaveManager): RivalAchievementState 
     rainRaces: save.stats.rainRaces,
     replaysShared: save.stats.replaysShared,
     championBeaten: save.stats.championBeaten,
+    apexGold: save.cupSave(APEX_LEAGUE_CUP).finishes.some((f) => f.trophy === 'gold') ? 1 : 0,
+    glideWins: save.stats.glideWins,
+    ringPerfectLaps: save.stats.ringPerfectLaps,
   };
 }
 
@@ -87,6 +97,9 @@ const RIVAL_ACHIEVEMENTS: { id: string; name: string; done: (s: RivalAchievement
   { id: 'storm-chaser', name: 'STORM CHASER', done: (s) => s.nightRaces >= 1 && s.rainRaces >= 1 },
   { id: 'director', name: 'DIRECTOR', done: (s) => s.replaysShared >= 1 },
   { id: 'kingmaker', name: 'KINGMAKER', done: (s) => s.championBeaten >= 1 },
+  { id: 'apex-champion', name: 'APEX CHAMPION', done: (s) => s.apexGold >= 1 },
+  { id: 'glide-rider', name: 'GLIDE RIDER', done: (s) => s.glideWins >= 1 },
+  { id: 'ringmaster', name: 'RINGMASTER', done: (s) => s.ringPerfectLaps >= 1 },
 ];
 
 export function achievementPops(before: RivalAchievementState, after: RivalAchievementState): AchievementPop[] {

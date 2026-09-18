@@ -286,8 +286,8 @@ const PLAYER_KEY = 'race2.player.v1';
   const save = new SaveManager();
   const before = rivalAchievementState(save); // snapshot before any flip
   const list = achievementList(save);
-  expect(list.length === 15, `achievement roster grew to 15 rows (got ${list.length})`);
-  expect(new Set(list.map((a) => a.id)).size === 15, 'achievement ids unique');
+  expect(list.length === 18, `achievement roster grew to 18 rows (got ${list.length})`);
+  expect(new Set(list.map((a) => a.id)).size === 18, 'achievement ids unique');
   for (const id of V9_IDS) {
     const row = list.find((a) => a.id === id);
     expect(!!row && !row.done && row.name === V9_NAMES[id], `fresh profile: ${id} (${V9_NAMES[id]}) present and locked`);
@@ -370,6 +370,23 @@ const PLAYER_KEY = 'race2.player.v1';
   expect(new SaveManager().profile.body === 'standard', 'corrupt body string sanitizes to standard');
   store.set(PLAYER_KEY, JSON.stringify({ paint: 0x29e6ff, body: 'glide' }));
   expect(new SaveManager().profile.body === 'glide', 'valid stored glide body loads');
+}
+
+// ---------- 14. v10 P4 achievements: glide-wins + ring-perfect-laps stat plumbing ----------
+{
+  store.clear();
+  const save = new SaveManager();
+  expect(save.stats.glideWins === 0 && save.stats.ringPerfectLaps === 0, 'fresh profile: v10 stat counters default to zero');
+  save.addStats({ glideWins: 1, ringPerfectLaps: 3 });
+  expect(save.stats.glideWins === 1 && save.stats.ringPerfectLaps === 3, 'v10 counters accumulate additively');
+  const reloaded = new SaveManager();
+  expect(reloaded.stats.glideWins === 1 && reloaded.stats.ringPerfectLaps === 3, 'v10 counters round-trip through reload');
+  expect(achievementList(reloaded).find((a) => a.id === 'glide-rider')!.done === true, 'GLIDE RIDER done-state derives from the persisted counter');
+  expect(achievementList(reloaded).find((a) => a.id === 'ringmaster')!.done === true, 'RINGMASTER done-state derives from the persisted counter');
+  // legacy pre-v10 stats object loads with zero-value defaults
+  store.set(STATS_KEY, JSON.stringify({ laps: 7, rivalWins: 2 }));
+  const old = new SaveManager();
+  expect(old.stats.laps === 7 && old.stats.glideWins === 0 && old.stats.ringPerfectLaps === 0, 'pre-v10 stats object gets additive zero-value defaults');
 }
 
 console.log(`\nstats test: ${checks - failures}/${checks} checks passed`);

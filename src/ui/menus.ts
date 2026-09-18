@@ -720,6 +720,9 @@ export class MenuManager {
       { name: 'Storm Chaser', desc: 'Complete a night AND a rain variant race', done: ra.nightRaces >= 1 && ra.rainRaces >= 1, progress: `${Math.min(ra.nightRaces, 1) + Math.min(ra.rainRaces, 1)}/2` },
       { name: 'Director', desc: 'Share a replay link', done: ra.replaysShared >= 1, progress: `${Math.min(ra.replaysShared, 1)}/1` },
       { name: 'Kingmaker', desc: 'Beat SOVEREIGN, the champion', done: ra.championBeaten >= 1, progress: `${Math.min(ra.championBeaten, 1)}/1` },
+      { name: 'Apex Champion', desc: 'Win the APEX LEAGUE gold trophy', done: ra.apexGold >= 1, progress: `${Math.min(ra.apexGold, 1)}/1` },
+      { name: 'Glide Rider', desc: 'Win a rival or knockout race in the GLIDE', done: ra.glideWins >= 1, progress: `${Math.min(ra.glideWins, 1)}/1` },
+      { name: 'Ringmaster', desc: 'Hit all five rings in one halo-flats lap', done: ra.ringPerfectLaps >= 1, progress: `${Math.min(ra.ringPerfectLaps, 1)}/1` },
     ];
     const list = el('div', 'achv-list');
     for (const a of defs) {

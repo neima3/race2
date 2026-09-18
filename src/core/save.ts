@@ -191,6 +191,10 @@ export interface LifetimeStats {
   replaysShared: number;
   /** Times SOVEREIGN was beaten in a proper finish (v9 P5 KINGMAKER). Additive. */
   championBeaten: number;
+  /** Rival/knockout races won while driving the GLIDE body (v10 P4 GLIDE RIDER). Additive. */
+  glideWins: number;
+  /** halo-flats laps with every ring hit (v10 P4 RINGMASTER). Additive. */
+  ringPerfectLaps: number;
 }
 
 const DEFAULT_STATS: LifetimeStats = {
@@ -213,6 +217,8 @@ const DEFAULT_STATS: LifetimeStats = {
   rainRaces: 0,
   replaysShared: 0,
   championBeaten: 0,
+  glideWins: 0,
+  ringPerfectLaps: 0,
 };
 
 function sanitizeWinBy(v: unknown): Record<string, number> {
@@ -253,6 +259,8 @@ function sanitizeStats(v: Stored<Partial<LifetimeStats>>): LifetimeStats {
     rainRaces: num(v.rainRaces),
     replaysShared: num(v.replaysShared),
     championBeaten: num(v.championBeaten),
+    glideWins: num(v.glideWins),
+    ringPerfectLaps: num(v.ringPerfectLaps),
   };
 }
 
@@ -483,6 +491,8 @@ export class SaveManager {
       rainRaces: this._stats.rainRaces + (delta.rainRaces ?? 0),
       replaysShared: this._stats.replaysShared + (delta.replaysShared ?? 0),
       championBeaten: this._stats.championBeaten + (delta.championBeaten ?? 0),
+      glideWins: this._stats.glideWins + (delta.glideWins ?? 0),
+      ringPerfectLaps: this._stats.ringPerfectLaps + (delta.ringPerfectLaps ?? 0),
     };
     try {
       localStorage.setItem(STATS_KEY, JSON.stringify({ ...this._stats, schemaVersion: SCHEMA_VERSION }));
